@@ -1,0 +1,159 @@
+import { useRef, useState, type FormEvent } from "react";
+import { supabase } from "../lib/supabaseClient";
+import { importPackingListCsv } from "../lib/importPackingList";
+
+interface Props {
+  /** Амжилттай үүсгэсний дараа эцэг компонентод мэдэгдэх (жагсаалт сэргээх). */
+  onCreated?: (jobId: string) => void;
+}
+
+interface Result {
+  jobId: string;
+  totalEpcs: number;
+}
+
+/** Ажил (Job) үүсгэх форм + packing list CSV upload -> EPC генерац. */
+export default function CreateJobForm({ onCreated }: Props) {
+  const [jobNumber, setJobNumber] = useState("");
+  const [arrivalDate, setArrivalDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [supplier, setSupplier] = useState("");
+  const [note, setNote] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<Result | null>(null);
+
+  function reset() {
+    setJobNumber("");
+    setSupplier("");
+    setNote("");
+    setFile(null);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setResult(null);
+
+    if (!file) {
+      setError("Packing list CSV файл сонгоно уу.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const csvText = await file.text();
+      const res = await importPackingListCsv(supabase, csvText, {
+        jobNumber: jobNumber.trim(),
+        arrivalDate,
+        supplier: supplier.trim() || undefined,
+        note: note.trim() || undefined,
+      });
+      setResult({ jobId: res.jobId, totalEpcs: res.totalEpcs });
+      reset();
+      onCreated?.(res.jobId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl">
+      <form
+        onSubmit={handleSubmit}
+        className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+      >
+        <h2 className="mb-4 text-lg font-semibold text-slate-900">Шинэ ажил үүсгэх</h2>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Ажлын дугаар <span className="text-red-500">*</span>
+            </label>
+            <input
+              required
+              value={jobNumber}
+              onChange={(e) => setJobNumber(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              placeholder="JOB-2026-001"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Ирсэн огноо <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="date"
+              required
+              value={arrivalDate}
+              onChange={(e) => setArrivalDate(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Нийлүүлэгч</label>
+            <input
+              value={supplier}
+              onChange={(e) => setSupplier(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              placeholder="Нийлүүлэгчийн нэр"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Тэмдэглэл</label>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              placeholder="Заавал биш"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            Packing list (CSV) <span className="text-red-500">*</span>
+          </label>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
+          />
+          <p className="mt-2 text-xs text-slate-500">
+            Багана: <code className="rounded bg-slate-100 px-1">source_gtin, item_reference, name, quantity</code>.
+            Шинэ бараанд <code className="rounded bg-slate-100 px-1">item_reference</code> заавал, давтан ирсэн
+            бараанд <code className="rounded bg-slate-100 px-1">source_gtin</code>-аар таниулж болно.
+          </p>
+        </div>
+
+        {error && (
+          <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+        )}
+
+        {result && (
+          <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            Амжилттай! <strong>{result.totalEpcs}</strong> EPC үүслээ. "EPC хүснэгт" таб дээр харна уу.
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="mt-6 w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60 sm:w-auto sm:px-6"
+        >
+          {loading ? "Үүсгэж байна…" : "Ажил үүсгэж EPC генерацлэх"}
+        </button>
+      </form>
+    </div>
+  );
+}

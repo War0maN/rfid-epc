@@ -1,0 +1,5 @@
+source_gtin,item_reference,name,quantity
+8606001234567,12345,Cotton T-Shirt White M,10
+8606001234574,12346,Cotton T-Shirt White L,8
+,12347,In-house Box A,5
+8606001234567,,Cotton T-Shirt White M (repeat),6
