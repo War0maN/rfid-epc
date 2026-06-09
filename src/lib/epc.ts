@@ -16,6 +16,17 @@ const PARTITION: Record<number, { partition: number; cpBits: number; refBits: nu
   6:  { partition: 6, cpBits: 20, refBits: 24, refDigits: 7 },
 };
 
+/** Partition утгаар буцааж хайх (decode-д). cpDigits = 12 - partition, refDigits = 1 + partition. */
+const PARTITION_BY_VALUE: Record<number, { cpBits: number; refBits: number; cpDigits: number; refDigits: number }> = {
+  0: { cpBits: 40, refBits: 4,  cpDigits: 12, refDigits: 1 },
+  1: { cpBits: 37, refBits: 7,  cpDigits: 11, refDigits: 2 },
+  2: { cpBits: 34, refBits: 10, cpDigits: 10, refDigits: 3 },
+  3: { cpBits: 30, refBits: 14, cpDigits: 9,  refDigits: 4 },
+  4: { cpBits: 27, refBits: 17, cpDigits: 8,  refDigits: 5 },
+  5: { cpBits: 24, refBits: 20, cpDigits: 7,  refDigits: 6 },
+  6: { cpBits: 20, refBits: 24, cpDigits: 6,  refDigits: 7 },
+};
+
 const SGTIN96_HEADER = 0x30n;
 const SERIAL_MAX = (1n << 38n) - 1n; // 274,877,906,943
 
@@ -96,11 +107,71 @@ export function sgtin96Batch(
  * 24 тэмдэгт hex биш бол алдаа шиднэ. Хайхын өмнө энэ функцээр дамжуул.
  */
 export function normalizeEpc(raw: string): string {
-  const cleaned = raw.replace(/[\s:.\-]/g, "").toUpperCase();
+  const cleaned = raw.replace(/[\s:.-]/g, "").toUpperCase();
   if (!/^[0-9A-F]{24}$/.test(cleaned)) {
     throw new Error("SGTIN-96 hex буруу (24 hex тэмдэгт байх ёстой)");
   }
   return cleaned;
+}
+
+// ============================================================
+// SGTIN-96 decode + EPC URI (Pure Identity / Tag URI)
+// GS1 EPC Tag Data Standard §6, §12.3.
+//   hex 3074257BF7194E4000001A85
+//     -> urn:epc:id:sgtin:0614141.812345.6789
+//     -> urn:epc:tag:sgtin-96:3.0614141.812345.6789
+// ============================================================
+
+export interface Sgtin96Parts {
+  filter: number;
+  partition: number;
+  companyPrefix: string;    // тэргүүлэх тэгтэйгээ (str)
+  indicatorItemRef: string; // indicator + item reference, тэгээр гүйцээсэн
+  serial: string;           // bigint-г string-ээр (нарийвчлал алдахгүй)
+}
+
+/** 24 тэмдэгт SGTIN-96 hex-г бүрэлдэхүүн талбаруудад нь задална. */
+export function sgtin96Decode(epcHex: string): Sgtin96Parts {
+  const hex = normalizeEpc(epcHex);
+  const bin = BigInt("0x" + hex).toString(2).padStart(96, "0");
+
+  const header = parseInt(bin.slice(0, 8), 2);
+  if (header !== 0x30) {
+    throw new Error(`SGTIN-96 биш (header 0x${header.toString(16)}, 0x30 байх ёстой)`);
+  }
+
+  const filter = parseInt(bin.slice(8, 11), 2);
+  const partition = parseInt(bin.slice(11, 14), 2);
+  const p = PARTITION_BY_VALUE[partition];
+  if (!p) throw new Error(`partition ${partition} буруу (0-6 байх ёстой)`);
+
+  const cpStart = 14;
+  const refStart = cpStart + p.cpBits;
+  const serStart = refStart + p.refBits;
+
+  const companyPrefix = BigInt("0b" + bin.slice(cpStart, refStart)).toString().padStart(p.cpDigits, "0");
+  const indicatorItemRef = BigInt("0b" + bin.slice(refStart, serStart)).toString().padStart(p.refDigits, "0");
+  const serial = BigInt("0b" + bin.slice(serStart, 96)).toString();
+
+  return { filter, partition, companyPrefix, indicatorItemRef, serial };
+}
+
+/**
+ * SGTIN-96 hex -> Pure Identity URI.
+ * Жишээ: urn:epc:id:sgtin:0614141.812345.6789 (filter байхгүй).
+ */
+export function sgtin96HexToUri(epcHex: string): string {
+  const { companyPrefix, indicatorItemRef, serial } = sgtin96Decode(epcHex);
+  return `urn:epc:id:sgtin:${companyPrefix}.${indicatorItemRef}.${serial}`;
+}
+
+/**
+ * SGTIN-96 hex -> Tag URI (filter утгатай, тагт бичих түвшний дүрслэл).
+ * Жишээ: urn:epc:tag:sgtin-96:3.0614141.812345.6789
+ */
+export function sgtin96HexToTagUri(epcHex: string): string {
+  const { filter, companyPrefix, indicatorItemRef, serial } = sgtin96Decode(epcHex);
+  return `urn:epc:tag:sgtin-96:${filter}.${companyPrefix}.${indicatorItemRef}.${serial}`;
 }
 
 /** GTIN-ийн check digit-г тооцоолно (GTIN-8/12/13/14). */

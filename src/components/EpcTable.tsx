@@ -9,6 +9,8 @@ import {
   type ProductOption,
 } from "../lib/queries";
 import { downloadCsv, toCsv } from "../lib/exportCsv";
+import { buildZplBatch, downloadZpl } from "../lib/exportZpl";
+import { sgtin96HexToUri, sgtin96HexToTagUri } from "../lib/epc";
 
 /** Сэргээх дохио: энэ тоо өөрчлөгдөхөд дахин татна. */
 interface Props {
@@ -20,6 +22,24 @@ const inputCls =
 
 function productLabel(p: ProductOption): string {
   return p.name || p.source_gtin || `ref ${p.item_reference}`;
+}
+
+/** hex -> Pure Identity URI; декод бүтэлгүйтвэл хоосон (export эвдрэхгүй). */
+function safeUri(hex: string): string {
+  try {
+    return sgtin96HexToUri(hex);
+  } catch {
+    return "";
+  }
+}
+
+/** hex -> Tag URI; декод бүтэлгүйтвэл хоосон. */
+function safeTagUri(hex: string): string {
+  try {
+    return sgtin96HexToTagUri(hex);
+  } catch {
+    return "";
+  }
 }
 
 export default function EpcTable({ refreshKey = 0 }: Props) {
@@ -75,6 +95,8 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
   function handleExport() {
     const flat = rows.map((r) => ({
       epc_hex: r.epc_hex,
+      epc_uri: safeUri(r.epc_hex),
+      epc_tag_uri: safeTagUri(r.epc_hex),
       serial: r.serial,
       product: r.products?.name ?? "",
       item_reference: r.products?.item_reference ?? "",
@@ -86,6 +108,8 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
     }));
     const csv = toCsv(flat, [
       { key: "epc_hex", label: "EPC (hex)" },
+      { key: "epc_uri", label: "EPC URI" },
+      { key: "epc_tag_uri", label: "EPC Tag URI" },
       { key: "serial", label: "Serial" },
       { key: "product", label: "Бараа" },
       { key: "item_reference", label: "Item ref" },
@@ -96,6 +120,18 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       { key: "created_at", label: "Үүссэн" },
     ]);
     downloadCsv(`epc-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+  }
+
+  function handleExportZpl() {
+    const zpl = buildZplBatch(
+      rows.map((r) => ({
+        epcHex: r.epc_hex,
+        name: r.products?.name,
+        itemReference: r.products?.item_reference,
+        serial: r.serial,
+      }))
+    );
+    downloadZpl(`epc-labels-${new Date().toISOString().slice(0, 10)}.zpl`, zpl);
   }
 
   return (
@@ -166,6 +202,13 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
           >
             CSV татах ({rows.length})
           </button>
+          <button
+            onClick={handleExportZpl}
+            disabled={rows.length === 0}
+            className="rounded-lg bg-slate-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+          >
+            ZPL татах ({rows.length})
+          </button>
           {loading && <span className="text-sm text-slate-500">Ачаалж байна…</span>}
         </div>
       </div>
@@ -180,6 +223,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
           <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">EPC (hex)</th>
+              <th className="px-4 py-3">EPC URI</th>
               <th className="px-4 py-3">Serial</th>
               <th className="px-4 py-3">Бараа</th>
               <th className="px-4 py-3">Ажлын №</th>
@@ -191,7 +235,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && !loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                   EPC олдсонгүй.
                 </td>
               </tr>
@@ -200,6 +244,9 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
                 <tr key={r.id} className="hover:bg-slate-50">
                   <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-800">
                     {r.epc_hex}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500">
+                    {safeUri(r.epc_hex) || "—"}
                   </td>
                   <td className="px-4 py-2 text-slate-700">{r.serial}</td>
                   <td className="px-4 py-2 text-slate-700">

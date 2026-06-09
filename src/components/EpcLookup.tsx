@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { normalizeEpc } from "../lib/epc";
+import { normalizeEpc, sgtin96HexToUri, sgtin96HexToTagUri } from "../lib/epc";
 import { lookupEpc, type EpcRow } from "../lib/queries";
 
 type State =
@@ -8,6 +8,24 @@ type State =
   | { kind: "found"; row: EpcRow }
   | { kind: "notfound" }
   | { kind: "error"; message: string };
+
+/** hex -> Pure Identity URI; декод бүтэлгүйтвэл зураас. */
+function safeUri(hex: string): string {
+  try {
+    return sgtin96HexToUri(hex);
+  } catch {
+    return "—";
+  }
+}
+
+/** hex -> Tag URI; декод бүтэлгүйтвэл зураас. */
+function safeTagUri(hex: string): string {
+  try {
+    return sgtin96HexToTagUri(hex);
+  } catch {
+    return "—";
+  }
+}
 
 function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
@@ -80,6 +98,14 @@ export default function EpcLookup() {
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <p className="mb-3 break-all font-mono text-sm text-indigo-700">{state.row.epc_hex}</p>
           <dl>
+            <Field
+              label="EPC URI"
+              value={<span className="break-all font-mono text-xs">{safeUri(state.row.epc_hex)}</span>}
+            />
+            <Field
+              label="Tag URI"
+              value={<span className="break-all font-mono text-xs">{safeTagUri(state.row.epc_hex)}</span>}
+            />
             <Field label="Бараа" value={state.row.products?.name || "—"} />
             <Field
               label="Item reference"
