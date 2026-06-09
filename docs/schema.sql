@@ -128,6 +128,55 @@ end;
 $$;
 
 -- ============================================================
+-- Bulk serial allocation — нэг Job-д олон бараанд зэрэг serial авна.
+-- p_items: [{ "product_id": uuid, "count": int }, ...]
+-- Буцаалт: { "<product_id>": <start_serial>, ... } (jsonb).
+-- Нэг round-trip-ээр (импорт хурдан) бүх барааны serial-г атомаар захиална.
+-- ============================================================
+create or replace function allocate_serials_bulk(p_tenant uuid, p_items jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_item   record;
+  v_start  bigint;
+  v_result jsonb := '{}'::jsonb;
+begin
+  if p_tenant <> current_tenant_id() then
+    raise exception 'tenant mismatch';
+  end if;
+
+  for v_item in
+    select * from jsonb_to_recordset(p_items) as x(product_id uuid, count int)
+  loop
+    if v_item.count is null or v_item.count < 1 then
+      continue;
+    end if;
+
+    insert into serial_counters (tenant_id, product_id, last_serial)
+    values (p_tenant, v_item.product_id, 0)
+    on conflict (tenant_id, product_id) do nothing;
+
+    update serial_counters
+       set last_serial = last_serial + v_item.count
+     where tenant_id = p_tenant and product_id = v_item.product_id
+    returning last_serial - v_item.count + 1 into v_start;
+
+    if v_start + v_item.count - 1 > (2::bigint ^ 38) - 1 then
+      raise exception 'serial range (2^38) exhausted for product %', v_item.product_id;
+    end if;
+
+    v_result := v_result || jsonb_build_object(v_item.product_id::text, v_start);
+  end loop;
+
+  return v_result;
+end;
+$$;
+grant execute on function allocate_serials_bulk(uuid, jsonb) to authenticated;
+
+-- ============================================================
 -- Row-Level Security
 -- ============================================================
 alter table tenants         enable row level security;
@@ -402,8 +451,10 @@ alter table products drop column if exists source_gtin;     -- индексээ 
 alter table products drop column if exists item_reference;  -- хуучин unique-ээ дагаж устна
 alter table products drop column if exists indicator;
 create index if not exists products_tenant_gtin_idx on products (tenant_id, gtin);
+-- Бүрэн (partial биш) unique — Supabase upsert onConflict-д ашиглагдана.
+-- (null gtin олон мөр байж болно; Postgres null-уудыг ялгаатай гэж үздэг.)
 create unique index if not exists products_tenant_gtin_uidx
-  on products (tenant_id, gtin) where gtin is not null;
+  on products (tenant_id, gtin);
 
 -- epc_codes: хайрцагны дугаар
 alter table epc_codes add column if not exists box_no text;

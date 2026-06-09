@@ -41,9 +41,10 @@ export async function generateEpcsForJob(
 ): Promise<GeneratedEpc[]> {
   const tenant = await getTenantConfig(supabase);
   const filter = tenant.default_filter_value ?? 1;
+  const lines = params.lines.filter((l) => l.count >= 1);
 
   // Барааны GTIN-уудыг нэг удаа татаж map болгоё.
-  const productIds = [...new Set(params.lines.map((l) => l.productId))];
+  const productIds = [...new Set(lines.map((l) => l.productId))];
   const { data: products, error: pErr } = await supabase
     .from("products")
     .select("id, gtin")
@@ -53,6 +54,24 @@ export async function generateEpcsForJob(
     (products as { id: string; gtin: string }[]).map((p) => [p.id, p.gtin])
   );
 
+  // 1) Бараа тус бүрийн НИЙТ тоог нэгтгэж, нэг round-trip-ээр serial захиална.
+  const totalByProduct = new Map<string, number>();
+  for (const l of lines) {
+    totalByProduct.set(l.productId, (totalByProduct.get(l.productId) ?? 0) + l.count);
+  }
+  const items = [...totalByProduct.entries()].map(([product_id, count]) => ({ product_id, count }));
+  const { data: starts, error: aErr } = await supabase.rpc("allocate_serials_bulk", {
+    p_tenant: tenant.id,
+    p_items: items,
+  });
+  if (aErr) throw aErr;
+  // { productId: startSerial } -> бараа тус бүрийн дараагийн serial
+  const nextSerial = new Map<string, bigint>();
+  for (const [pid, s] of Object.entries(starts as Record<string, string | number>)) {
+    nextSerial.set(pid, BigInt(s));
+  }
+
+  // 2) Мөр (хайрцаг) бүрд serial-ийг дарааллаар нь зарцуулж EPC encode.
   const allRows: {
     tenant_id: string;
     job_id: string;
@@ -63,22 +82,14 @@ export async function generateEpcsForJob(
   }[] = [];
   const result: GeneratedEpc[] = [];
 
-  for (const line of params.lines) {
-    if (line.count < 1) continue;
+  for (const line of lines) {
     const gtin = gtinById.get(line.productId);
     if (!gtin) throw new Error(`бараа ${line.productId}: GTIN олдсонгүй`);
+    const serial = nextSerial.get(line.productId);
+    if (serial == null) throw new Error(`бараа ${line.productId}: serial захиалга алга`);
 
-    // 1) Атом serial allocation (бараа тус бүрд, бүх хайрцгийн дунд давхцахгүй)
-    const { data: startData, error: aErr } = await supabase.rpc("allocate_serials", {
-      p_tenant: tenant.id,
-      p_product: line.productId,
-      p_count: line.count,
-    });
-    if (aErr) throw aErr;
-    const startSerial = BigInt(startData as string | number);
-
-    // 2) GTIN-ээс EPC багц encode
-    const batch = sgtin96BatchFromGtin(gtin, startSerial, line.count, filter);
+    const batch = sgtin96BatchFromGtin(gtin, serial, line.count, filter);
+    nextSerial.set(line.productId, serial + BigInt(line.count));
 
     for (const b of batch) {
       const serialStr = b.serial.toString();
@@ -94,9 +105,10 @@ export async function generateEpcsForJob(
     }
   }
 
-  // 3) Бөөнөөр insert
-  if (allRows.length > 0) {
-    const { error: iErr } = await supabase.from("epc_codes").insert(allRows);
+  // 3) Бөөнөөр, хэсэгчлэн insert (том payload-аас зайлсхийх).
+  const CHUNK = 1000;
+  for (let i = 0; i < allRows.length; i += CHUNK) {
+    const { error: iErr } = await supabase.from("epc_codes").insert(allRows.slice(i, i + CHUNK));
     if (iErr) throw iErr;
   }
 

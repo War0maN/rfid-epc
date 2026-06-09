@@ -13,6 +13,8 @@ interface Result {
   totalEpcs: number;
   productCount: number;
   boxCount: number;
+  skippedCount: number;
+  skippedSample: string[];
 }
 
 /** Ажил (Job) үүсгэх форм + packing list CSV upload -> EPC генерац. */
@@ -145,10 +147,20 @@ export default function CreateJobForm({ onCreated }: Props) {
         )}
 
         {result && (
-          <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            Амжилттай! <strong>{result.totalEpcs}</strong> EPC үүслээ ({result.productCount} бараа,{" "}
-            {result.boxCount} хайрцаг). "EPC хүснэгт" таб дээр харна уу.
-          </p>
+          <div className="mt-4 space-y-2">
+            <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              Амжилттай! <strong>{result.totalEpcs}</strong> EPC үүслээ ({result.productCount} бараа,{" "}
+              {result.boxCount} хайрцаг). "EPC хүснэгт" таб дээр харна уу.
+            </p>
+            {result.skippedCount > 0 && (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                ⚠️ {result.skippedCount} мөр алгаслаа (barcode дутуу/буруу).
+                {result.skippedSample.length > 0 && (
+                  <span className="block">Жишээ: {result.skippedSample.join("; ")}</span>
+                )}
+              </p>
+            )}
+          </div>
         )}
 
         <button

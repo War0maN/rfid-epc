@@ -50,31 +50,51 @@ function cell(row: unknown[], idx: number): string {
 }
 
 /** Excel файлыг уншиж, цэвэр мөр болгож, GTIN-ийг шалгана. */
-async function parseFile(file: Blob): Promise<CleanRow[]> {
-  const rows = (await readXlsxFile(file)) as unknown as unknown[][];
+async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: string[] }> {
+  // File-ийг өөрсдөө ArrayBuffer болгож уншина (браузерын FileReader-ийн
+  // "could not be read" алдаанаас зайлсхийнэ).
+  const buffer = await file.arrayBuffer();
+  const raw = await readXlsxFile(buffer);
+
+  // read-excel-file нь зарим тохиолдолд мөрийн массив, заримд [{sheet, data}]
+  // хэлбэрээр буцаадаг — хоёуланг зохицуулна (эхний sheet-ийг авна).
+  let rows: unknown[][];
+  if (Array.isArray(raw) && (raw.length === 0 || Array.isArray(raw[0]))) {
+    rows = raw as unknown as unknown[][];
+  } else if (Array.isArray(raw) && raw[0] && typeof raw[0] === "object" && "data" in raw[0]) {
+    rows = (raw[0] as { data: unknown[][] }).data;
+  } else {
+    throw new Error("Excel-ийг уншиж чадсангүй (хүснэгтийн формат таниагдсангүй).");
+  }
   if (rows.length < 2) throw new Error("Файлд толгой + дор хаяж нэг мөр байх ёстой.");
 
   const col = columnIndexes(rows[0]);
   if (col.barcode < 0) throw new Error("'barcode' (EAN/GTIN) багана олдсонгүй.");
   if (col.piece < 0) throw new Error("'piece' (тоо ширхэг) багана олдсонгүй.");
 
+  // Алдаатай/хоосон мөрийг алгасаад үргэлжилнэ (нэг муу мөр бүх импортыг
+  // зогсоохгүй). Алгассан тоо/шалтгааныг буцааж UI-д харуулна.
   const out: CleanRow[] = [];
+  const skipped: string[] = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row.every((c) => c == null || String(c).trim() === "")) continue; // хоосон мөр
 
     const rawBarcode = cell(row, col.barcode);
-    if (!rawBarcode) throw new Error(`Мөр ${i + 1}: barcode хоосон байна.`);
+    if (!rawBarcode) continue; // barcode-гүй мөр (нийт дүн г.м.) — чимээгүй алгасна
+
     let gtin: string;
     try {
       gtin = normalizeGtin(rawBarcode);
     } catch (e) {
-      throw new Error(`Мөр ${i + 1}: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
+      skipped.push(`Мөр ${i + 1}: ${e instanceof Error ? e.message : String(e)}`);
+      continue;
     }
 
     const piece = parseInt(cell(row, col.piece).replace(/\D/g, ""), 10);
     if (!Number.isFinite(piece) || piece < 1) {
-      throw new Error(`Мөр ${i + 1}: piece буруу (${cell(row, col.piece)}).`);
+      skipped.push(`Мөр ${i + 1}: piece буруу (${cell(row, col.piece)})`);
+      continue;
     }
 
     out.push({
@@ -86,8 +106,12 @@ async function parseFile(file: Blob): Promise<CleanRow[]> {
       boxNo: cell(row, col.box) || null,
     });
   }
-  if (out.length === 0) throw new Error("Импортлох мөр олдсонгүй.");
-  return out;
+  if (out.length === 0) {
+    throw new Error(
+      "Импортлох хүчинтэй мөр олдсонгүй." + (skipped.length ? ` (${skipped[0]})` : "")
+    );
+  }
+  return { rows: out, skipped };
 }
 
 /** Excel packing list-ийг импортлож, бараа upsert, Job үүсгэж EPC генерацлэнэ. */
@@ -96,13 +120,15 @@ export async function importPackingListXlsx(
   file: Blob,
   job: ImportJobInput
 ) {
-  const rows = await parseFile(file);
+  const { rows, skipped } = await parseFile(file);
 
   const { data: tenant, error: tErr } = await supabase.from("tenants").select("id").single();
   if (tErr) throw tErr;
   const tenantId = tenant.id as string;
 
   // 1) Бараа upsert (GTIN-ээр давхцалгүй). Нэр/SKU-г сүүлийн утгаар шинэчилнэ.
+  //    upsert-ийн буцаасан мөрийг (.select) шууд ашиглаж GTIN -> id map үүсгэнэ
+  //    (587 GTIN-тэй .in() хайлт URL-ийг хэт уртасгахаас зайлсхийнэ).
   const byGtin = new Map<string, CleanRow>();
   for (const r of rows) byGtin.set(r.gtin, r); // GTIN бүрийн нэг төлөөлөл (нэр/sku)
   const upserts = [...byGtin.values()].map((r) => ({
@@ -112,17 +138,11 @@ export async function importPackingListXlsx(
     name: r.name,
     source: "packing_list" as const,
   }));
-  const { error: uErr } = await supabase
+  const { data: products, error: uErr } = await supabase
     .from("products")
-    .upsert(upserts, { onConflict: "tenant_id,gtin" });
+    .upsert(upserts, { onConflict: "tenant_id,gtin" })
+    .select("id, gtin");
   if (uErr) throw uErr;
-
-  // 2) GTIN -> product.id map
-  const { data: products, error: gErr } = await supabase
-    .from("products")
-    .select("id, gtin")
-    .in("gtin", [...byGtin.keys()]);
-  if (gErr) throw gErr;
   const idByGtin = new Map(
     (products as { id: string; gtin: string }[]).map((p) => [p.gtin, p.id])
   );
@@ -164,5 +184,7 @@ export async function importPackingListXlsx(
     totalEpcs: epcs.length,
     productCount: byGtin.size,
     boxCount: new Set(rows.map((r) => r.boxNo ?? "")).size,
+    skippedCount: skipped.length,
+    skippedSample: skipped.slice(0, 5),
   };
 }
