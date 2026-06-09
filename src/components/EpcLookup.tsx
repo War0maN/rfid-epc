@@ -108,13 +108,14 @@ export default function EpcLookup() {
             />
             <Field label="Бараа" value={state.row.products?.name || "—"} />
             <Field
-              label="Item reference"
-              value={<span className="font-mono">{state.row.products?.item_reference ?? "—"}</span>}
+              label="GTIN/баркод"
+              value={<span className="font-mono">{state.row.products?.gtin ?? "—"}</span>}
             />
             <Field
-              label="Source GTIN"
-              value={<span className="font-mono">{state.row.products?.source_gtin ?? "—"}</span>}
+              label="SKU"
+              value={<span className="font-mono">{state.row.products?.sku ?? "—"}</span>}
             />
+            <Field label="Хайрцаг" value={state.row.box_no ?? "—"} />
             <Field label="Serial" value={state.row.serial} />
             <Field label="Ажлын №" value={state.row.jobs?.job_number ?? "—"} />
             <Field label="Ирсэн огноо" value={state.row.jobs?.arrival_date ?? "—"} />

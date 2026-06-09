@@ -1,30 +1,18 @@
 // ============================================================
-// Packing list CSV import -> бараа upsert -> Job үүсгэх -> EPC генерац
-// CSV багана: source_gtin, item_reference, name, quantity
-//   - source_gtin     : үйлдвэрлэгчийн GTIN (заавал биш, ТАНИХад)
-//   - item_reference  : тенантын prefix дор оноосон код (шинэ бараанд шаардлагатай)
-//   - name            : барааны нэр (заавал биш)
-//   - quantity        : тоо ширхэг
-// Бараа аль хэдийн байгаа бол source_gtin-аар таниж дахин ашиглана
-// (item_reference хоосон байж болно).
+// Excel packing list импорт -> бараа upsert (GTIN-ээр) -> Job -> EPC генерац
+// Багана (толгойн нэрийг уян хатан таниулна):
+//   name    — барааны нэр            (нэр / name / product)
+//   sku     — нийлүүлэгчийн SKU/код   (sku / code / артикул)
+//   barcode — EAN/баркод (GTIN)      (barcode / ean / gtin / баркод)   [ЗААВАЛ]
+//   piece   — тоо ширхэг             (piece / qty / quantity / тоо)    [ЗААВАЛ]
+//   box     — хайрцагны дугаар       (box / box no / хайрцаг)          [сонголт]
+// Нэг GTIN олон хайрцагт орж болно — (GTIN, box) бүр тусдаа мөр болж,
+// EPC-д харгалзах box_no хадгалагдана (шошго наахад мөшгих).
 // ============================================================
-import Papa from "papaparse";
+import readXlsxFile from "read-excel-file/universal";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateEpcsForJob, type JobLine } from "./generateEpcs";
-
-interface RawRow {
-  source_gtin?: string;
-  item_reference?: string;
-  name?: string;
-  quantity?: string;
-}
-
-interface CleanRow {
-  sourceGtin: string | null;
-  itemReference: string | null;
-  name: string | null;
-  quantity: number;
-}
+import { normalizeGtin } from "./epc";
 
 export interface ImportJobInput {
   jobNumber: string;
@@ -33,89 +21,124 @@ export interface ImportJobInput {
   note?: string;
 }
 
-function clean(rows: RawRow[]): CleanRow[] {
+interface CleanRow {
+  gtin: string;          // нормчилсон (14 орон) GTIN
+  rawBarcode: string;
+  sku: string | null;
+  name: string | null;
+  piece: number;
+  boxNo: string | null;
+}
+
+/** Толгойн мөрнөөс багана бүрийн индексийг (уян хатан) олно. */
+function columnIndexes(header: unknown[]): Record<string, number> {
+  const norm = header.map((h) => String(h ?? "").trim().toLowerCase());
+  const find = (cands: string[]) => norm.findIndex((h) => cands.includes(h));
+  return {
+    name: find(["name", "нэр", "барааны нэр", "product", "бараа"]),
+    sku: find(["sku", "code", "код", "артикул", "article"]),
+    barcode: find(["barcode", "bar code", "ean", "ean13", "gtin", "баркод", "бар код"]),
+    piece: find(["piece", "pieces", "pcs", "qty", "quantity", "count", "тоо", "ширхэг", "тоо ширхэг"]),
+    box: find(["box", "box no", "box_no", "boxno", "box №", "хайрцаг", "хайрцагны дугаар", "хайрцаг №"]),
+  };
+}
+
+function cell(row: unknown[], idx: number): string {
+  if (idx < 0) return "";
+  const v = row[idx];
+  return v == null ? "" : String(v).trim();
+}
+
+/** Excel файлыг уншиж, цэвэр мөр болгож, GTIN-ийг шалгана. */
+async function parseFile(file: Blob): Promise<CleanRow[]> {
+  const rows = (await readXlsxFile(file)) as unknown as unknown[][];
+  if (rows.length < 2) throw new Error("Файлд толгой + дор хаяж нэг мөр байх ёстой.");
+
+  const col = columnIndexes(rows[0]);
+  if (col.barcode < 0) throw new Error("'barcode' (EAN/GTIN) багана олдсонгүй.");
+  if (col.piece < 0) throw new Error("'piece' (тоо ширхэг) багана олдсонгүй.");
+
   const out: CleanRow[] = [];
-  rows.forEach((r, i) => {
-    const sourceGtin = (r.source_gtin || "").replace(/\D/g, "") || null;
-    const itemReference = (r.item_reference || "").replace(/\D/g, "") || null;
-    const quantity = parseInt(String(r.quantity || "").trim(), 10);
-    if (!sourceGtin && !itemReference) {
-      throw new Error(`Мөр ${i + 1}: source_gtin эсвэл item_reference-ийн аль нэг шаардлагатай`);
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.every((c) => c == null || String(c).trim() === "")) continue; // хоосон мөр
+
+    const rawBarcode = cell(row, col.barcode);
+    if (!rawBarcode) throw new Error(`Мөр ${i + 1}: barcode хоосон байна.`);
+    let gtin: string;
+    try {
+      gtin = normalizeGtin(rawBarcode);
+    } catch (e) {
+      throw new Error(`Мөр ${i + 1}: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
     }
-    if (!Number.isFinite(quantity) || quantity < 1) {
-      throw new Error(`Мөр ${i + 1}: quantity буруу (${r.quantity})`);
+
+    const piece = parseInt(cell(row, col.piece).replace(/\D/g, ""), 10);
+    if (!Number.isFinite(piece) || piece < 1) {
+      throw new Error(`Мөр ${i + 1}: piece буруу (${cell(row, col.piece)}).`);
     }
-    out.push({ sourceGtin, itemReference, name: r.name?.trim() || null, quantity });
-  });
+
+    out.push({
+      gtin,
+      rawBarcode,
+      sku: cell(row, col.sku) || null,
+      name: cell(row, col.name) || null,
+      piece,
+      boxNo: cell(row, col.box) || null,
+    });
+  }
+  if (out.length === 0) throw new Error("Импортлох мөр олдсонгүй.");
   return out;
 }
 
-/** CSV текстийг уншиж бараа upsert хийгээд Job үүсгэж EPC генерацлэнэ. */
-export async function importPackingListCsv(
+/** Excel packing list-ийг импортлож, бараа upsert, Job үүсгэж EPC генерацлэнэ. */
+export async function importPackingListXlsx(
   supabase: SupabaseClient,
-  csvText: string,
+  file: Blob,
   job: ImportJobInput
 ) {
-  // 1) Parse
-  const parsed = Papa.parse<RawRow>(csvText, { header: true, skipEmptyLines: true });
-  if (parsed.errors.length) {
-    throw new Error("CSV parse алдаа: " + parsed.errors[0].message);
-  }
-  const rows = clean(parsed.data);
+  const rows = await parseFile(file);
 
-  // Тенант id
   const { data: tenant, error: tErr } = await supabase.from("tenants").select("id").single();
   if (tErr) throw tErr;
   const tenantId = tenant.id as string;
 
-  // 2) item_reference-тэй мөрүүдээс бараа upsert (шинэ/шинэчлэх)
-  const upserts = rows
-    .filter((r) => r.itemReference)
-    .map((r) => ({
-      tenant_id: tenantId,
-      item_reference: r.itemReference!,
-      source_gtin: r.sourceGtin,
-      name: r.name,
-      indicator: 0,
-      source: "packing_list" as const,
-    }));
-  if (upserts.length) {
-    const { error: uErr } = await supabase
-      .from("products")
-      .upsert(upserts, { onConflict: "tenant_id,item_reference" });
-    if (uErr) throw uErr;
-  }
+  // 1) Бараа upsert (GTIN-ээр давхцалгүй). Нэр/SKU-г сүүлийн утгаар шинэчилнэ.
+  const byGtin = new Map<string, CleanRow>();
+  for (const r of rows) byGtin.set(r.gtin, r); // GTIN бүрийн нэг төлөөлөл (нэр/sku)
+  const upserts = [...byGtin.values()].map((r) => ({
+    tenant_id: tenantId,
+    gtin: r.gtin,
+    sku: r.sku,
+    name: r.name,
+    source: "packing_list" as const,
+  }));
+  const { error: uErr } = await supabase
+    .from("products")
+    .upsert(upserts, { onConflict: "tenant_id,gtin" });
+  if (uErr) throw uErr;
 
-  // 3) Хэрэгтэй бараануудыг татаж lookup map үүсгэх
+  // 2) GTIN -> product.id map
   const { data: products, error: gErr } = await supabase
     .from("products")
-    .select("id, source_gtin, item_reference");
+    .select("id, gtin")
+    .in("gtin", [...byGtin.keys()]);
   if (gErr) throw gErr;
+  const idByGtin = new Map(
+    (products as { id: string; gtin: string }[]).map((p) => [p.gtin, p.id])
+  );
 
-  const byGtin = new Map<string, string>();
-  const byRef = new Map<string, string>();
-  for (const p of products as { id: string; source_gtin: string | null; item_reference: string }[]) {
-    if (p.source_gtin) byGtin.set(p.source_gtin, p.id);
-    byRef.set(p.item_reference, p.id);
+  // 3) (product, box) бүрээр тоог нэгтгэх
+  const lineMap = new Map<string, JobLine>();
+  for (const r of rows) {
+    const productId = idByGtin.get(r.gtin);
+    if (!productId) throw new Error(`бараа олдсонгүй (GTIN ${r.gtin})`);
+    const key = `${productId}|${r.boxNo ?? ""}`;
+    const existing = lineMap.get(key);
+    if (existing) existing.count += r.piece;
+    else lineMap.set(key, { productId, count: r.piece, boxNo: r.boxNo });
   }
 
-  // 4) Мөр бүрийг product руу холбож, тоог нэгтгэх
-  const countByProduct = new Map<string, number>();
-  rows.forEach((r, i) => {
-    let productId: string | undefined;
-    if (r.itemReference) productId = byRef.get(r.itemReference);
-    else if (r.sourceGtin) productId = byGtin.get(r.sourceGtin);
-
-    if (!productId) {
-      throw new Error(
-        `Мөр ${i + 1}: бараа олдсонгүй. Шинэ бараанд item_reference шаардлагатай ` +
-          `(GTIN ${r.sourceGtin ?? "-"})`
-      );
-    }
-    countByProduct.set(productId, (countByProduct.get(productId) ?? 0) + r.quantity);
-  });
-
-  // 5) Job үүсгэх
+  // 4) Job үүсгэх
   const { data: jobRow, error: jErr } = await supabase
     .from("jobs")
     .insert({
@@ -130,14 +153,16 @@ export async function importPackingListCsv(
     .single();
   if (jErr) throw jErr;
 
-  // 6) EPC генерац (allocate -> encode -> insert)
-  const lines: JobLine[] = [...countByProduct.entries()].map(([productId, count]) => ({
-    productId,
-    count,
-  }));
-  const epcs = await generateEpcsForJob(supabase, { jobId: jobRow.id, lines });
+  // 5) EPC генерац (allocate -> encode -> insert, box_no-той)
+  const epcs = await generateEpcsForJob(supabase, {
+    jobId: jobRow.id,
+    lines: [...lineMap.values()],
+  });
 
-  return { jobId: jobRow.id as string, totalEpcs: epcs.length, epcs };
+  return {
+    jobId: jobRow.id as string,
+    totalEpcs: epcs.length,
+    productCount: byGtin.size,
+    boxCount: new Set(rows.map((r) => r.boxNo ?? "")).size,
+  };
 }
-
-// Файл сонгогчоос: importPackingListCsv(supabase, await file.text(), {...})

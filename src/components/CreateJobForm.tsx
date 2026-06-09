@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { importPackingListCsv } from "../lib/importPackingList";
+import { importPackingListXlsx } from "../lib/importPackingList";
 
 interface Props {
   /** Амжилттай үүсгэсний дараа эцэг компонентод мэдэгдэх (жагсаалт сэргээх). */
@@ -10,6 +10,8 @@ interface Props {
 interface Result {
   jobId: string;
   totalEpcs: number;
+  productCount: number;
+  boxCount: number;
 }
 
 /** Ажил (Job) үүсгэх форм + packing list CSV upload -> EPC генерац. */
@@ -39,20 +41,19 @@ export default function CreateJobForm({ onCreated }: Props) {
     setResult(null);
 
     if (!file) {
-      setError("Packing list CSV файл сонгоно уу.");
+      setError("Packing list Excel файл сонгоно уу.");
       return;
     }
 
     setLoading(true);
     try {
-      const csvText = await file.text();
-      const res = await importPackingListCsv(supabase, csvText, {
+      const res = await importPackingListXlsx(supabase, file, {
         jobNumber: jobNumber.trim(),
         arrivalDate,
         supplier: supplier.trim() || undefined,
         note: note.trim() || undefined,
       });
-      setResult({ jobId: res.jobId, totalEpcs: res.totalEpcs });
+      setResult(res);
       reset();
       onCreated?.(res.jobId);
     } catch (err) {
@@ -120,19 +121,21 @@ export default function CreateJobForm({ onCreated }: Props) {
 
         <div className="mt-4">
           <label className="mb-1 block text-sm font-medium text-slate-700">
-            Packing list (CSV) <span className="text-red-500">*</span>
+            Packing list (Excel) <span className="text-red-500">*</span>
           </label>
           <input
             ref={fileRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
           />
           <p className="mt-2 text-xs text-slate-500">
-            Багана: <code className="rounded bg-slate-100 px-1">source_gtin, item_reference, name, quantity</code>.
-            Шинэ бараанд <code className="rounded bg-slate-100 px-1">item_reference</code> заавал, давтан ирсэн
-            бараанд <code className="rounded bg-slate-100 px-1">source_gtin</code>-аар таниулж болно.
+            Багана: <code className="rounded bg-slate-100 px-1">name, sku, barcode, piece, box</code>.
+            <code className="rounded bg-slate-100 px-1">barcode</code> (EAN/GTIN) болон{" "}
+            <code className="rounded bg-slate-100 px-1">piece</code> заавал. EPC-г баркод бүрээс шууд
+            үүсгэх тул брэнд хамаарахгүй. <code className="rounded bg-slate-100 px-1">box</code> нь
+            шошго наахад аль хайрцгийнх болохыг мөшгинө.
           </p>
         </div>
 
@@ -142,7 +145,8 @@ export default function CreateJobForm({ onCreated }: Props) {
 
         {result && (
           <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            Амжилттай! <strong>{result.totalEpcs}</strong> EPC үүслээ. "EPC хүснэгт" таб дээр харна уу.
+            Амжилттай! <strong>{result.totalEpcs}</strong> EPC үүслээ ({result.productCount} бараа,{" "}
+            {result.boxCount} хайрцаг). "EPC хүснэгт" таб дээр харна уу.
           </p>
         )}
 

@@ -23,7 +23,7 @@ const inputCls =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
 
 function productLabel(p: ProductOption): string {
-  return p.name || p.source_gtin || `ref ${p.item_reference}`;
+  return p.name || p.sku || p.gtin;
 }
 
 /** hex -> Pure Identity URI; декод бүтэлгүйтвэл хоосон (export эвдрэхгүй). */
@@ -101,8 +101,9 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       epc_tag_uri: safeTagUri(r.epc_hex),
       serial: r.serial,
       product: r.products?.name ?? "",
-      item_reference: r.products?.item_reference ?? "",
-      source_gtin: r.products?.source_gtin ?? "",
+      gtin: r.products?.gtin ?? "",
+      sku: r.products?.sku ?? "",
+      box_no: r.box_no ?? "",
       job_number: r.jobs?.job_number ?? "",
       arrival_date: r.jobs?.arrival_date ?? "",
       supplier: r.jobs?.supplier ?? "",
@@ -114,8 +115,9 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       { key: "epc_tag_uri", label: "EPC Tag URI" },
       { key: "serial", label: "Serial" },
       { key: "product", label: "Бараа" },
-      { key: "item_reference", label: "Item ref" },
-      { key: "source_gtin", label: "Source GTIN" },
+      { key: "gtin", label: "GTIN/баркод" },
+      { key: "sku", label: "SKU" },
+      { key: "box_no", label: "Хайрцаг" },
       { key: "job_number", label: "Ажлын №" },
       { key: "arrival_date", label: "Ирсэн огноо" },
       { key: "supplier", label: "Нийлүүлэгч" },
@@ -130,7 +132,9 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       rows.map((r) => ({
         epcHex: r.epc_hex,
         name: r.products?.name,
-        itemReference: r.products?.item_reference,
+        gtin: r.products?.gtin,
+        sku: r.products?.sku,
+        boxNo: r.box_no,
         serial: r.serial,
       }))
     );
@@ -227,13 +231,13 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
           <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">EPC (hex)</th>
-              <th className="px-4 py-3">EPC URI</th>
               <th className="px-4 py-3">Serial</th>
               <th className="px-4 py-3">Бараа</th>
+              <th className="px-4 py-3">GTIN/баркод</th>
+              <th className="px-4 py-3">Хайрцаг</th>
               <th className="px-4 py-3">Ажлын №</th>
               <th className="px-4 py-3">Ирсэн огноо</th>
               <th className="px-4 py-3">Нийлүүлэгч</th>
-              <th className="px-4 py-3">Үүссэн</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -249,23 +253,19 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
                   <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-800">
                     {r.epc_hex}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500">
-                    {safeUri(r.epc_hex) || "—"}
-                  </td>
                   <td className="px-4 py-2 text-slate-700">{r.serial}</td>
                   <td className="px-4 py-2 text-slate-700">
-                    {r.products?.name || (
-                      <span className="text-slate-400">ref {r.products?.item_reference}</span>
-                    )}
+                    {r.products?.name || <span className="text-slate-400">—</span>}
                   </td>
+                  <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-600">
+                    {r.products?.gtin ?? "—"}
+                  </td>
+                  <td className="px-4 py-2 text-slate-700">{r.box_no ?? "—"}</td>
                   <td className="px-4 py-2 text-slate-700">{r.jobs?.job_number}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-slate-700">
                     {r.jobs?.arrival_date}
                   </td>
                   <td className="px-4 py-2 text-slate-700">{r.jobs?.supplier ?? "—"}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-slate-500">
-                    {new Date(r.created_at).toLocaleString()}
-                  </td>
                 </tr>
               ))
             )}

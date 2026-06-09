@@ -7,21 +7,20 @@
 -- АЛХАМ 1. Supabase Dashboard → Authentication → Users → "Add user"
 --          дээр имэйл/нууц үгээр хэрэглэгчээ үүсгэ (эсвэл өөрөө бүртгүүл).
 --
--- АЛХАМ 2. Доорх 4 утгыг өөрийнхөөрөө соль (имэйл, компанийн нэр,
---          GS1 company prefix, default filter), дараа нь Supabase
---          SQL Editor дотор бүхэлд нь ажиллуул.
+-- АЛХАМ 2. Доорх 2 утгыг өөрийнхөөрөө соль (имэйл, компанийн нэр),
+--          дараа нь Supabase SQL Editor дотор бүхэлд нь ажиллуул.
 --
--- ⚠️ gs1_company_prefix нь 6-12 оронтой, тэргүүлэх тэг хадгалагдсан
---    текст байх ёстой (жишээ '8600001' = 7 орон).
+-- Тэмдэглэл: Аппад одоо Бүртгүүлэх/Онбординг UI бий тул энэ файл нь зөвхөн
+--   гар аргаар тенант холбох сонголт. Жижиглэн дэлгүүр олон брэндийн бараа
+--   авдаг тул дэлгүүрийн ӨӨРИЙН GS1 угтвар шаардлагагүй — EPC-г бараа бүрийн
+--   GTIN (баркод)-оос үүсгэнэ.
 -- ============================================================
 
 do $$
 declare
   -- ↓↓↓ ӨӨРИЙНХ ИЙГ БИЧНЭ ↓↓↓
   v_email   text := 'you@company.com';
-  v_company text := 'Миний компани';
-  v_prefix  text := '8600001';
-  v_filter  smallint := 1;
+  v_company text := 'Миний дэлгүүр';
   -- ↑↑↑ ─────────────────── ↑↑↑
   v_user   uuid;
   v_tenant uuid;
@@ -39,8 +38,8 @@ begin
   end if;
 
   -- Тенант үүсгэх
-  insert into tenants (name, gs1_company_prefix, default_filter_value)
-  values (v_company, v_prefix, v_filter)
+  insert into tenants (name, default_filter_value)
+  values (v_company, 1)
   returning id into v_tenant;
 
   -- Хэрэглэгчийг tenant-тай холбож, admin эрх өгөх

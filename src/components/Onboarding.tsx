@@ -17,7 +17,6 @@ interface Props {
  */
 export default function Onboarding({ onDone }: Props) {
   const [tenantName, setTenantName] = useState("");
-  const [gs1Prefix, setGs1Prefix] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,7 +25,7 @@ export default function Onboarding({ onDone }: Props) {
     setError(null);
     setLoading(true);
     try {
-      await createTenantAndAdmin({ tenantName, gs1Prefix });
+      await createTenantAndAdmin({ tenantName });
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -56,19 +55,8 @@ export default function Onboarding({ onDone }: Props) {
           value={tenantName}
           onChange={(e) => setTenantName(e.target.value)}
           className={inputCls + " mb-4"}
-          placeholder="Миний компани"
+          placeholder="Миний дэлгүүр"
         />
-
-        <label className={labelCls}>GS1 Company Prefix</label>
-        <input
-          required
-          value={gs1Prefix}
-          onChange={(e) => setGs1Prefix(e.target.value)}
-          className={inputCls + " mb-1"}
-          placeholder="8600001"
-          inputMode="numeric"
-        />
-        <p className="mb-4 text-xs text-slate-500">6–12 оронтой.</p>
 
         <button
           type="submit"

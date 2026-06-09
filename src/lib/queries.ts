@@ -14,8 +14,8 @@ export interface JobOption {
 export interface ProductOption {
   id: string;
   name: string | null;
-  source_gtin: string | null;
-  item_reference: string;
+  gtin: string;
+  sku: string | null;
 }
 
 /** EPC хүснэгтийн нэг мөр (jobs, products-той нийлүүлсэн). */
@@ -23,6 +23,7 @@ export interface EpcRow {
   id: string;
   serial: number;
   epc_hex: string;
+  box_no: string | null;
   created_at: string;
   job_id: string;
   product_id: string;
@@ -33,8 +34,8 @@ export interface EpcRow {
   } | null;
   products: {
     name: string | null;
-    source_gtin: string | null;
-    item_reference: string;
+    gtin: string;
+    sku: string | null;
   } | null;
 }
 
@@ -46,9 +47,9 @@ export interface EpcFilters {
 }
 
 const EPC_SELECT =
-  "id, serial, epc_hex, created_at, job_id, product_id, " +
+  "id, serial, epc_hex, box_no, created_at, job_id, product_id, " +
   "jobs!inner(job_number, arrival_date, supplier), " +
-  "products(name, source_gtin, item_reference)";
+  "products(name, gtin, sku)";
 
 /** Шүүлтийн dropdown-д зориулж ажлуудыг татна (шинэ нь эхэнд). */
 export async function fetchJobs(): Promise<JobOption[]> {
@@ -65,7 +66,7 @@ export async function fetchJobs(): Promise<JobOption[]> {
 export async function fetchProducts(): Promise<ProductOption[]> {
   const { data, error } = await supabase
     .from("products")
-    .select("id, name, source_gtin, item_reference")
+    .select("id, name, gtin, sku")
     .order("name", { ascending: true });
   if (error) throw error;
   return (data ?? []) as ProductOption[];

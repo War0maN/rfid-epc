@@ -16,7 +16,9 @@
 export interface ZplLabelInput {
   epcHex: string;
   name?: string | null;
-  itemReference?: string | null;
+  gtin?: string | null;
+  sku?: string | null;
+  boxNo?: string | null;
   serial?: number | string | null;
 }
 
@@ -39,7 +41,9 @@ function sanitize(value: unknown): string {
 export function buildZplLabel(input: ZplLabelInput, opts: ZplOptions = {}): string {
   const { copies = 1, includeName = true } = opts;
   const hex = sanitize(input.epcHex).toUpperCase();
-  const ref = sanitize(input.itemReference);
+  const gtin = sanitize(input.gtin);
+  const sku = sanitize(input.sku);
+  const box = sanitize(input.boxNo);
   const serial = sanitize(input.serial);
   const name = sanitize(input.name);
 
@@ -50,10 +54,16 @@ export function buildZplLabel(input: ZplLabelInput, opts: ZplOptions = {}): stri
     lines.push(`^FO40,${y}^A0N,28,28^FD${name}^FS`);
     y += 36;
   }
-  // Item ref + serial (ASCII, үргэлж аюулгүй)
-  const idLine = [ref && `Ref: ${ref}`, serial && `SN: ${serial}`].filter(Boolean).join("  ");
+  // GTIN / SKU (ASCII, үргэлж аюулгүй)
+  const idLine = [gtin && `GTIN: ${gtin}`, sku && `SKU: ${sku}`].filter(Boolean).join("  ");
   if (idLine) {
     lines.push(`^FO40,${y}^A0N,22,22^FD${idLine}^FS`);
+    y += 30;
+  }
+  // Хайрцаг + serial (мөшгих)
+  const boxLine = [box && `Box: ${box}`, serial && `SN: ${serial}`].filter(Boolean).join("  ");
+  if (boxLine) {
+    lines.push(`^FO40,${y}^A0N,22,22^FD${boxLine}^FS`);
     y += 30;
   }
   // EPC hex (хүн уншихуйц)

@@ -7,10 +7,11 @@
 create extension if not exists "pgcrypto";
 
 -- ---------- tenants ----------
+-- Жижиглэн дэлгүүр олон брэндийн бараа хүлээн авдаг тул дэлгүүрийн ӨӨРИЙН GS1
+-- угтвар хэрэглэхгүй. EPC-г бараа тус бүрийн GTIN (баркод)-оос үүсгэнэ.
 create table if not exists tenants (
   id                    uuid primary key default gen_random_uuid(),
   name                  text not null,
-  gs1_company_prefix    text not null,          -- тенантын GS1 угтвар (6-12 орон)
   default_filter_value  smallint not null default 1,
   created_at            timestamptz not null default now()
 );
@@ -36,18 +37,19 @@ as $$
 $$;
 
 -- ---------- products (барааны каталог) ----------
+-- Бараа бүр өөрийн GTIN (EAN-13 баркод)-оор тодорхойлогдоно. EPC-г энэ GTIN-ээс
+-- шууд (SGTIN-96) үүсгэнэ — аль брэндийнх нь хамаагүй.
 create table if not exists products (
   id              uuid primary key default gen_random_uuid(),
   tenant_id       uuid not null references tenants(id) default current_tenant_id(),
-  source_gtin     text,                  -- үйлдвэрлэгчийн GTIN: ЗӨВХӨН таних/тааруулахад
-  indicator       smallint not null default 0,
-  item_reference  text not null,         -- тенантын prefix дор оноосон, EPC минтлэхэд
+  gtin            text not null,         -- EAN-13/баркод (EPC үүсгэх эх)
+  sku             text,                  -- нийлүүлэгчийн SKU/код
   name            text,
-  source          text not null default 'in_app' check (source in ('packing_list','in_app')),
-  created_at      timestamptz not null default now(),
-  unique (tenant_id, item_reference)
+  source          text not null default 'packing_list' check (source in ('packing_list','in_app')),
+  created_at      timestamptz not null default now()
 );
-create index if not exists products_tenant_gtin_idx on products (tenant_id, source_gtin);
+-- gtin-ийн индекс/давхцал хязгаарлалтыг доорх migration хэсэг үүсгэнэ
+-- (хуучин/шинэ DB хоёуланд нэг мөр ажиллана).
 
 -- ---------- serial_counters (бараа бүрийн сүүлийн serial) ----------
 create table if not exists serial_counters (
@@ -76,6 +78,7 @@ create table if not exists epc_codes (
   tenant_id   uuid not null references tenants(id) default current_tenant_id(),
   job_id      uuid not null references jobs(id) on delete cascade,
   product_id  uuid not null references products(id),
+  box_no      text,                       -- хайрцагны дугаар (шошго наахад мөшгих)
   serial      bigint not null,
   epc_hex     char(24) not null,
   created_at  timestamptz not null default now(),
@@ -264,6 +267,7 @@ $$;
 drop function if exists public_tenants();
 drop function if exists resolve_login_email(uuid, text);
 drop function if exists create_tenant_and_admin(text, text, smallint, text);
+drop function if exists create_tenant_and_admin(text, text, smallint);
 
 -- Тенантын гишүүн зэрэглэлийг шалгах туслах (RLS policy-д)
 create or replace function is_tenant_admin()
@@ -286,9 +290,7 @@ create policy "tenant members read" on profiles
 
 -- ---------- Шинэ тенант + admin профайл үүсгэх ----------
 -- Бүртгүүлж нэвтэрсэн (session-тэй) хэрэглэгч өөрийн байгууллагыг үүсгэнэ.
-create or replace function create_tenant_and_admin(
-  p_name text, p_prefix text, p_filter smallint
-) returns uuid
+create or replace function create_tenant_and_admin(p_name text) returns uuid
 language plpgsql
 security definer
 set search_path = public
@@ -303,12 +305,12 @@ begin
   if exists (select 1 from profiles where id = v_uid) then
     raise exception 'энэ хэрэглэгч аль хэдийн тенанттай';
   end if;
-  if length(coalesce(p_prefix, '')) < 6 or length(p_prefix) > 12 then
-    raise exception 'GS1 company prefix 6-12 оронтой байх ёстой';
+  if length(coalesce(trim(p_name), '')) = 0 then
+    raise exception 'байгууллагын нэр хоосон байна';
   end if;
 
-  insert into tenants (name, gs1_company_prefix, default_filter_value)
-  values (p_name, p_prefix, coalesce(p_filter, 1))
+  insert into tenants (name, default_filter_value)
+  values (trim(p_name), 1)
   returning id into v_tenant;
 
   insert into profiles (id, tenant_id, email, role)
@@ -317,7 +319,7 @@ begin
   return v_tenant;
 end;
 $$;
-grant execute on function create_tenant_and_admin(text, text, smallint) to authenticated;
+grant execute on function create_tenant_and_admin(text) to authenticated;
 
 -- ============================================================
 -- Урилга (invite) — admin тенантад хэрэглэгч нэмэх
@@ -383,3 +385,25 @@ begin
 end;
 $$;
 grant execute on function accept_invite() to authenticated;
+
+-- ============================================================
+-- Migration: жижиглэн дэлгүүрийн (GTIN-төвтэй) загвар руу шилжүүлэх
+--   Аль хэдийн үүссэн DB дээр дутуу багана/хязгаарлалтыг нэмнэ.
+--   Шинэ DB дээр create table-ууд аль хэдийн агуулсан тул эдгээр нь
+--   зүгээр л алгасагдана (бүгд "if not exists" / re-run аюулгүй).
+-- ============================================================
+-- tenants: дэлгүүрийн өөрийн GS1 угтвар хэрэггүй болсон
+alter table tenants  drop column if exists gs1_company_prefix;
+
+-- products: GTIN-төвтэй болгох; хуучин кодлолтын баганыг устгах
+alter table products add  column if not exists gtin text;
+alter table products add  column if not exists sku  text;
+alter table products drop column if exists source_gtin;     -- индексээ дагаж устна
+alter table products drop column if exists item_reference;  -- хуучин unique-ээ дагаж устна
+alter table products drop column if exists indicator;
+create index if not exists products_tenant_gtin_idx on products (tenant_id, gtin);
+create unique index if not exists products_tenant_gtin_uidx
+  on products (tenant_id, gtin) where gtin is not null;
+
+-- epc_codes: хайрцагны дугаар
+alter table epc_codes add column if not exists box_no text;

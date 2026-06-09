@@ -30,7 +30,7 @@ function describe(row: AuditRow): string {
 
   const src = row.action === "delete" ? before : after;
   if (row.entity === "job") return src.job_number ? `№ ${src.job_number}` : "";
-  if (row.entity === "product") return (src.name as string) || `ref ${src.item_reference ?? ""}`;
+  if (row.entity === "product") return (src.name as string) || (src.gtin as string) || "";
   if (row.entity === "tenant") return (src.name as string) || "";
   return "";
 }

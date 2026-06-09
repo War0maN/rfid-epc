@@ -1,14 +1,16 @@
 // ============================================================
 // Багц EPC үүсгэх бүрэн flow: allocate -> encode -> insert
-// Нэг Job дотор олон бараанд EPC үүсгэнэ.
+// Нэг Job дотор олон бараа/хайрцагт EPC үүсгэнэ. EPC-г бараа бүрийн
+// GTIN (баркод)-оос шууд (SGTIN-96) үүсгэнэ — брэнд хамаарахгүй.
 // ============================================================
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { sgtin96Batch } from "./epc";
+import { sgtin96BatchFromGtin } from "./epc";
 import { logAuditEvent } from "./audit";
 
 export interface JobLine {
-  productId: string; // products.id
-  count: number;     // тоо ширхэг
+  productId: string;     // products.id
+  count: number;         // тоо ширхэг (piece)
+  boxNo?: string | null; // хайрцагны дугаар (box No)
 }
 
 export interface GeneratedEpc {
@@ -17,25 +19,21 @@ export interface GeneratedEpc {
   epcHex: string;
 }
 
-/**
- * Тенантын мэдээлэл (prefix, filter)-г нэг удаа татна.
- * RLS-ийн ачаар зөвхөн нэвтэрсэн хэрэглэгчийн тенант буцна.
- */
+/** Тенант id + default filter-г нэг удаа татна (RLS-ээр зөвхөн өөрийн тенант). */
 async function getTenantConfig(supabase: SupabaseClient) {
   const { data, error } = await supabase
     .from("tenants")
-    .select("id, gs1_company_prefix, default_filter_value")
+    .select("id, default_filter_value")
     .single();
   if (error) throw error;
-  return data as { id: string; gs1_company_prefix: string; default_filter_value: number };
+  return data as { id: string; default_filter_value: number };
 }
 
 /**
- * Нэг Job-ийн мөр бүрд:
- *   1) allocate_serials() -> start serial (атом, давхцалгүй)
- *   2) sgtin96Batch()     -> EPC hex багц
- *   3) epc_codes-д insert
- * Бүх EPC-ийг буцаана.
+ * Job-ийн мөр бүрд:
+ *   1) allocate_serials() -> start serial (атом, давхцалгүй, бараа тус бүрд)
+ *   2) барааны GTIN-ээс EPC багц encode (SGTIN-96)
+ *   3) epc_codes-д box_no-той хамт insert
  */
 export async function generateEpcsForJob(
   supabase: SupabaseClient,
@@ -43,12 +41,23 @@ export async function generateEpcsForJob(
 ): Promise<GeneratedEpc[]> {
   const tenant = await getTenantConfig(supabase);
   const filter = tenant.default_filter_value ?? 1;
-  const prefixLen = tenant.gs1_company_prefix.length;
+
+  // Барааны GTIN-уудыг нэг удаа татаж map болгоё.
+  const productIds = [...new Set(params.lines.map((l) => l.productId))];
+  const { data: products, error: pErr } = await supabase
+    .from("products")
+    .select("id, gtin")
+    .in("id", productIds);
+  if (pErr) throw pErr;
+  const gtinById = new Map(
+    (products as { id: string; gtin: string }[]).map((p) => [p.id, p.gtin])
+  );
 
   const allRows: {
     tenant_id: string;
     job_id: string;
     product_id: string;
+    box_no: string | null;
     serial: string;
     epc_hex: string;
   }[] = [];
@@ -56,22 +65,10 @@ export async function generateEpcsForJob(
 
   for (const line of params.lines) {
     if (line.count < 1) continue;
+    const gtin = gtinById.get(line.productId);
+    if (!gtin) throw new Error(`бараа ${line.productId}: GTIN олдсонгүй`);
 
-    // Барааны indicator + item_reference авах
-    const { data: product, error: pErr } = await supabase
-      .from("products")
-      .select("id, indicator, item_reference")
-      .eq("id", line.productId)
-      .single();
-    if (pErr) throw pErr;
-
-    // indicatorItemRef = indicator + item_reference (тэгээр гүйцээсэн)
-    const itemDigits = 12 - prefixLen;
-    const indicatorItemRef =
-      String(product.indicator) +
-      String(product.item_reference).replace(/\D/g, "").padStart(itemDigits, "0");
-
-    // 1) Атом serial allocation
+    // 1) Атом serial allocation (бараа тус бүрд, бүх хайрцгийн дунд давхцахгүй)
     const { data: startData, error: aErr } = await supabase.rpc("allocate_serials", {
       p_tenant: tenant.id,
       p_product: line.productId,
@@ -80,12 +77,8 @@ export async function generateEpcsForJob(
     if (aErr) throw aErr;
     const startSerial = BigInt(startData as string | number);
 
-    // 2) EPC багц encode
-    const batch = sgtin96Batch(
-      { companyPrefix: tenant.gs1_company_prefix, indicatorItemRef, filter },
-      startSerial,
-      line.count
-    );
+    // 2) GTIN-ээс EPC багц encode
+    const batch = sgtin96BatchFromGtin(gtin, startSerial, line.count, filter);
 
     for (const b of batch) {
       const serialStr = b.serial.toString();
@@ -93,6 +86,7 @@ export async function generateEpcsForJob(
         tenant_id: tenant.id,
         job_id: params.jobId,
         product_id: line.productId,
+        box_no: line.boxNo ?? null,
         serial: serialStr,
         epc_hex: b.epcHex,
       });
@@ -106,10 +100,7 @@ export async function generateEpcsForJob(
     if (iErr) throw iErr;
   }
 
-  // Job статус шинэчлэх
   await supabase.from("jobs").update({ status: "generated" }).eq("id", params.jobId);
-
-  // Аудит: хэдэн EPC үүсгэснийг бизнес үйлдэл болгон бичих
   await logAuditEvent(supabase, "generate", "job", params.jobId, { count: result.length });
 
   return result;

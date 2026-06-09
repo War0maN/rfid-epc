@@ -54,15 +54,9 @@ export async function signUpUser(
 }
 
 /** Нэвтэрсэн хэрэглэгчид шинэ тенант + admin профайл үүсгэх. */
-export async function createTenantAndAdmin(params: {
-  tenantName: string;
-  gs1Prefix: string;
-  filter?: number;
-}): Promise<void> {
+export async function createTenantAndAdmin(params: { tenantName: string }): Promise<void> {
   const { error } = await supabase.rpc("create_tenant_and_admin", {
     p_name: params.tenantName.trim(),
-    p_prefix: params.gs1Prefix.replace(/\D/g, ""),
-    p_filter: params.filter ?? 1,
   });
   if (error) throw error;
 }

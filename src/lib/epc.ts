@@ -102,6 +102,80 @@ export function sgtin96Batch(
   return out;
 }
 
+// ============================================================
+// GTIN (EAN баркод) -> SGTIN-96
+// Жижиглэн дэлгүүр олон брэндийн бараа хүлээн авдаг тул бараа бүрийн GTIN-ээс
+// шууд EPC үүсгэнэ. Брэнд бүрийн жинхэнэ GCP (company prefix) уртыг мэдэхгүй ч,
+// SGTIN-ийг ямар ч хүчинтэй хуваалтаар кодолсон GTIN нь decode хийхэд ИЖИЛ
+// буцдаг (companyPrefix ⧺ itemReference = GTIN-ийн 12 орон). Тиймээс дотоод
+// тооллогод тогтмол default хуваалт хангалттай.
+// ============================================================
+
+/** SGTIN хуваахад ашиглах default company-prefix урт (6–12). */
+export const DEFAULT_GCP_LENGTH = 7;
+
+/** GTIN check digit-ийг тооцоолно (GTIN-8/12/13/14, баруунаас 3,1,3,1…). */
+export function gtinCheckDigit(digitsWithoutCheck: string): number {
+  const d = digitsWithoutCheck.replace(/\D/g, "");
+  let sum = 0;
+  for (let i = 0; i < d.length; i++) {
+    const n = Number(d[d.length - 1 - i]);
+    sum += i % 2 === 0 ? n * 3 : n;
+  }
+  return (10 - (sum % 10)) % 10;
+}
+
+/**
+ * Дурын GTIN/EAN баркодыг 14 оронтой GTIN-14 болгож нормчилж, check digit-ийг
+ * шалгана. (EAN-8/UPC-12/EAN-13/GTIN-14-г бүгдийг хүлээн авна.)
+ */
+export function normalizeGtin(raw: string): string {
+  const d = String(raw).replace(/\D/g, "");
+  if (d.length < 8 || d.length > 14) {
+    throw new Error(`GTIN/баркод "${raw}" урт буруу (${d.length} орон; 8–14 байх ёстой)`);
+  }
+  const g14 = d.padStart(14, "0");
+  if (gtinCheckDigit(g14.slice(0, 13)) !== Number(g14[13])) {
+    throw new Error(`Баркод "${raw}"-ийн шалгах орон таарахгүй байна`);
+  }
+  return g14;
+}
+
+/**
+ * GTIN/EAN баркод -> SGTIN-96 hex (24 тэмдэгт). Default GCP хуваалтаар.
+ * indicator = GTIN-14-ийн эхний орон (хэрэглээний бараанд 0).
+ */
+export function sgtin96FromGtin(
+  gtin: string,
+  serial: bigint | number,
+  filter = 1,
+  gcpLength: number = DEFAULT_GCP_LENGTH
+): string {
+  const g14 = normalizeGtin(gtin);
+  const indicator = Number(g14[0]);
+  const data12 = g14.slice(1, 13);
+  const companyPrefix = data12.slice(0, gcpLength);
+  const itemReference = data12.slice(gcpLength);
+  const indicatorItemRef = buildIndicatorItemRef(gcpLength, indicator, itemReference);
+  return sgtin96Encode({ companyPrefix, indicatorItemRef, serial, filter });
+}
+
+/** GTIN-ээс эхлэх serial-аас count ширхэг EPC багц үүсгэнэ. */
+export function sgtin96BatchFromGtin(
+  gtin: string,
+  startSerial: bigint | number,
+  count: number,
+  filter = 1,
+  gcpLength: number = DEFAULT_GCP_LENGTH
+): { serial: bigint; epcHex: string }[] {
+  const g14 = normalizeGtin(gtin);
+  const indicator = Number(g14[0]);
+  const data12 = g14.slice(1, 13);
+  const companyPrefix = data12.slice(0, gcpLength);
+  const indicatorItemRef = buildIndicatorItemRef(gcpLength, indicator, data12.slice(gcpLength));
+  return sgtin96Batch({ companyPrefix, indicatorItemRef, filter }, startSerial, count);
+}
+
 /**
  * RFID уншигчаас ирсэн EPC hex-г нормчилно: зай/цэг арилгаж, том үсэг болгоно.
  * 24 тэмдэгт hex биш бол алдаа шиднэ. Хайхын өмнө энэ функцээр дамжуул.
@@ -172,16 +246,4 @@ export function sgtin96HexToUri(epcHex: string): string {
 export function sgtin96HexToTagUri(epcHex: string): string {
   const { filter, companyPrefix, indicatorItemRef, serial } = sgtin96Decode(epcHex);
   return `urn:epc:tag:sgtin-96:${filter}.${companyPrefix}.${indicatorItemRef}.${serial}`;
-}
-
-/** GTIN-ийн check digit-г тооцоолно (GTIN-8/12/13/14). */
-export function gtinCheckDigit(digitsWithoutCheck: string): number {
-  const d = digitsWithoutCheck.replace(/\D/g, "");
-  let sum = 0;
-  // Баруунаас эхлэн ээлжлэн 3,1,3,1...
-  for (let i = 0; i < d.length; i++) {
-    const n = Number(d[d.length - 1 - i]);
-    sum += i % 2 === 0 ? n * 3 : n;
-  }
-  return (10 - (sum % 10)) % 10;
 }
