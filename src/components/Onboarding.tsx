@@ -18,7 +18,6 @@ interface Props {
 export default function Onboarding({ onDone }: Props) {
   const [tenantName, setTenantName] = useState("");
   const [gs1Prefix, setGs1Prefix] = useState("");
-  const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,7 +26,7 @@ export default function Onboarding({ onDone }: Props) {
     setError(null);
     setLoading(true);
     try {
-      await createTenantAndAdmin({ tenantName, gs1Prefix, username });
+      await createTenantAndAdmin({ tenantName, gs1Prefix });
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -70,15 +69,6 @@ export default function Onboarding({ onDone }: Props) {
           inputMode="numeric"
         />
         <p className="mb-4 text-xs text-slate-500">6–12 оронтой.</p>
-
-        <label className={labelCls}>Нэвтрэх нэр</label>
-        <input
-          required
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          className={inputCls + " mb-4"}
-          placeholder="admin"
-        />
 
         <button
           type="submit"

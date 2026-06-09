@@ -134,27 +134,36 @@ alter table serial_counters enable row level security;
 alter table jobs            enable row level security;
 alter table epc_codes       enable row level security;
 
+-- (policy-уудыг drop-if-exists-ээр хамгаалж, файлыг дахин ажиллуулахад
+--  алдаагүй байлгана.)
+
 -- profiles: хэрэглэгч зөвхөн өөрийн профайлыг харна
+drop policy if exists "own profile" on profiles;
 create policy "own profile" on profiles
   for select using (id = auth.uid());
 
 -- tenants: гишүүн зөвхөн өөрийн тенантыг харна
+drop policy if exists "own tenant" on tenants;
 create policy "own tenant" on tenants
   for select using (id = current_tenant_id());
 
 -- Тенантын мөрүүд: бүрэн хандалт зөвхөн өөрийн тенантад
+drop policy if exists "tenant products" on products;
 create policy "tenant products" on products
   for all using (tenant_id = current_tenant_id())
           with check (tenant_id = current_tenant_id());
 
+drop policy if exists "tenant serial_counters" on serial_counters;
 create policy "tenant serial_counters" on serial_counters
   for all using (tenant_id = current_tenant_id())
           with check (tenant_id = current_tenant_id());
 
+drop policy if exists "tenant jobs" on jobs;
 create policy "tenant jobs" on jobs
   for all using (tenant_id = current_tenant_id())
           with check (tenant_id = current_tenant_id());
 
+drop policy if exists "tenant epc_codes" on epc_codes;
 create policy "tenant epc_codes" on epc_codes
   for all using (tenant_id = current_tenant_id())
           with check (tenant_id = current_tenant_id());
@@ -185,6 +194,7 @@ create index if not exists audit_tenant_date_idx on audit_log (tenant_id, create
 alter table audit_log enable row level security;
 
 -- Зөвхөн өөрийн тенантын логийг унших. Insert/update/delete policy ЗОРИУД алга.
+drop policy if exists "tenant audit read" on audit_log;
 create policy "tenant audit read" on audit_log
   for select using (tenant_id = current_tenant_id());
 
@@ -242,53 +252,42 @@ end;
 $$;
 
 -- ============================================================
--- Бүртгүүлэх / нэвтрэх дэмжлэг (multi-tenant signup + tenant-сонголттой login)
---   * profiles.username — тенант доторх давтагдашгүй нэвтрэх нэр.
---   * public_tenants() — нэвтрэх дэлгэцийн tenant dropdown-д (anon уншина).
---   * resolve_login_email() — (тенант, username) -> имэйл (signInWithPassword-д).
---   * create_tenant_and_admin() — шинэ хэрэглэгч өөрийн тенант үүсгэж admin болно.
+-- Бүртгүүлэх / нэвтрэх (имэйл + нууц үг) ба тенантад урих (invite)
+--   * Нэвтрэлт нь имэйл+нууц үгээр (Supabase auth). Имэйл нь хэрэглэгчийг
+--     дэлхийд давтагдашгүйгээр тодорхойлдог тул тенант сонгох шаардлагагүй.
+--   * create_tenant_and_admin() — шинэ хэрэглэгч өөрийн тенант + admin.
+--   * invites + accept_invite() — admin имэйлээр урих, уригдсан хэрэглэгч
+--     бүртгүүлэхэд тенантад operator/admin болж нэгдэнэ.
 -- ============================================================
 
--- Нэвтрэх нэр (тенант доторх давхцалгүй)
-alter table profiles add column if not exists username text;
-create unique index if not exists profiles_tenant_username_idx
-  on profiles (tenant_id, lower(username)) where username is not null;
+-- Өмнөх tenant-сонголттой login-ы илүүдэл объектыг цэвэрлэх (re-run аюулгүй)
+drop function if exists public_tenants();
+drop function if exists resolve_login_email(uuid, text);
+drop function if exists create_tenant_and_admin(text, text, smallint, text);
 
--- ---------- Нэвтрэхээс өмнө тенантын жагсаалт ----------
--- ⚠️ Энэ нь компаниудын НЭРИЙГ нийтэд (anon) ил болгоно. Хэрэв нууцлахыг
---    хүсвэл tenant dropdown-г болиод зөвхөн имэйлээр нэвтрүүлж болно.
-create or replace function public_tenants()
-returns table (id uuid, name text)
+-- Тенантын гишүүн зэрэглэлийг шалгах туслах (RLS policy-д)
+create or replace function is_tenant_admin()
+returns boolean
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  select id, name from tenants order by name
+  select exists (
+    select 1 from profiles
+    where id = auth.uid() and tenant_id = current_tenant_id() and role = 'admin'
+  )
 $$;
-grant execute on function public_tenants() to anon, authenticated;
 
--- ---------- (тенант, username) -> имэйл ----------
--- Нэвтрэхээс өмнө username-аас имэйл олж signInWithPassword-д дамжуулна.
-create or replace function resolve_login_email(p_tenant uuid, p_username text)
-returns text
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select u.email
-  from profiles p
-  join auth.users u on u.id = p.id
-  where p.tenant_id = p_tenant and lower(p.username) = lower(p_username)
-  limit 1
-$$;
-grant execute on function resolve_login_email(uuid, text) to anon, authenticated;
+-- profiles: гишүүн өөрийн тенантын БҮХ гишүүнийг харна (Хэрэглэгчид жагсаалт).
+drop policy if exists "tenant members read" on profiles;
+create policy "tenant members read" on profiles
+  for select using (tenant_id = current_tenant_id());
 
 -- ---------- Шинэ тенант + admin профайл үүсгэх ----------
 -- Бүртгүүлж нэвтэрсэн (session-тэй) хэрэглэгч өөрийн байгууллагыг үүсгэнэ.
 create or replace function create_tenant_and_admin(
-  p_name text, p_prefix text, p_filter smallint, p_username text
+  p_name text, p_prefix text, p_filter smallint
 ) returns uuid
 language plpgsql
 security definer
@@ -312,10 +311,75 @@ begin
   values (p_name, p_prefix, coalesce(p_filter, 1))
   returning id into v_tenant;
 
-  insert into profiles (id, tenant_id, email, username, role)
-  values (v_uid, v_tenant, (select email from auth.users where id = v_uid), p_username, 'admin');
+  insert into profiles (id, tenant_id, email, role)
+  values (v_uid, v_tenant, (select email from auth.users where id = v_uid), 'admin');
 
   return v_tenant;
 end;
 $$;
-grant execute on function create_tenant_and_admin(text, text, smallint, text) to authenticated;
+grant execute on function create_tenant_and_admin(text, text, smallint) to authenticated;
+
+-- ============================================================
+-- Урилга (invite) — admin тенантад хэрэглэгч нэмэх
+-- ============================================================
+create table if not exists invites (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenants(id) on delete cascade,
+  email       text not null,
+  role        text not null default 'operator' check (role in ('admin','operator')),
+  created_by  uuid references auth.users(id),
+  created_at  timestamptz not null default now(),
+  unique (tenant_id, email)
+);
+create index if not exists invites_email_idx on invites (lower(email));
+
+alter table invites enable row level security;
+
+-- Гишүүн өөрийн тенантын урилгуудыг харна; зөвхөн admin нэмж/устгана.
+drop policy if exists "tenant invites read" on invites;
+create policy "tenant invites read" on invites
+  for select using (tenant_id = current_tenant_id());
+drop policy if exists "tenant invites admin write" on invites;
+create policy "tenant invites admin write" on invites
+  for all using (tenant_id = current_tenant_id() and is_tenant_admin())
+          with check (tenant_id = current_tenant_id() and is_tenant_admin());
+
+-- ---------- Урилгыг хүлээн авах ----------
+-- Нэвтэрсэн хэрэглэгчийн имэйлд тохирох урилга байвал профайл үүсгэж
+-- тенантад нэгдүүлээд урилгыг устгана. Тенант id буцаана (эс олдвол null).
+create or replace function accept_invite()
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid   uuid := auth.uid();
+  v_email text;
+  v_inv   invites%rowtype;
+begin
+  if v_uid is null then
+    raise exception 'нэвтрээгүй байна';
+  end if;
+  if exists (select 1 from profiles where id = v_uid) then
+    return current_tenant_id();  -- аль хэдийн тенанттай
+  end if;
+
+  select email into v_email from auth.users where id = v_uid;
+
+  select * into v_inv from invites
+   where lower(email) = lower(v_email)
+   order by created_at
+   limit 1;
+  if not found then
+    return null;  -- урилга алга → шинэ тенант үүсгэх (онбординг)
+  end if;
+
+  insert into profiles (id, tenant_id, email, role)
+  values (v_uid, v_inv.tenant_id, v_email, v_inv.role);
+
+  delete from invites where id = v_inv.id;
+  return v_inv.tenant_id;
+end;
+$$;
+grant execute on function accept_invite() to authenticated;

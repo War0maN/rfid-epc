@@ -1,94 +1,60 @@
 // ============================================================
-// Multi-tenant signup / login туслахууд.
-//   * listTenants()           — нэвтрэх дэлгэцийн tenant dropdown.
-//   * loginWithTenant()       — тенант + (username|имэйл) + нууц үг.
+// Бүртгүүлэх / нэвтрэх (имэйл + нууц үг) ба тенантад урих (invite).
+//   * loginWithEmail()        — имэйл + нууц үг.
 //   * signUpAndCreateTenant() — шинэ хэрэглэгч + өөрийн тенант (admin).
-//   * fetchMyProfile()        — нэвтэрсэн хэрэглэгчийн профайл (онбординг шалгахад).
+//   * createTenantAndAdmin()  — нэвтэрсэн хэрэглэгчид тенант үүсгэх (онбординг).
+//   * acceptInvite()          — урилга байвал тенантад нэгдэх.
+//   * fetchMyProfile()        — нэвтэрсэн хэрэглэгчийн профайл.
+//   * listMembers/listInvites/addInvite/cancelInvite — admin удирдлага.
 // ============================================================
 import { supabase } from "./supabaseClient";
 
-export interface TenantOption {
-  id: string;
-  name: string;
-}
+export type Role = "admin" | "operator";
 
 export interface MyProfile {
   id: string;
   tenant_id: string;
   email: string | null;
-  username: string | null;
-  role: "admin" | "operator";
+  role: Role;
 }
 
-/** Нэвтрэхээс өмнө тенантуудыг (id+name) татна. */
-export async function listTenants(): Promise<TenantOption[]> {
-  const { data, error } = await supabase.rpc("public_tenants");
-  if (error) throw error;
-  return (data ?? []) as TenantOption[];
+export interface Member {
+  id: string;
+  email: string | null;
+  role: Role;
+  created_at: string;
 }
 
-/**
- * Тенант + нэвтрэх нэр/имэйл + нууц үгээр нэвтэрнэ.
- * Оролт "@"-тэй бол имэйл гэж үзнэ; үгүй бол тенант доторх username-аас
- * имэйлийг resolve хийнэ.
- */
-export async function loginWithTenant(params: {
-  tenantId?: string;
-  identifier: string; // username эсвэл имэйл
-  password: string;
-}): Promise<void> {
-  const id = params.identifier.trim();
-  let email = id;
-
-  // Имэйл биш (нэвтрэх нэр) бол тенант доторх username-аас имэйлийг resolve хийнэ.
-  // Имэйл оруулсан бол тенант сонгох шаардлагагүй (имэйл өөрөө хэрэглэгчийг тодорхойлно).
-  if (!id.includes("@")) {
-    if (!params.tenantId) {
-      throw new Error("Нэвтрэх нэрээр орохын тулд тенантаа сонгоно уу (эсвэл имэйлээ оруулна уу).");
-    }
-    const { data, error } = await supabase.rpc("resolve_login_email", {
-      p_tenant: params.tenantId,
-      p_username: id,
-    });
-    if (error) throw error;
-    if (!data) throw new Error("Энэ тенантад тийм нэвтрэх нэр олдсонгүй.");
-    email = data as string;
-  }
-
-  const { error } = await supabase.auth.signInWithPassword({ email, password: params.password });
-  if (error) throw error;
-}
-
-/**
- * Шинэ хэрэглэгч бүртгэж, өөрийн тенантыг үүсгэнэ (admin).
- * Имэйл баталгаажуулалт ИДЭВХГҮЙ үед signUp шууд session буцаадаг тул
- * тенантыг тэр дороо үүсгэнэ. Идэвхтэй бол хэрэглэгч имэйлээ баталгаажуулж,
- * дараа нь онбординг дэлгэцээр тенантаа үүсгэнэ.
- */
-export async function signUpAndCreateTenant(params: {
+export interface Invite {
+  id: string;
   email: string;
-  password: string;
-  username: string;
-  tenantName: string;
-  gs1Prefix: string;
-  filter?: number;
-}): Promise<{ needsEmailConfirm: boolean }> {
-  const { data, error } = await supabase.auth.signUp({
-    email: params.email.trim(),
-    password: params.password,
-  });
-  if (error) throw error;
-
-  // Session байхгүй бол имэйл баталгаажуулалт хэрэгтэй → тенантыг дараа үүсгэнэ.
-  if (!data.session) return { needsEmailConfirm: true };
-
-  await createTenantAndAdmin(params);
-  return { needsEmailConfirm: false };
+  role: Role;
+  created_at: string;
 }
 
-/** Нэвтэрсэн хэрэглэгчид шинэ тенант + admin профайл үүсгэх (онбординг). */
+/** Имэйл + нууц үгээр нэвтрэх. */
+export async function loginWithEmail(email: string, password: string): Promise<void> {
+  const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+  if (error) throw error;
+}
+
+/**
+ * Зөвхөн auth акаунт үүсгэнэ (имэйл + нууц үг). Тенант энд үүсгэхгүй —
+ * нэвтэрсний дараа урилга байвал тенантад нэгдэнэ, эс бөгөөс онбординг
+ * дэлгэцээр өөрийн тенантаа үүсгэнэ.
+ * Имэйл баталгаажуулалт идэвхтэй бол session буцахгүй (needsEmailConfirm).
+ */
+export async function signUpUser(
+  email: string,
+  password: string
+): Promise<{ needsEmailConfirm: boolean }> {
+  const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
+  if (error) throw error;
+  return { needsEmailConfirm: !data.session };
+}
+
+/** Нэвтэрсэн хэрэглэгчид шинэ тенант + admin профайл үүсгэх. */
 export async function createTenantAndAdmin(params: {
-  username: string;
   tenantName: string;
   gs1Prefix: string;
   filter?: number;
@@ -97,17 +63,69 @@ export async function createTenantAndAdmin(params: {
     p_name: params.tenantName.trim(),
     p_prefix: params.gs1Prefix.replace(/\D/g, ""),
     p_filter: params.filter ?? 1,
-    p_username: params.username.trim(),
   });
   if (error) throw error;
 }
 
-/** Нэвтэрсэн хэрэглэгчийн профайл. Байхгүй (онбординг хэрэгтэй) бол null. */
+/**
+ * Нэвтэрсэн хэрэглэгчийн имэйлд тохирох урилга байвал тенантад нэгдэнэ.
+ * Тенант id буцаана (нэгдсэн эсвэл аль хэдийн гишүүн), эс олдвол null
+ * (→ онбординг руу). Профайлгүй хэрэглэгчид нэвтэрсэн дараа дуудна.
+ */
+export async function acceptInvite(): Promise<string | null> {
+  const { data, error } = await supabase.rpc("accept_invite");
+  if (error) throw error;
+  return (data as string | null) ?? null;
+}
+
+/** Нэвтэрсэн хэрэглэгчийн профайл. Байхгүй (онбординг/урилга хэрэгтэй) бол null. */
 export async function fetchMyProfile(): Promise<MyProfile | null> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, tenant_id, email, username, role")
+    .select("id, tenant_id, email, role")
+    .eq("id", (await supabase.auth.getUser()).data.user?.id ?? "")
     .maybeSingle();
   if (error) throw error;
   return (data as MyProfile) ?? null;
+}
+
+// ---------- Admin: гишүүд ба урилга ----------
+
+/** Тенантын бүх гишүүн (profiles RLS-ийн ачаар зөвхөн өөрийн тенант). */
+export async function listMembers(): Promise<Member[]> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, role, created_at")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as Member[];
+}
+
+/** Хүлээгдэж буй урилгууд. */
+export async function listInvites(): Promise<Invite[]> {
+  const { data, error } = await supabase
+    .from("invites")
+    .select("id, email, role, created_at")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as Invite[];
+}
+
+/** Урилга нэмэх (admin). tenant_id-г DB default current_tenant_id()-аас авна. */
+export async function addInvite(email: string, role: Role): Promise<void> {
+  const { data: tenant, error: tErr } = await supabase.from("tenants").select("id").single();
+  if (tErr) throw tErr;
+  const { error } = await supabase.from("invites").insert({
+    tenant_id: (tenant as { id: string }).id,
+    email: email.trim().toLowerCase(),
+    role,
+    created_by: (await supabase.auth.getUser()).data.user?.id,
+  });
+  if (error) throw error;
+}
+
+/** Урилга цуцлах. */
+export async function cancelInvite(id: string): Promise<void> {
+  const { error } = await supabase.from("invites").delete().eq("id", id);
+  if (error) throw error;
 }

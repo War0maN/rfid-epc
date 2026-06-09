@@ -1,22 +1,41 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./hooks/useSession";
-import { fetchMyProfile, type MyProfile } from "./lib/tenantAuth";
+import { acceptInvite, fetchMyProfile, type MyProfile } from "./lib/tenantAuth";
 import Login from "./components/Login";
 import Onboarding from "./components/Onboarding";
 import CreateJobForm from "./components/CreateJobForm";
 import EpcTable from "./components/EpcTable";
 import EpcLookup from "./components/EpcLookup";
 import AuditLog from "./components/AuditLog";
+import Members from "./components/Members";
 
-type Tab = "create" | "table" | "lookup" | "audit";
+type Tab = "create" | "table" | "lookup" | "audit" | "members";
 
-const TABS: { id: Tab; label: string }[] = [
+const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "create", label: "Шинэ ажил" },
   { id: "table", label: "EPC хүснэгт" },
   { id: "lookup", label: "Хайлт" },
   { id: "audit", label: "Аудит" },
+  { id: "members", label: "Хэрэглэгчид", adminOnly: true },
 ];
+
+/**
+ * Профайл татах. Профайлгүй бол урилга шалгаж, байвал нэгдэнэ.
+ * Профайл (эсвэл онбординг хэрэгтэй бол null) буцаана.
+ */
+async function loadProfileOrAcceptInvite(): Promise<MyProfile | null> {
+  const p = await fetchMyProfile();
+  if (p) return p;
+  // Профайлгүй → урилга байгаа эсэхийг шалгах
+  try {
+    const joined = await acceptInvite();
+    if (joined) return await fetchMyProfile();
+  } catch {
+    // accept_invite функц/хүснэгт байхгүй бол онбординг руу уначна
+  }
+  return null;
+}
 
 function App() {
   const { session, loading } = useSession();
@@ -31,7 +50,7 @@ function App() {
   // Онбординг дууссаны дараа дахин татах (event — синхрон setState зүгээр).
   const loadProfile = useCallback(() => {
     setProfileChecked(false);
-    fetchMyProfile()
+    loadProfileOrAcceptInvite()
       .then(setProfile)
       .catch(() => setProfile(null))
       .finally(() => setProfileChecked(true));
@@ -42,7 +61,7 @@ function App() {
   useEffect(() => {
     if (!session) return; // session null үед render шууд Login руу чиглүүлнэ
     let active = true;
-    fetchMyProfile()
+    loadProfileOrAcceptInvite()
       .then((p) => active && setProfile(p))
       .catch(() => active && setProfile(null))
       .finally(() => active && setProfileChecked(true));
@@ -83,7 +102,7 @@ function App() {
         </div>
 
         <nav className="mx-auto flex max-w-6xl gap-1 px-4">
-          {TABS.map((t) => (
+          {TABS.filter((t) => !t.adminOnly || profile.role === "admin").map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
@@ -112,6 +131,7 @@ function App() {
         {tab === "table" && <EpcTable refreshKey={refreshKey} />}
         {tab === "lookup" && <EpcLookup />}
         {tab === "audit" && <AuditLog />}
+        {tab === "members" && profile.role === "admin" && <Members />}
       </main>
     </div>
   );
