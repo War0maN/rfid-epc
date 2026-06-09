@@ -453,7 +453,10 @@ alter table products drop column if exists indicator;
 create index if not exists products_tenant_gtin_idx on products (tenant_id, gtin);
 -- Бүрэн (partial биш) unique — Supabase upsert onConflict-д ашиглагдана.
 -- (null gtin олон мөр байж болно; Postgres null-уудыг ялгаатай гэж үздэг.)
-create unique index if not exists products_tenant_gtin_uidx
+-- Хуучин partial индекс (where gtin is not null) үлдсэн бол эхлээд устгана —
+-- эс бөгөөс "if not exists" нэр давхцлаас болж бүрэн индексийг алгасна.
+drop index if exists products_tenant_gtin_uidx;
+create unique index products_tenant_gtin_uidx
   on products (tenant_id, gtin);
 
 -- epc_codes: хайрцагны дугаар
