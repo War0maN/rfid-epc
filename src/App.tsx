@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./hooks/useSession";
+import { fetchMyProfile, type MyProfile } from "./lib/tenantAuth";
 import Login from "./components/Login";
+import Onboarding from "./components/Onboarding";
 import CreateJobForm from "./components/CreateJobForm";
 import EpcTable from "./components/EpcTable";
 import EpcLookup from "./components/EpcLookup";
@@ -22,7 +24,34 @@ function App() {
   // EpcTable-г сэргээх дохио: шинэ ажил үүсгэх бүрт нэмэгдэнэ.
   const [refreshKey, setRefreshKey] = useState(0);
 
-  if (loading) {
+  // Нэвтэрсэн хэрэглэгчийн профайл (тенанттай эсэхийг шалгах).
+  const [profile, setProfile] = useState<MyProfile | null>(null);
+  const [profileChecked, setProfileChecked] = useState(false);
+
+  // Онбординг дууссаны дараа дахин татах (event — синхрон setState зүгээр).
+  const loadProfile = useCallback(() => {
+    setProfileChecked(false);
+    fetchMyProfile()
+      .then(setProfile)
+      .catch(() => setProfile(null))
+      .finally(() => setProfileChecked(true));
+  }, []);
+
+  // Session өөрчлөгдөхөд профайлыг татах. Effect дотор синхроноор setState
+  // дуудахгүйн тулд (lint) бүх төлвийг promise-callback дотор сольё.
+  useEffect(() => {
+    if (!session) return; // session null үед render шууд Login руу чиглүүлнэ
+    let active = true;
+    fetchMyProfile()
+      .then((p) => active && setProfile(p))
+      .catch(() => active && setProfile(null))
+      .finally(() => active && setProfileChecked(true));
+    return () => {
+      active = false;
+    };
+  }, [session]);
+
+  if (loading || (session && !profileChecked)) {
     return (
       <div className="flex min-h-screen items-center justify-center text-slate-400">
         Ачаалж байна…
@@ -31,6 +60,9 @@ function App() {
   }
 
   if (!session) return <Login />;
+
+  // Нэвтэрсэн ч тенантгүй бол байгууллагаа үүсгүүлнэ.
+  if (!profile) return <Onboarding onDone={loadProfile} />;
 
   return (
     <div className="min-h-screen">

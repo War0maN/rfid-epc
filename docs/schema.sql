@@ -240,3 +240,82 @@ begin
   values (current_tenant_id(), auth.uid(), p_action, p_entity, p_entity_id, p_meta);
 end;
 $$;
+
+-- ============================================================
+-- Бүртгүүлэх / нэвтрэх дэмжлэг (multi-tenant signup + tenant-сонголттой login)
+--   * profiles.username — тенант доторх давтагдашгүй нэвтрэх нэр.
+--   * public_tenants() — нэвтрэх дэлгэцийн tenant dropdown-д (anon уншина).
+--   * resolve_login_email() — (тенант, username) -> имэйл (signInWithPassword-д).
+--   * create_tenant_and_admin() — шинэ хэрэглэгч өөрийн тенант үүсгэж admin болно.
+-- ============================================================
+
+-- Нэвтрэх нэр (тенант доторх давхцалгүй)
+alter table profiles add column if not exists username text;
+create unique index if not exists profiles_tenant_username_idx
+  on profiles (tenant_id, lower(username)) where username is not null;
+
+-- ---------- Нэвтрэхээс өмнө тенантын жагсаалт ----------
+-- ⚠️ Энэ нь компаниудын НЭРИЙГ нийтэд (anon) ил болгоно. Хэрэв нууцлахыг
+--    хүсвэл tenant dropdown-г болиод зөвхөн имэйлээр нэвтрүүлж болно.
+create or replace function public_tenants()
+returns table (id uuid, name text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select id, name from tenants order by name
+$$;
+grant execute on function public_tenants() to anon, authenticated;
+
+-- ---------- (тенант, username) -> имэйл ----------
+-- Нэвтрэхээс өмнө username-аас имэйл олж signInWithPassword-д дамжуулна.
+create or replace function resolve_login_email(p_tenant uuid, p_username text)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select u.email
+  from profiles p
+  join auth.users u on u.id = p.id
+  where p.tenant_id = p_tenant and lower(p.username) = lower(p_username)
+  limit 1
+$$;
+grant execute on function resolve_login_email(uuid, text) to anon, authenticated;
+
+-- ---------- Шинэ тенант + admin профайл үүсгэх ----------
+-- Бүртгүүлж нэвтэрсэн (session-тэй) хэрэглэгч өөрийн байгууллагыг үүсгэнэ.
+create or replace function create_tenant_and_admin(
+  p_name text, p_prefix text, p_filter smallint, p_username text
+) returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid;
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then
+    raise exception 'нэвтрээгүй байна';
+  end if;
+  if exists (select 1 from profiles where id = v_uid) then
+    raise exception 'энэ хэрэглэгч аль хэдийн тенанттай';
+  end if;
+  if length(coalesce(p_prefix, '')) < 6 or length(p_prefix) > 12 then
+    raise exception 'GS1 company prefix 6-12 оронтой байх ёстой';
+  end if;
+
+  insert into tenants (name, gs1_company_prefix, default_filter_value)
+  values (p_name, p_prefix, coalesce(p_filter, 1))
+  returning id into v_tenant;
+
+  insert into profiles (id, tenant_id, email, username, role)
+  values (v_uid, v_tenant, (select email from auth.users where id = v_uid), p_username, 'admin');
+
+  return v_tenant;
+end;
+$$;
+grant execute on function create_tenant_and_admin(text, text, smallint, text) to authenticated;
