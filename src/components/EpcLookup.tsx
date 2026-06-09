@@ -1,3 +1,4 @@
+import { errorMessage } from "../lib/errorMessage";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { normalizeEpc, sgtin96HexToUri, sgtin96HexToTagUri } from "../lib/epc";
 import { lookupEpc, type EpcRow } from "../lib/queries";
@@ -47,7 +48,7 @@ export default function EpcLookup() {
     try {
       hex = normalizeEpc(raw);
     } catch (err) {
-      setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+      setState({ kind: "error", message: errorMessage(err) });
       return;
     }
 
@@ -56,7 +57,7 @@ export default function EpcLookup() {
       const row = await lookupEpc(hex);
       setState(row ? { kind: "found", row } : { kind: "notfound" });
     } catch (err) {
-      setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+      setState({ kind: "error", message: errorMessage(err) });
     }
   }
 

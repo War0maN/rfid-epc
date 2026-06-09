@@ -1,3 +1,4 @@
+import { errorMessage } from "../lib/errorMessage";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   addInvite,
@@ -25,14 +26,14 @@ export default function Members() {
   const [saving, setSaving] = useState(false);
 
   function reload() {
-    listMembers().then(setMembers).catch((e) => setError(String(e)));
-    listInvites().then(setInvites).catch((e) => setError(String(e)));
+    listMembers().then(setMembers).catch((e) => setError(errorMessage(e)));
+    listInvites().then(setInvites).catch((e) => setError(errorMessage(e)));
   }
 
   useEffect(() => {
     let active = true;
-    listMembers().then((m) => active && setMembers(m)).catch((e) => active && setError(String(e)));
-    listInvites().then((i) => active && setInvites(i)).catch((e) => active && setError(String(e)));
+    listMembers().then((m) => active && setMembers(m)).catch((e) => active && setError(errorMessage(e)));
+    listInvites().then((i) => active && setInvites(i)).catch((e) => active && setError(errorMessage(e)));
     return () => {
       active = false;
     };
@@ -48,7 +49,7 @@ export default function Members() {
       setRole("operator");
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -60,7 +61,7 @@ export default function Members() {
       await cancelInvite(id);
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     }
   }
 

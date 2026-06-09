@@ -1,3 +1,4 @@
+import { errorMessage } from "../lib/errorMessage";
 import { useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { createTenantAndAdmin } from "../lib/tenantAuth";
@@ -28,7 +29,7 @@ export default function Onboarding({ onDone }: Props) {
       await createTenantAndAdmin({ tenantName });
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }

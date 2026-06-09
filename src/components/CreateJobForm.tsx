@@ -1,3 +1,4 @@
+import { errorMessage } from "../lib/errorMessage";
 import { useRef, useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { importPackingListXlsx } from "../lib/importPackingList";
@@ -57,7 +58,7 @@ export default function CreateJobForm({ onCreated }: Props) {
       reset();
       onCreated?.(res.jobId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }

@@ -1,3 +1,4 @@
+import { errorMessage } from "../lib/errorMessage";
 import { useCallback, useEffect, useState } from "react";
 import {
   fetchEpcs,
@@ -70,7 +71,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       const data = await fetchEpcs(filters);
       setRows(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }

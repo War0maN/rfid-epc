@@ -1,3 +1,4 @@
+import { errorMessage } from "../lib/errorMessage";
 import { useEffect, useState } from "react";
 import { fetchAuditLog, type AuditRow } from "../lib/audit";
 
@@ -47,7 +48,7 @@ export default function AuditLog() {
     setError(null);
     fetchAuditLog()
       .then(setRows)
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false));
   }
 
@@ -57,7 +58,7 @@ export default function AuditLog() {
     let active = true;
     fetchAuditLog()
       .then((d) => active && setRows(d))
-      .catch((err) => active && setError(err instanceof Error ? err.message : String(err)))
+      .catch((err) => active && setError(errorMessage(err)))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;

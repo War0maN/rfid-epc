@@ -1,3 +1,4 @@
+import { errorMessage } from "../lib/errorMessage";
 import { useState, type FormEvent } from "react";
 import { loginWithEmail, signUpUser } from "../lib/tenantAuth";
 
@@ -24,7 +25,7 @@ export default function Login() {
     try {
       await loginWithEmail(email, password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -45,7 +46,7 @@ export default function Login() {
       }
       // Session шууд гарвал useSession → App: урилга шалгаад онбординг/үндсэн апп.
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
