@@ -11,6 +11,8 @@ import {
 import { downloadCsv, toCsv } from "../lib/exportCsv";
 import { buildZplBatch, downloadZpl } from "../lib/exportZpl";
 import { sgtin96HexToUri, sgtin96HexToTagUri } from "../lib/epc";
+import { supabase } from "../lib/supabaseClient";
+import { logAuditEvent } from "../lib/audit";
 
 /** Сэргээх дохио: энэ тоо өөрчлөгдөхөд дахин татна. */
 interface Props {
@@ -120,6 +122,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       { key: "created_at", label: "Үүссэн" },
     ]);
     downloadCsv(`epc-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+    void logAuditEvent(supabase, "export_csv", "epc", null, { count: rows.length });
   }
 
   function handleExportZpl() {
@@ -132,6 +135,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       }))
     );
     downloadZpl(`epc-labels-${new Date().toISOString().slice(0, 10)}.zpl`, zpl);
+    void logAuditEvent(supabase, "export_zpl", "epc", null, { count: rows.length });
   }
 
   return (

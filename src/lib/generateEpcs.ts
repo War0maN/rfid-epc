@@ -4,6 +4,7 @@
 // ============================================================
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sgtin96Batch } from "./epc";
+import { logAuditEvent } from "./audit";
 
 export interface JobLine {
   productId: string; // products.id
@@ -107,6 +108,9 @@ export async function generateEpcsForJob(
 
   // Job статус шинэчлэх
   await supabase.from("jobs").update({ status: "generated" }).eq("id", params.jobId);
+
+  // Аудит: хэдэн EPC үүсгэснийг бизнес үйлдэл болгон бичих
+  await logAuditEvent(supabase, "generate", "job", params.jobId, { count: result.length });
 
   return result;
 }

@@ -5,13 +5,15 @@ import Login from "./components/Login";
 import CreateJobForm from "./components/CreateJobForm";
 import EpcTable from "./components/EpcTable";
 import EpcLookup from "./components/EpcLookup";
+import AuditLog from "./components/AuditLog";
 
-type Tab = "create" | "table" | "lookup";
+type Tab = "create" | "table" | "lookup" | "audit";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "create", label: "Шинэ ажил" },
   { id: "table", label: "EPC хүснэгт" },
   { id: "lookup", label: "Хайлт" },
+  { id: "audit", label: "Аудит" },
 ];
 
 function App() {
@@ -77,6 +79,7 @@ function App() {
         )}
         {tab === "table" && <EpcTable refreshKey={refreshKey} />}
         {tab === "lookup" && <EpcLookup />}
+        {tab === "audit" && <AuditLog />}
       </main>
     </div>
   );

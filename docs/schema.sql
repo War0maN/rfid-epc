@@ -158,3 +158,85 @@ create policy "tenant jobs" on jobs
 create policy "tenant epc_codes" on epc_codes
   for all using (tenant_id = current_tenant_id())
           with check (tenant_id = current_tenant_id());
+
+-- ============================================================
+-- Audit log — хэн, хэзээ, юу өөрчилснийг хадгална.
+--   * jobs / products / tenants дээрх өөрчлөлтийг DB trigger автоматаар бичнэ.
+--   * "EPC үүсгэсэн", "CSV/ZPL татсан" зэрэг бизнес үйлдлийг апп
+--     log_audit_event() RPC-ээр бичнэ.
+--   * Append-only: хэрэглэгч зөвхөн өөрийн тенантын логийг УНШИНА
+--     (засах/устгах policy байхгүй). Бичилт нь зөвхөн security definer
+--     trigger/функцээр явагдана (RLS-г тойрно).
+-- ============================================================
+create table if not exists audit_log (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenants(id),
+  actor_id    uuid references auth.users(id),  -- үйлдэл хийсэн хэрэглэгч
+  action      text not null,    -- insert|update|delete|generate|export_csv|export_zpl
+  entity      text not null,    -- job|product|tenant|epc
+  entity_id   uuid,
+  before      jsonb,            -- хуучин утга (update/delete)
+  after       jsonb,            -- шинэ утга (insert/update)
+  meta        jsonb,            -- нэмэлт (жишээ нь { "count": 120 })
+  created_at  timestamptz not null default now()
+);
+create index if not exists audit_tenant_date_idx on audit_log (tenant_id, created_at desc);
+
+alter table audit_log enable row level security;
+
+-- Зөвхөн өөрийн тенантын логийг унших. Insert/update/delete policy ЗОРИУД алга.
+create policy "tenant audit read" on audit_log
+  for select using (tenant_id = current_tenant_id());
+
+-- ---------- Generic audit trigger ----------
+-- to_jsonb(row)-оор хүснэгт бүрд нийтлэг ажиллана. tenant_id баганагүй
+-- (tenants) хүснэгтэд id-г tenant_id болгон авна.
+create or replace function audit_trigger()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_old jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) else null end;
+  v_new jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) else null end;
+  v_rec jsonb := coalesce(v_new, v_old);
+  v_tenant uuid := coalesce((v_rec->>'tenant_id')::uuid, (v_rec->>'id')::uuid);
+begin
+  insert into audit_log (tenant_id, actor_id, action, entity, entity_id, before, after)
+  values (v_tenant, auth.uid(), lower(tg_op), tg_argv[0], (v_rec->>'id')::uuid, v_old, v_new);
+  return coalesce(new, old);
+end;
+$$;
+
+drop trigger if exists audit_jobs on jobs;
+create trigger audit_jobs
+  after insert or update or delete on jobs
+  for each row execute function audit_trigger('job');
+
+drop trigger if exists audit_products on products;
+create trigger audit_products
+  after insert or update or delete on products
+  for each row execute function audit_trigger('product');
+
+-- Тенантын тохиргоо (prefix, filter) өөрчлөгдөхийг л хянана.
+drop trigger if exists audit_tenants on tenants;
+create trigger audit_tenants
+  after update on tenants
+  for each row execute function audit_trigger('tenant');
+
+-- ---------- App-level бизнес үйлдэл ----------
+-- actor_id, tenant_id-г сервер талд auth.uid()/current_tenant_id()-аар
+-- тогтооно — клиент хуурамчаар оруулах боломжгүй.
+create or replace function log_audit_event(
+  p_action text, p_entity text, p_entity_id uuid, p_meta jsonb default null
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into audit_log (tenant_id, actor_id, action, entity, entity_id, meta)
+  values (current_tenant_id(), auth.uid(), p_action, p_entity, p_entity_id, p_meta);
+end;
+$$;
