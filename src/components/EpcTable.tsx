@@ -32,8 +32,8 @@ const COLUMNS: ColDef[] = [
   { key: "supplier", label: "Нийлүүлэгч", get: (r) => r.supplier ?? "" },
 ];
 
-// DOM-ийг хэт ачаалахгүйн тулд харуулах мөрийн дээд хязгаар (экспортод хязгааргүй).
-const MAX_DISPLAY = 1000;
+// Нэг хуудсанд харуулах мөрийн тоо (DOM-ийг хөнгөн байлгана; экспорт нь бүгдийг).
+const PAGE_SIZE = 1000;
 
 /** hex -> URI; декод бүтэлгүйтвэл хоосон (export эвдрэхгүй). */
 function safeUri(hex: string): string {
@@ -57,6 +57,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
   const [error, setError] = useState<string | null>(null);
   // Багана бүрийн шүүлтийн текст (col.key -> хайх утга).
   const [filters, setFilters] = useState<Record<string, string>>({});
+  const [page, setPage] = useState(0); // 0-ээс эхэлсэн хуудасны дугаар
 
   // Бүх EPC-г татах (refreshKey өөрчлөгдөх бүрт дахин). setState-г зөвхөн
   // promise callback дотор дуудаж lint-ийн set-state-in-effect-ээс зайлсхийнэ.
@@ -93,10 +94,19 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
     );
   }, [rows, activeFilters]);
 
-  const visible = filtered.slice(0, MAX_DISPLAY);
+  // Хуудаслалт. Шүүлт/дата өөрчлөгдөхөд хуудсыг хүрээнд барина.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const visible = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
+  function setFilter(key: string, value: string) {
+    setFilters((f) => ({ ...f, [key]: value }));
+    setPage(0); // шүүх үед эхний хуудас руу
+  }
 
   function clearFilters() {
     setFilters({});
+    setPage(0);
   }
 
   function handleExport() {
@@ -187,23 +197,22 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-      {/* Хүснэгт — багана бүрийн доор шүүлтийн нүд */}
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50">
-            <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-              {COLUMNS.map((c) => (
-                <th key={c.key} className="px-3 py-2">
-                  {c.label}
-                </th>
-              ))}
-            </tr>
+      {/* Хүснэгт — толгой нь scroll үед дээрээ наалддаг (sticky), багана бүрд шүүлт */}
+      <div className="max-h-[70vh] overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <table className="min-w-full border-separate border-spacing-0 text-sm">
+          <thead>
             <tr>
               {COLUMNS.map((c) => (
-                <th key={c.key} className="px-3 pb-2">
+                <th
+                  key={c.key}
+                  className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left align-top"
+                >
+                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {c.label}
+                  </div>
                   <input
                     value={filters[c.key] ?? ""}
-                    onChange={(e) => setFilters((f) => ({ ...f, [c.key]: e.target.value }))}
+                    onChange={(e) => setFilter(c.key, e.target.value)}
                     placeholder="Шүүх…"
                     className="w-full min-w-[90px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
                   />
@@ -211,7 +220,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody>
             {visible.length === 0 && !loading ? (
               <tr>
                 <td colSpan={COLUMNS.length} className="px-4 py-8 text-center text-slate-400">
@@ -227,7 +236,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
                       <td
                         key={c.key}
                         className={
-                          "whitespace-nowrap px-3 py-2 text-slate-700" +
+                          "whitespace-nowrap border-b border-slate-100 px-3 py-2 text-slate-700" +
                           (c.mono ? " font-mono text-xs" : "")
                         }
                       >
@@ -242,11 +251,41 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
         </table>
       </div>
 
-      {filtered.length > MAX_DISPLAY && (
-        <p className="text-center text-xs text-slate-500">
-          {filtered.length.toLocaleString()} мөрөөс эхний {MAX_DISPLAY.toLocaleString()}-г харуулж
-          байна. Бүгдийг харахын тулд шүүх эсвэл CSV татна уу.
-        </p>
+      {/* Хуудаслалт */}
+      {pageCount > 1 && (
+        <div className="flex items-center justify-center gap-2 text-sm">
+          <button
+            onClick={() => setPage(0)}
+            disabled={safePage === 0}
+            className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+          >
+            «
+          </button>
+          <button
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={safePage === 0}
+            className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+          >
+            Өмнөх
+          </button>
+          <span className="px-2 text-slate-600">
+            Хуудас <strong>{safePage + 1}</strong> / {pageCount}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            disabled={safePage >= pageCount - 1}
+            className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+          >
+            Дараах
+          </button>
+          <button
+            onClick={() => setPage(pageCount - 1)}
+            disabled={safePage >= pageCount - 1}
+            className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+          >
+            »
+          </button>
+        </div>
       )}
     </div>
   );

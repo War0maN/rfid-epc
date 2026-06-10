@@ -86,7 +86,9 @@ const FLAT_SELECT = "id, serial, epc_hex, box_no, created_at, job_id, product_id
 export async function fetchAllEpcs(): Promise<EpcRow[]> {
   const { pMap, jMap } = await fetchLookupMaps();
 
-  const PAGE = 2000;
+  // Supabase нэг хүсэлтэд дээд тал нь 1000 мөр буцаадаг (default cap) тул
+  // PAGE-г 1000 болгоно. Бүрэн хуудас (=1000) ирвэл цааш үргэлжилнэ.
+  const PAGE = 1000;
   const all: EpcRow[] = [];
   let lastId = "";
   for (;;) {
