@@ -23,13 +23,13 @@ interface ColDef {
 const COLUMNS: ColDef[] = [
   { key: "epc", label: "EPC (hex)", get: (r) => r.epc_hex, mono: true },
   { key: "serial", label: "Serial", get: (r) => String(r.serial) },
-  { key: "name", label: "Бараа", get: (r) => r.products?.name ?? "" },
-  { key: "sku", label: "SKU", get: (r) => r.products?.sku ?? "", mono: true },
-  { key: "gtin", label: "GTIN/баркод", get: (r) => r.products?.gtin ?? "", mono: true },
+  { key: "name", label: "Бараа", get: (r) => r.name ?? "" },
+  { key: "sku", label: "SKU", get: (r) => r.sku ?? "", mono: true },
+  { key: "gtin", label: "GTIN/баркод", get: (r) => r.gtin ?? "", mono: true },
   { key: "box", label: "Хайрцаг", get: (r) => r.box_no ?? "" },
-  { key: "job", label: "Ажлын №", get: (r) => r.jobs?.job_number ?? "" },
-  { key: "date", label: "Ирсэн огноо", get: (r) => r.jobs?.arrival_date ?? "" },
-  { key: "supplier", label: "Нийлүүлэгч", get: (r) => r.jobs?.supplier ?? "" },
+  { key: "job", label: "Ажлын №", get: (r) => r.job_number ?? "" },
+  { key: "date", label: "Ирсэн огноо", get: (r) => r.arrival_date ?? "" },
+  { key: "supplier", label: "Нийлүүлэгч", get: (r) => r.supplier ?? "" },
 ];
 
 // DOM-ийг хэт ачаалахгүйн тулд харуулах мөрийн дээд хязгаар (экспортод хязгааргүй).
@@ -105,13 +105,13 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       epc_uri: safeUri(r.epc_hex),
       epc_tag_uri: safeTagUri(r.epc_hex),
       serial: r.serial,
-      product: r.products?.name ?? "",
-      sku: r.products?.sku ?? "",
-      gtin: r.products?.gtin ?? "",
+      product: r.name ?? "",
+      sku: r.sku ?? "",
+      gtin: r.gtin ?? "",
       box_no: r.box_no ?? "",
-      job_number: r.jobs?.job_number ?? "",
-      arrival_date: r.jobs?.arrival_date ?? "",
-      supplier: r.jobs?.supplier ?? "",
+      job_number: r.job_number ?? "",
+      arrival_date: r.arrival_date ?? "",
+      supplier: r.supplier ?? "",
       created_at: r.created_at,
     }));
     const csv = toCsv(flat, [
@@ -136,9 +136,9 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
     const zpl = buildZplBatch(
       filtered.map((r) => ({
         epcHex: r.epc_hex,
-        name: r.products?.name,
-        gtin: r.products?.gtin,
-        sku: r.products?.sku,
+        name: r.name,
+        gtin: r.gtin,
+        sku: r.sku,
         boxNo: r.box_no,
         serial: r.serial,
       }))

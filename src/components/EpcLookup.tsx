@@ -107,20 +107,20 @@ export default function EpcLookup() {
               label="Tag URI"
               value={<span className="break-all font-mono text-xs">{safeTagUri(state.row.epc_hex)}</span>}
             />
-            <Field label="Бараа" value={state.row.products?.name || "—"} />
+            <Field label="Бараа" value={state.row.name || "—"} />
             <Field
               label="GTIN/баркод"
-              value={<span className="font-mono">{state.row.products?.gtin ?? "—"}</span>}
+              value={<span className="font-mono">{state.row.gtin ?? "—"}</span>}
             />
             <Field
               label="SKU"
-              value={<span className="font-mono">{state.row.products?.sku ?? "—"}</span>}
+              value={<span className="font-mono">{state.row.sku ?? "—"}</span>}
             />
             <Field label="Хайрцаг" value={state.row.box_no ?? "—"} />
             <Field label="Serial" value={state.row.serial} />
-            <Field label="Ажлын №" value={state.row.jobs?.job_number ?? "—"} />
-            <Field label="Ирсэн огноо" value={state.row.jobs?.arrival_date ?? "—"} />
-            <Field label="Нийлүүлэгч" value={state.row.jobs?.supplier ?? "—"} />
+            <Field label="Ажлын №" value={state.row.job_number ?? "—"} />
+            <Field label="Ирсэн огноо" value={state.row.arrival_date ?? "—"} />
+            <Field label="Нийлүүлэгч" value={state.row.supplier ?? "—"} />
             <Field label="Үүссэн" value={new Date(state.row.created_at).toLocaleString()} />
           </dl>
         </div>
