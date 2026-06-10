@@ -461,3 +461,28 @@ create unique index products_tenant_gtin_uidx
 
 -- epc_codes: хайрцагны дугаар
 alter table epc_codes add column if not exists box_no text;
+
+-- ============================================================
+-- Шошгоны загвар (label designer)
+--   Дизайнераар зурсан шошгоны template-ийг тенант тус бүрд хадгална.
+--   objects = зурагласан объектуудын тодорхойлолт (текст/баркод/зураг/RFID…).
+-- ============================================================
+create table if not exists label_templates (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenants(id) default current_tenant_id(),
+  name        text not null,
+  width_mm    numeric not null default 54,
+  height_mm   numeric not null default 34,
+  dpi         int not null default 300,
+  objects     jsonb not null default '[]'::jsonb,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists label_templates_tenant_idx on label_templates (tenant_id, name);
+
+alter table label_templates enable row level security;
+
+drop policy if exists "tenant label_templates" on label_templates;
+create policy "tenant label_templates" on label_templates
+  for all using (tenant_id = current_tenant_id())
+          with check (tenant_id = current_tenant_id());
