@@ -21,6 +21,7 @@ export type AuditAction =
 export interface AuditRow {
   id: string;
   actor_id: string | null;
+  actor_email: string | null; // үйлдэл хийсэн хэрэглэгчийн имэйл (profiles-оос)
   action: string;
   entity: string;
   entity_id: string | null;
@@ -50,7 +51,7 @@ export async function logAuditEvent(
   if (error) console.warn("audit log бичих амжилтгүй:", error.message);
 }
 
-/** Аудит логийг шинэ нь эхэнд татна. */
+/** Аудит логийг шинэ нь эхэнд татна (actor_id-г имэйлээр баяжуулна). */
 export async function fetchAuditLog(limit = 200): Promise<AuditRow[]> {
   const { data, error } = await supabase
     .from("audit_log")
@@ -58,5 +59,13 @@ export async function fetchAuditLog(limit = 200): Promise<AuditRow[]> {
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return (data ?? []) as AuditRow[];
+  const rows = (data ?? []) as AuditRow[];
+
+  // actor_id -> имэйл (RLS-ийн ачаар зөвхөн өөрийн тенантын гишүүд харагдана).
+  const { data: profs } = await supabase.from("profiles").select("id, email");
+  const emailById = new Map(
+    ((profs ?? []) as { id: string; email: string | null }[]).map((p) => [p.id, p.email])
+  );
+  for (const r of rows) r.actor_email = r.actor_id ? emailById.get(r.actor_id) ?? null : null;
+  return rows;
 }

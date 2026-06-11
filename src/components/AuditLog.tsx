@@ -92,6 +92,7 @@ export default function AuditLog() {
           <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Хэзээ</th>
+              <th className="px-4 py-3">Хэн</th>
               <th className="px-4 py-3">Үйлдэл</th>
               <th className="px-4 py-3">Обьект</th>
               <th className="px-4 py-3">Дэлгэрэнгүй</th>
@@ -100,7 +101,7 @@ export default function AuditLog() {
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && !loading ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
                   Лог хоосон байна.
                 </td>
               </tr>
@@ -114,6 +115,9 @@ export default function AuditLog() {
                   <tr key={r.id} className="hover:bg-slate-50">
                     <td className="whitespace-nowrap px-4 py-2 text-slate-500">
                       {new Date(r.created_at).toLocaleString()}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2 text-slate-600">
+                      {r.actor_email ?? <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-4 py-2">
                       <span className={"rounded px-2 py-0.5 text-xs font-medium " + am.cls}>

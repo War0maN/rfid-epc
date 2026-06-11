@@ -480,6 +480,10 @@ create table if not exists label_templates (
 );
 create index if not exists label_templates_tenant_idx on label_templates (tenant_id, name);
 
+-- Хэвлэх байрлал тааруулга (цаасны offset, мм). Хэвлэхэд бүх объектыг шилжүүлнэ.
+alter table label_templates add column if not exists offset_x_mm numeric not null default 0;
+alter table label_templates add column if not exists offset_y_mm numeric not null default 0;
+
 alter table label_templates enable row level security;
 
 drop policy if exists "tenant label_templates" on label_templates;

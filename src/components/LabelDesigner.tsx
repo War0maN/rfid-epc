@@ -339,6 +339,22 @@ export default function LabelDesigner({ template, onChange }: Props) {
     setSelectedId(null);
   }
 
+  /** Сонгосон объектыг давхаргын дарааллаар нь зөөнө (зурах дараалал = z-order). */
+  function moveSelected(dir: "front" | "back" | "forward" | "backward") {
+    if (!selectedId) return;
+    const objs = [...template.objects];
+    const i = objs.findIndex((o) => o.id === selectedId);
+    if (i < 0) return;
+    const [item] = objs.splice(i, 1);
+    let j: number;
+    if (dir === "front") j = objs.length;
+    else if (dir === "back") j = 0;
+    else if (dir === "forward") j = Math.min(objs.length, i + 1);
+    else j = Math.max(0, i - 1);
+    objs.splice(j, 0, item);
+    onChange({ ...template, objects: objs });
+  }
+
   function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !selected || selected.type !== "image") return;
@@ -382,9 +398,24 @@ export default function LabelDesigner({ template, onChange }: Props) {
           <button onClick={() => addObject("rfid")} className={toolBtn}>+ RFID</button>
           <button onClick={() => addObject("rect")} className={toolBtn}>+ Хүрээ</button>
           {selectedId && (
-            <button onClick={removeSelected} className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50">
-              Устгах
-            </button>
+            <>
+              <span className="mx-1 w-px self-stretch bg-slate-200" />
+              <button onClick={() => moveSelected("front")} className={toolBtn} title="Хамгийн урд (дээр) гаргах">
+                ⤒ Урд
+              </button>
+              <button onClick={() => moveSelected("forward")} className={toolBtn} title="Нэг шат урагшлуулах">
+                ↑
+              </button>
+              <button onClick={() => moveSelected("backward")} className={toolBtn} title="Нэг шат ухраах">
+                ↓
+              </button>
+              <button onClick={() => moveSelected("back")} className={toolBtn} title="Хамгийн ард (доор) явуулах">
+                ⤓ Ард
+              </button>
+              <button onClick={removeSelected} className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50">
+                Устгах
+              </button>
+            </>
           )}
         </div>
 

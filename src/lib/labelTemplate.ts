@@ -98,6 +98,8 @@ export interface LabelTemplate {
   height_mm: number;
   dpi: number;
   objects: LabelObject[];
+  offset_x_mm: number; // хэвлэх байрлал тааруулга (баруун +, зүүн −)
+  offset_y_mm: number; // (доош +, дээш −)
 }
 
 /** Шошгон дээр орлуулах дата (нэг EPC мөр). */
@@ -171,15 +173,24 @@ interface TemplateRow {
   height_mm: number;
   dpi: number;
   objects: LabelObject[];
+  offset_x_mm: number | null;
+  offset_y_mm: number | null;
 }
+
+/** DB мөрийг LabelTemplate болгоно (offset null бол 0). */
+function toTemplate(r: TemplateRow): LabelTemplate {
+  return { ...r, offset_x_mm: r.offset_x_mm ?? 0, offset_y_mm: r.offset_y_mm ?? 0 };
+}
+
+const TEMPLATE_COLS = "id, name, width_mm, height_mm, dpi, objects, offset_x_mm, offset_y_mm";
 
 export async function listTemplates(): Promise<LabelTemplate[]> {
   const { data, error } = await supabase
     .from("label_templates")
-    .select("id, name, width_mm, height_mm, dpi, objects")
+    .select(TEMPLATE_COLS)
     .order("name", { ascending: true });
   if (error) throw error;
-  return (data ?? []) as TemplateRow[];
+  return ((data ?? []) as TemplateRow[]).map(toTemplate);
 }
 
 /** Шинэ template үүсгэх (хоосон). */
@@ -201,13 +212,13 @@ export async function createTemplate(
       dpi,
       objects: [],
     })
-    .select("id, name, width_mm, height_mm, dpi, objects")
+    .select(TEMPLATE_COLS)
     .single();
   if (error) throw error;
-  return data as TemplateRow;
+  return toTemplate(data as TemplateRow);
 }
 
-/** Template-ийг хадгалах (нэр, хэмжээ, объектууд). */
+/** Template-ийг хадгалах (нэр, хэмжээ, объектууд, байрлал offset). */
 export async function saveTemplate(t: LabelTemplate): Promise<void> {
   const { error } = await supabase
     .from("label_templates")
@@ -217,6 +228,8 @@ export async function saveTemplate(t: LabelTemplate): Promise<void> {
       height_mm: t.height_mm,
       dpi: t.dpi,
       objects: t.objects,
+      offset_x_mm: t.offset_x_mm,
+      offset_y_mm: t.offset_y_mm,
       updated_at: new Date().toISOString(),
     })
     .eq("id", t.id);

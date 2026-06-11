@@ -103,6 +103,33 @@ export default function Labels() {
           <span className="text-sm text-slate-500">
             {editing.width_mm}×{editing.height_mm}мм · {editing.dpi} DPI
           </span>
+          <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-1">
+            <span className="text-xs text-slate-500" title="Цаасны байрлал тааруулга (хэвлэлтэд хэрэглэнэ)">
+              Offset мм
+            </span>
+            <span className="text-xs text-slate-400">X</span>
+            <input
+              type="number"
+              step={0.5}
+              value={editing.offset_x_mm}
+              onChange={(e) => {
+                setEditing({ ...editing, offset_x_mm: Number(e.target.value) || 0 });
+                setDirty(true);
+              }}
+              className="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-sm"
+            />
+            <span className="text-xs text-slate-400">Y</span>
+            <input
+              type="number"
+              step={0.5}
+              value={editing.offset_y_mm}
+              onChange={(e) => {
+                setEditing({ ...editing, offset_y_mm: Number(e.target.value) || 0 });
+                setDirty(true);
+              }}
+              className="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-sm"
+            />
+          </div>
           <div className="flex-1" />
           {dirty && <span className="text-xs text-amber-600">Хадгалаагүй өөрчлөлт</span>}
           <button

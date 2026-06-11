@@ -176,8 +176,11 @@ export async function buildLabelZpl(
 ): Promise<string> {
   const canvas = await renderLabelToCanvas(template, data);
   const pxPerMm = (template.dpi || 300) / MM_PER_INCH;
-  const offX = Math.round(offset.x_mm * pxPerMm);
-  const offY = Math.round(offset.y_mm * pxPerMm);
+  // Нийт шилжүүлэлт = загварт хадгалсан offset (цаасны калибрац) + хэвлэх үеийн нэмэлт.
+  const totalX = (template.offset_x_mm ?? 0) + offset.x_mm;
+  const totalY = (template.offset_y_mm ?? 0) + offset.y_mm;
+  const offX = Math.round(totalX * pxPerMm);
+  const offY = Math.round(totalY * pxPerMm);
   const gfa = canvasToGfa(canvas, offX, offY);
 
   // Принтерт шошгоны яг хэмжээг хэлнэ (байрлал тогтворжино).
