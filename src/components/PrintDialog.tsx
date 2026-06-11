@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { listTemplates, type LabelTemplate, type LabelData } from "../lib/labelTemplate";
-import { renderLabelToCanvas, buildBatchZpl } from "../lib/labelZpl";
+import { renderLabelToCanvas, buildBatchZpl, type PrintOffset } from "../lib/labelZpl";
 import {
   getPrinters,
   sendToPrinter,
@@ -25,6 +25,10 @@ export default function PrintDialog({ rows, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [offsetX, setOffsetX] = useState(0); // мм — баруун (+) / зүүн (−)
+  const [offsetY, setOffsetY] = useState(0); // мм — доош (+) / дээш (−)
+
+  const offset: PrintOffset = { x_mm: offsetX, y_mm: offsetY };
 
   const template = useMemo(
     () => templates.find((t) => t.id === templateId) ?? null,
@@ -81,7 +85,7 @@ export default function PrintDialog({ rows, onClose }: Props) {
     setError(null);
     setInfo(null);
     try {
-      const zpl = await buildBatchZpl(template, rows);
+      const zpl = await buildBatchZpl(template, rows, offset);
       await sendToPrinter(device, zpl);
       setInfo(`${rows.length} шошго принтер рүү илгээлээ.`);
     } catch (e) {
@@ -96,7 +100,7 @@ export default function PrintDialog({ rows, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const zpl = await buildBatchZpl(template, rows);
+      const zpl = await buildBatchZpl(template, rows, offset);
       downloadZplFile(`labels-${new Date().toISOString().slice(0, 10)}.zpl`, zpl);
     } catch (e) {
       setError(errorMessage(e));
@@ -146,6 +150,49 @@ export default function PrintDialog({ rows, onClose }: Props) {
             </div>
           </div>
         )}
+
+        {/* Байрлал тааруулах (хэвлэгдэх байрлал гажвал) */}
+        <div className="mb-3">
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Байрлал тааруулах (мм)
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-500">Хэвтээ X</span>
+              <input
+                type="number"
+                step={0.5}
+                value={offsetX}
+                onChange={(e) => setOffsetX(Number(e.target.value) || 0)}
+                className="w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-500">Босоо Y</span>
+              <input
+                type="number"
+                step={0.5}
+                value={offsetY}
+                onChange={(e) => setOffsetY(Number(e.target.value) || 0)}
+                className="w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+              />
+            </div>
+            {(offsetX !== 0 || offsetY !== 0) && (
+              <button
+                onClick={() => {
+                  setOffsetX(0);
+                  setOffsetY(0);
+                }}
+                className="text-xs text-indigo-600 hover:underline"
+              >
+                Тэглэх
+              </button>
+            )}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Доош/баруун тийш = эерэг (+), дээш/зүүн тийш = сөрөг (−).
+          </p>
+        </div>
 
         {/* Принтер */}
         <div className="mb-3">

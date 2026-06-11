@@ -128,8 +128,14 @@ function compressRow(hexRow: string): string {
   return out;
 }
 
+/** Хэвлэлтийн байрлал тааруулах шилжүүлэлт (мм). */
+export interface PrintOffset {
+  x_mm: number;
+  y_mm: number;
+}
+
 /** Canvas-ийг 1-bit ^GFA ZPL хэсэг болгоно (хар пиксел = 1, ACS шахалттай). */
-function canvasToGfa(canvas: HTMLCanvasElement): string {
+function canvasToGfa(canvas: HTMLCanvasElement, offX = 0, offY = 0): string {
   const { width: W, height: H } = canvas;
   const ctx = canvas.getContext("2d");
   if (!ctx) return "";
@@ -159,25 +165,39 @@ function canvasToGfa(canvas: HTMLCanvasElement): string {
     else out += compressRow(row);
     prevRaw = row;
   }
-  return `^FO0,0^GFA,${total},${total},${rowBytes},${out}^FS`;
+  return `^FO${offX},${offY}^GFA,${total},${total},${rowBytes},${out}^FS`;
 }
 
 /** Template + нэг мөрийн дата → нэг шошгоны ZPL (^XA…^XZ), чип шарах + зураг. */
-export async function buildLabelZpl(template: LabelTemplate, data: LabelData): Promise<string> {
+export async function buildLabelZpl(
+  template: LabelTemplate,
+  data: LabelData,
+  offset: PrintOffset = { x_mm: 0, y_mm: 0 }
+): Promise<string> {
   const canvas = await renderLabelToCanvas(template, data);
-  const gfa = canvasToGfa(canvas);
+  const pxPerMm = (template.dpi || 300) / MM_PER_INCH;
+  const offX = Math.round(offset.x_mm * pxPerMm);
+  const offY = Math.round(offset.y_mm * pxPerMm);
+  const gfa = canvasToGfa(canvas, offX, offY);
+
+  // Принтерт шошгоны яг хэмжээг хэлнэ (байрлал тогтворжино).
+  const sizing = `^PW${canvas.width}\n^LL${canvas.height}\n`;
 
   // RFID объект байвал тухайн EPC-г чипэд шарна (нэг чип — эхнийхийг авна).
   const rfid = template.objects.find((o) => o.type === "rfid");
   const epc = rfid ? (data.epc_hex ?? "").replace(/[^0-9A-Fa-f]/g, "").toUpperCase() : "";
   const rfw = epc ? `^RFW,H^FD${epc}^FS\n` : "";
 
-  return `^XA\n${rfw}${gfa}\n^XZ`;
+  return `^XA\n${sizing}${rfw}${gfa}\n^XZ`;
 }
 
 /** Олон мөрийн дата → багц ZPL (мөр бүрд нэг шошго). */
-export async function buildBatchZpl(template: LabelTemplate, rows: LabelData[]): Promise<string> {
+export async function buildBatchZpl(
+  template: LabelTemplate,
+  rows: LabelData[],
+  offset: PrintOffset = { x_mm: 0, y_mm: 0 }
+): Promise<string> {
   const parts: string[] = [];
-  for (const r of rows) parts.push(await buildLabelZpl(template, r));
+  for (const r of rows) parts.push(await buildLabelZpl(template, r, offset));
   return parts.join("\n");
 }
