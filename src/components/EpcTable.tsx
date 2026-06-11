@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { fetchAllEpcs, type EpcRow } from "../lib/queries";
 import { downloadCsv, toCsv } from "../lib/exportCsv";
 import { buildZplBatch, downloadZpl } from "../lib/exportZpl";
@@ -6,6 +6,8 @@ import { sgtin96HexToUri, sgtin96HexToTagUri } from "../lib/epc";
 import { supabase } from "../lib/supabaseClient";
 import { logAuditEvent } from "../lib/audit";
 import { errorMessage } from "../lib/errorMessage";
+// bwip-js (баркод) том тул хэвлэх диалогийг зөвхөн нээх үед ачаална.
+const PrintDialog = lazy(() => import("./PrintDialog"));
 
 /** Сэргээх дохио: энэ тоо өөрчлөгдөхөд дахин татна. */
 interface Props {
@@ -58,6 +60,8 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
   // Багана бүрийн шүүлтийн текст (col.key -> хайх утга).
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [page, setPage] = useState(0); // 0-ээс эхэлсэн хуудасны дугаар
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showPrint, setShowPrint] = useState(false);
 
   // Бүх EPC-г татах (refreshKey өөрчлөгдөх бүрт дахин). setState-г зөвхөн
   // promise callback дотор дуудаж lint-ийн set-state-in-effect-ээс зайлсхийнэ.
@@ -107,6 +111,27 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
   function clearFilters() {
     setFilters({});
     setPage(0);
+  }
+
+  // Хэвлэх мөрүүд: сонгосон байвал тэдгээр, эс бөгөөс шүүсэн бүгд.
+  const printRows = selectedIds.size > 0 ? filtered.filter((r) => selectedIds.has(r.id)) : filtered;
+
+  function toggleRow(id: string) {
+    setSelectedIds((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+  const allVisibleSelected = visible.length > 0 && visible.every((r) => selectedIds.has(r.id));
+  function toggleAllVisible() {
+    setSelectedIds((s) => {
+      const n = new Set(s);
+      if (allVisibleSelected) visible.forEach((r) => n.delete(r.id));
+      else visible.forEach((r) => n.add(r.id));
+      return n;
+    });
   }
 
   function handleExport() {
@@ -192,6 +217,21 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
         >
           ZPL татах ({filtered.length})
         </button>
+        <button
+          onClick={() => setShowPrint(true)}
+          disabled={printRows.length === 0}
+          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+        >
+          🖨 Хэвлэх ({printRows.length})
+        </button>
+        {selectedIds.size > 0 && (
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            Сонголт цэвэрлэх ({selectedIds.size})
+          </button>
+        )}
         {loading && <span className="text-sm text-slate-500">Ачаалж байна…</span>}
       </div>
 
@@ -202,6 +242,14 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
         <table className="min-w-full border-separate border-spacing-0 text-sm">
           <thead>
             <tr>
+              <th className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-2 py-2 align-top">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleAllVisible}
+                  title="Энэ хуудсыг бүгдийг сонгох"
+                />
+              </th>
               {COLUMNS.map((c) => (
                 <th
                   key={c.key}
@@ -223,13 +271,20 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
           <tbody>
             {visible.length === 0 && !loading ? (
               <tr>
-                <td colSpan={COLUMNS.length} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={COLUMNS.length + 1} className="px-4 py-8 text-center text-slate-400">
                   {rows.length === 0 ? "EPC алга." : "Шүүлтэд тохирох мөр алга."}
                 </td>
               </tr>
             ) : (
               visible.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50">
+                <tr key={r.id} className={"hover:bg-slate-50" + (selectedIds.has(r.id) ? " bg-indigo-50" : "")}>
+                  <td className="border-b border-slate-100 px-2 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(r.id)}
+                      onChange={() => toggleRow(r.id)}
+                    />
+                  </td>
                   {COLUMNS.map((c) => {
                     const v = c.get(r);
                     return (
@@ -286,6 +341,12 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
             »
           </button>
         </div>
+      )}
+
+      {showPrint && (
+        <Suspense fallback={null}>
+          <PrintDialog rows={printRows} onClose={() => setShowPrint(false)} />
+        </Suspense>
       )}
     </div>
   );

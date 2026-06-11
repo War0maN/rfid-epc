@@ -8,6 +8,12 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      Zebra Browser Print SDK (шууд хэвлэхэд).
+      Zebra-ийн сайтаас BrowserPrint-*.min.js татаж аваад public/ дотор тавьж,
+      доорх замыг тааруулна. Файл байхгүй бол хэвлэхийн оронд ZPL татна (fallback).
+    -->
+    <script src="/BrowserPrint-3.1.250.min.js" onerror="console.info('Browser Print SDK ачаалаагүй — ZPL татах горим')"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
