@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { fetchAllEpcs, type EpcRow } from "../lib/queries";
 import { downloadCsv, toCsv } from "../lib/exportCsv";
 import { buildZplBatch, downloadZpl } from "../lib/exportZpl";
-import { sgtin96HexToUri, sgtin96HexToTagUri } from "../lib/epc";
+import { epcHexToUri, epcHexToTagUri } from "../lib/epc";
 import { supabase } from "../lib/supabaseClient";
 import { logAuditEvent } from "../lib/audit";
 import { errorMessage } from "../lib/errorMessage";
@@ -37,17 +37,17 @@ const COLUMNS: ColDef[] = [
 // Нэг хуудсанд харуулах мөрийн тоо (DOM-ийг хөнгөн байлгана; экспорт нь бүгдийг).
 const PAGE_SIZE = 1000;
 
-/** hex -> URI; декод бүтэлгүйтвэл хоосон (export эвдрэхгүй). */
+/** hex -> URI; декод бүтэлгүйтвэл хоосон (export эвдрэхгүй). SGTIN/GID хоёуланг. */
 function safeUri(hex: string): string {
   try {
-    return sgtin96HexToUri(hex);
+    return epcHexToUri(hex);
   } catch {
     return "";
   }
 }
 function safeTagUri(hex: string): string {
   try {
-    return sgtin96HexToTagUri(hex);
+    return epcHexToTagUri(hex);
   } catch {
     return "";
   }

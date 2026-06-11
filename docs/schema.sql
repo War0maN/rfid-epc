@@ -463,6 +463,120 @@ create unique index products_tenant_gtin_uidx
 alter table epc_codes add column if not exists box_no text;
 
 -- ============================================================
+-- Migration: GID-96 (GS1-гүй) дэмжлэг — баркодгүй бараа
+--   Баркод/GTIN байхгүй барааг GID-96-аар кодлоно. Дугаарыг сервер тал
+--   автоматаар (trigger) онооно — апп тал нэмж дуудах шаардлагагүй.
+--     tenants.manager_number  — General Manager Number (28-бит)
+--     products.object_class   — Object Class (24-бит)
+--     products.ext_key        — баркодгүй барааны давтагдалгүй түлхүүр
+--   Бүгд re-run аюулгүй.
+-- ============================================================
+
+-- ---- tenants.manager_number (28-бит, тенант тус бүрд давтагдалгүй) ----
+create sequence if not exists tenant_manager_seq as bigint minvalue 1 start 1;
+grant usage on sequence tenant_manager_seq to authenticated;
+alter table tenants add column if not exists manager_number bigint;
+
+create or replace function set_tenant_manager_number()
+returns trigger language plpgsql as $$
+begin
+  if new.manager_number is null then
+    new.manager_number := nextval('tenant_manager_seq');
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists trg_tenant_manager_number on tenants;
+create trigger trg_tenant_manager_number
+  before insert on tenants
+  for each row execute function set_tenant_manager_number();
+
+-- Хуучин тенантуудад дугаар нөхөж олгоно.
+update tenants set manager_number = nextval('tenant_manager_seq')
+ where manager_number is null;
+
+do $$ begin
+  alter table tenants add constraint tenants_manager_number_key unique (manager_number);
+exception when duplicate_object then null; end $$;
+do $$ begin
+  alter table tenants add constraint tenants_manager_number_range
+    check (manager_number is null or (manager_number >= 0 and manager_number <= 268435455));
+exception when duplicate_object then null; end $$;
+
+-- ---- products.object_class (24-бит) + ext_key ----
+-- Тенант тус бүрд барааны дугаарыг 1-ээс өсгөж онооно.
+create table if not exists object_class_counters (
+  tenant_id          uuid primary key references tenants(id) on delete cascade,
+  last_object_class  bigint not null default 0
+);
+alter table object_class_counters enable row level security;
+drop policy if exists "tenant object_class_counters" on object_class_counters;
+create policy "tenant object_class_counters" on object_class_counters
+  for all using (tenant_id = current_tenant_id())
+          with check (tenant_id = current_tenant_id());
+
+alter table products add column if not exists object_class bigint;
+alter table products add column if not exists ext_key text;
+-- Баркодгүй бараа байхын тулд gtin-г NULL зөвшөөрнө.
+alter table products alter column gtin drop not null;
+
+-- Баркодгүй барааны давтагдалгүй индекс. NULL-уудыг Postgres ялгаатай гэж
+-- үздэг тул GTIN-тэй бараа (ext_key = null) олон байж болно; харин баркодгүй
+-- бараа (ext_key утгатай) давхцахгүй. upsert onConflict (tenant_id, ext_key).
+create unique index if not exists products_tenant_extkey_uidx
+  on products (tenant_id, ext_key);
+
+-- Бараа insert хийхэд object_class автоматаар онооно (бараа болгонд).
+create or replace function set_product_object_class()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.object_class is null then
+    insert into object_class_counters (tenant_id, last_object_class)
+    values (new.tenant_id, 0)
+    on conflict (tenant_id) do nothing;
+
+    update object_class_counters
+       set last_object_class = last_object_class + 1
+     where tenant_id = new.tenant_id
+    returning last_object_class into new.object_class;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists trg_product_object_class on products;
+create trigger trg_product_object_class
+  before insert on products
+  for each row execute function set_product_object_class();
+
+-- Хуучин бараануудад object_class нөхөж олгоно (тенант тус бүрд дараалан).
+do $$
+declare
+  v_tenant uuid;
+  v_prod   uuid;
+  v_next   bigint;
+begin
+  for v_tenant in select distinct tenant_id from products where object_class is null loop
+    insert into object_class_counters (tenant_id, last_object_class)
+    values (v_tenant, 0) on conflict (tenant_id) do nothing;
+
+    select last_object_class into v_next from object_class_counters
+     where tenant_id = v_tenant for update;
+
+    for v_prod in
+      select id from products
+       where tenant_id = v_tenant and object_class is null
+       order by created_at, id
+    loop
+      v_next := v_next + 1;
+      update products set object_class = v_next where id = v_prod;
+    end loop;
+
+    update object_class_counters set last_object_class = v_next
+     where tenant_id = v_tenant;
+  end loop;
+end $$;
+
+-- ============================================================
 -- Шошгоны загвар (label designer)
 --   Дизайнераар зурсан шошгоны template-ийг тенант тус бүрд хадгална.
 --   objects = зурагласан объектуудын тодорхойлолт (текст/баркод/зураг/RFID…).

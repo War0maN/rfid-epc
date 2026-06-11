@@ -247,3 +247,103 @@ export function sgtin96HexToTagUri(epcHex: string): string {
   const { filter, companyPrefix, indicatorItemRef, serial } = sgtin96Decode(epcHex);
   return `urn:epc:tag:sgtin-96:${filter}.${companyPrefix}.${indicatorItemRef}.${serial}`;
 }
+
+// ============================================================
+// GID-96 (General Identifier) — GS1-гүй дотоод EPC
+//   Баркод/GTIN байхгүй барааг кодлоход. Бүх талбар нибблд тэгшилдэг
+//   (8+28+24+36 бит) тул hex-ээр шууд залгаж болно. Header 0x35.
+//     urn:epc:id:gid:ManagerNumber.ObjectClass.Serial
+//   GS1 шаардлагагүй; зөвхөн дотоод (хаалттай) системд unique байхад л болно.
+// ============================================================
+const GID96_HEADER = 0x35n;
+const GID_MANAGER_MAX = (1n << 28n) - 1n; // 268,435,455
+const GID_CLASS_MAX = (1n << 24n) - 1n; //  16,777,215
+const GID_SERIAL_MAX = (1n << 36n) - 1n; //  68,719,476,735
+
+export interface Gid96Input {
+  managerNumber: bigint | number; // тенант/компанийн дугаар (28-бит)
+  objectClass: bigint | number; //   барааны дугаар (24-бит)
+  serial: bigint | number; //        ширхгийн дугаар (36-бит)
+}
+
+/** GID-96 EPC-г 24 тэмдэгтийн hex болгож кодлоно. */
+export function gid96Encode({ managerNumber, objectClass, serial }: Gid96Input): string {
+  const m = BigInt(managerNumber);
+  const c = BigInt(objectClass);
+  const s = BigInt(serial);
+  if (m < 0n || m > GID_MANAGER_MAX) throw new Error(`manager number 0..${GID_MANAGER_MAX} байх ёстой`);
+  if (c < 0n || c > GID_CLASS_MAX) throw new Error(`object class 0..${GID_CLASS_MAX} байх ёстой`);
+  if (s < 0n || s > GID_SERIAL_MAX) throw new Error(`serial 0..${GID_SERIAL_MAX} байх ёстой`);
+
+  const binary = bits(GID96_HEADER, 8) + bits(m, 28) + bits(c, 24) + bits(s, 36);
+  if (binary.length !== 96) throw new Error(`encode алдаа: ${binary.length} bit`);
+  return BigInt("0b" + binary).toString(16).toUpperCase().padStart(24, "0");
+}
+
+/** Нэг бараанд эхлэх serial-аас count ширхэг GID-96 EPC үүсгэнэ. */
+export function gid96Batch(
+  base: Omit<Gid96Input, "serial">,
+  startSerial: bigint | number,
+  count: number
+): { serial: bigint; epcHex: string }[] {
+  const start = BigInt(startSerial);
+  const out: { serial: bigint; epcHex: string }[] = [];
+  for (let i = 0n; i < BigInt(count); i++) {
+    const serial = start + i;
+    out.push({ serial, epcHex: gid96Encode({ ...base, serial }) });
+  }
+  return out;
+}
+
+export interface Gid96Parts {
+  managerNumber: string;
+  objectClass: string;
+  serial: string;
+}
+
+/** 24 тэмдэгт GID-96 hex-г бүрэлдэхүүн талбаруудад нь задална. */
+export function gid96Decode(epcHex: string): Gid96Parts {
+  const hex = normalizeEpc(epcHex);
+  const bin = BigInt("0x" + hex).toString(2).padStart(96, "0");
+  const header = parseInt(bin.slice(0, 8), 2);
+  if (header !== 0x35) {
+    throw new Error(`GID-96 биш (header 0x${header.toString(16)}, 0x35 байх ёстой)`);
+  }
+  return {
+    managerNumber: BigInt("0b" + bin.slice(8, 36)).toString(),
+    objectClass: BigInt("0b" + bin.slice(36, 60)).toString(),
+    serial: BigInt("0b" + bin.slice(60, 96)).toString(),
+  };
+}
+
+/** GID-96 hex -> Pure Identity URI (urn:epc:id:gid:Manager.Class.Serial). */
+export function gid96HexToUri(epcHex: string): string {
+  const { managerNumber, objectClass, serial } = gid96Decode(epcHex);
+  return `urn:epc:id:gid:${managerNumber}.${objectClass}.${serial}`;
+}
+
+// ============================================================
+// Төрөл-мэдрэгч (header-ээр SGTIN-96 / GID-96-г ялгана) URI хувиргагч.
+//   Хүснэгт/хайлтад EPC аль ч схемийн байж болох тул эдгээрийг ашиглана.
+// ============================================================
+
+/** EPC hex -> Pure Identity URI (header-ээр төрлийг таньж). */
+export function epcHexToUri(epcHex: string): string {
+  const hex = normalizeEpc(epcHex);
+  const header = parseInt(hex.slice(0, 2), 16);
+  if (header === 0x30) return sgtin96HexToUri(hex);
+  if (header === 0x35) return gid96HexToUri(hex);
+  throw new Error(`EPC header 0x${header.toString(16)} дэмжигдээгүй`);
+}
+
+/** EPC hex -> Tag URI (header-ээр төрлийг таньж). */
+export function epcHexToTagUri(epcHex: string): string {
+  const hex = normalizeEpc(epcHex);
+  const header = parseInt(hex.slice(0, 2), 16);
+  if (header === 0x30) return sgtin96HexToTagUri(hex);
+  if (header === 0x35) {
+    const { managerNumber, objectClass, serial } = gid96Decode(hex);
+    return `urn:epc:tag:gid-96:${managerNumber}.${objectClass}.${serial}`;
+  }
+  throw new Error(`EPC header 0x${header.toString(16)} дэмжигдээгүй`);
+}
