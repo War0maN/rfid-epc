@@ -86,7 +86,49 @@ export async function renderLabelToCanvas(
   return canvas;
 }
 
-/** Canvas-ийг 1-bit ^GFA ZPL хэсэг болгоно (хар пиксел = 1). */
+/**
+ * ZPL ^GFA ACS давталтын кодыг үүсгэнэ (нэг hex оронг count удаа давтахад).
+ *   G..Y = 1..19, g..z = 20..400 (20-ийн үржвэр). 400-аас дээшийг 'z'-ээр давтана.
+ */
+function repeatCode(count: number): string {
+  let s = "";
+  while (count >= 400) {
+    s += "z";
+    count -= 400;
+  }
+  if (count >= 20) {
+    s += String.fromCharCode(102 + Math.floor(count / 20)); // g..z (20..380)
+    count %= 20;
+  }
+  if (count > 0) s += String.fromCharCode(70 + count); // G..Y (1..19)
+  return s;
+}
+
+/**
+ * Нэг мөрийн hex-г ZPL ACS аргаар шахна:
+ *   давтагдсан оронг RLE кодоор, мөрийн төгсгөлийн 0-г ","-ээр,
+ *   төгсгөлийн F-г "!"-ээр орлуулна.
+ */
+function compressRow(hexRow: string): string {
+  let out = "";
+  const n = hexRow.length;
+  let i = 0;
+  while (i < n) {
+    const c = hexRow[i];
+    let count = 1;
+    while (i + count < n && hexRow[i + count] === c) count++;
+    if (i + count === n) {
+      // Мөрийн үлдсэн хэсэг бүхэлдээ ижил орон — товчилно.
+      if (c === "0") return out + ",";
+      if (c === "F") return out + "!";
+    }
+    out += count > 1 ? repeatCode(count) + c : c;
+    i += count;
+  }
+  return out;
+}
+
+/** Canvas-ийг 1-bit ^GFA ZPL хэсэг болгоно (хар пиксел = 1, ACS шахалттай). */
 function canvasToGfa(canvas: HTMLCanvasElement): string {
   const { width: W, height: H } = canvas;
   const ctx = canvas.getContext("2d");
@@ -95,8 +137,10 @@ function canvasToGfa(canvas: HTMLCanvasElement): string {
   const rowBytes = Math.ceil(W / 8);
   const total = rowBytes * H;
 
-  let hex = "";
+  let out = "";
+  let prevRaw: string | null = null;
   for (let y = 0; y < H; y++) {
+    let row = "";
     for (let b = 0; b < rowBytes; b++) {
       let byte = 0;
       for (let bit = 0; bit < 8; bit++) {
@@ -108,10 +152,14 @@ function canvasToGfa(canvas: HTMLCanvasElement): string {
           if (dark) byte |= 0x80 >> bit;
         }
       }
-      hex += byte.toString(16).padStart(2, "0").toUpperCase();
+      row += byte.toString(16).padStart(2, "0").toUpperCase();
     }
+    // Мөр өмнөхтэйгөө ижил бол ":"-ээр давтана.
+    if (row === prevRaw) out += ":";
+    else out += compressRow(row);
+    prevRaw = row;
   }
-  return `^FO0,0^GFA,${total},${total},${rowBytes},${hex}^FS`;
+  return `^FO0,0^GFA,${total},${total},${rowBytes},${out}^FS`;
 }
 
 /** Template + нэг мөрийн дата → нэг шошгоны ZPL (^XA…^XZ), чип шарах + зураг. */
