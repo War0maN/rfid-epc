@@ -4,7 +4,7 @@
 // GTIN (баркод)-оос шууд (SGTIN-96) үүсгэнэ — брэнд хамаарахгүй.
 // ============================================================
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { sgtin96BatchFromGtin } from "./epc";
+import { sgtin96BatchFromGtin, gid96Batch } from "./epc";
 import { logAuditEvent } from "./audit";
 
 export interface JobLine {
@@ -19,14 +19,14 @@ export interface GeneratedEpc {
   epcHex: string;
 }
 
-/** Тенант id + default filter-г нэг удаа татна (RLS-ээр зөвхөн өөрийн тенант). */
+/** Тенант id + default filter + manager_number-г татна (RLS-ээр өөрийн тенант). */
 async function getTenantConfig(supabase: SupabaseClient) {
   const { data, error } = await supabase
     .from("tenants")
-    .select("id, default_filter_value")
+    .select("id, default_filter_value, manager_number")
     .single();
   if (error) throw error;
-  return data as { id: string; default_filter_value: number };
+  return data as { id: string; default_filter_value: number; manager_number: number | null };
 }
 
 /**
@@ -43,15 +43,18 @@ export async function generateEpcsForJob(
   const filter = tenant.default_filter_value ?? 1;
   const lines = params.lines.filter((l) => l.count >= 1);
 
-  // Барааны GTIN-уудыг нэг удаа татаж map болгоё.
+  // Барааны GTIN + object_class-ийг нэг удаа татаж map болгоё.
   const productIds = [...new Set(lines.map((l) => l.productId))];
   const { data: products, error: pErr } = await supabase
     .from("products")
-    .select("id, gtin")
+    .select("id, gtin, object_class")
     .in("id", productIds);
   if (pErr) throw pErr;
-  const gtinById = new Map(
-    (products as { id: string; gtin: string }[]).map((p) => [p.id, p.gtin])
+  const prodById = new Map(
+    (products as { id: string; gtin: string | null; object_class: number | null }[]).map((p) => [
+      p.id,
+      p,
+    ])
   );
 
   // 1) Бараа тус бүрийн НИЙТ тоог нэгтгэж, нэг round-trip-ээр serial захиална.
@@ -83,12 +86,29 @@ export async function generateEpcsForJob(
   const result: GeneratedEpc[] = [];
 
   for (const line of lines) {
-    const gtin = gtinById.get(line.productId);
-    if (!gtin) throw new Error(`бараа ${line.productId}: GTIN олдсонгүй`);
+    const prod = prodById.get(line.productId);
+    if (!prod) throw new Error(`бараа ${line.productId}: олдсонгүй`);
     const serial = nextSerial.get(line.productId);
     if (serial == null) throw new Error(`бараа ${line.productId}: serial захиалга алга`);
 
-    const batch = sgtin96BatchFromGtin(gtin, serial, line.count, filter);
+    // GTIN (баркод) байвал SGTIN-96; байхгүй бол GID-96 (GS1-гүй дотоод код).
+    const hasGtin = !!prod.gtin && prod.gtin.trim() !== "";
+    let batch: { serial: bigint; epcHex: string }[];
+    if (hasGtin) {
+      batch = sgtin96BatchFromGtin(prod.gtin as string, serial, line.count, filter);
+    } else {
+      if (prod.object_class == null) {
+        throw new Error(`бараа ${line.productId}: object_class алга (GID-96 кодлоход шаардлагатай)`);
+      }
+      if (tenant.manager_number == null) {
+        throw new Error("Тенантад manager_number тохируулаагүй (GID-96 кодлоход шаардлагатай)");
+      }
+      batch = gid96Batch(
+        { managerNumber: tenant.manager_number, objectClass: prod.object_class },
+        serial,
+        line.count
+      );
+    }
     nextSerial.set(line.productId, serial + BigInt(line.count));
 
     for (const b of batch) {

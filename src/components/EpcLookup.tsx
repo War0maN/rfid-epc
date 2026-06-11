@@ -1,6 +1,6 @@
 import { errorMessage } from "../lib/errorMessage";
 import { useState, type FormEvent, type ReactNode } from "react";
-import { normalizeEpc, sgtin96HexToUri, sgtin96HexToTagUri } from "../lib/epc";
+import { normalizeEpc, epcHexToUri, epcHexToTagUri } from "../lib/epc";
 import { lookupEpc, type EpcRow } from "../lib/queries";
 
 type State =
@@ -10,19 +10,19 @@ type State =
   | { kind: "notfound" }
   | { kind: "error"; message: string };
 
-/** hex -> Pure Identity URI; декод бүтэлгүйтвэл зураас. */
+/** hex -> Pure Identity URI; декод бүтэлгүйтвэл зураас. SGTIN/GID хоёуланг. */
 function safeUri(hex: string): string {
   try {
-    return sgtin96HexToUri(hex);
+    return epcHexToUri(hex);
   } catch {
     return "—";
   }
 }
 
-/** hex -> Tag URI; декод бүтэлгүйтвэл зураас. */
+/** hex -> Tag URI; декод бүтэлгүйтвэл зураас. SGTIN/GID хоёуланг. */
 function safeTagUri(hex: string): string {
   try {
-    return sgtin96HexToTagUri(hex);
+    return epcHexToTagUri(hex);
   } catch {
     return "—";
   }
