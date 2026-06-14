@@ -15,6 +15,7 @@ export interface EpcRow {
   epc_hex: string;
   box_no: string | null;
   created_at: string;
+  printed_at: string | null; // хэвлэсэн огноо (null бол хэвлээгүй)
   job_id: string;
   product_id: string;
   name: string | null;
@@ -51,16 +52,19 @@ async function fetchLookupMaps() {
   return { pMap, jMap };
 }
 
+interface FlatEpc {
+  id: string;
+  serial: number;
+  epc_hex: string;
+  box_no: string | null;
+  created_at: string;
+  printed_at: string | null;
+  job_id: string;
+  product_id: string;
+}
+
 function joinRow(
-  r: {
-    id: string;
-    serial: number;
-    epc_hex: string;
-    box_no: string | null;
-    created_at: string;
-    job_id: string;
-    product_id: string;
-  },
+  r: FlatEpc,
   pMap: Map<string, ProductLite>,
   jMap: Map<string, JobLite>
 ): EpcRow {
@@ -77,7 +81,7 @@ function joinRow(
   };
 }
 
-const FLAT_SELECT = "id, serial, epc_hex, box_no, created_at, job_id, product_id";
+const FLAT_SELECT = "id, serial, epc_hex, box_no, created_at, printed_at, job_id, product_id";
 
 /**
  * Бүх EPC-г татна (1000-ийн хязгааргүй). epc_codes-г JOIN-гүй хавтгай,
@@ -100,15 +104,7 @@ export async function fetchAllEpcs(): Promise<EpcRow[]> {
     if (lastId) q = q.gt("id", lastId);
     const { data, error } = await q;
     if (error) throw error;
-    const rows = (data ?? []) as {
-      id: string;
-      serial: number;
-      epc_hex: string;
-      box_no: string | null;
-      created_at: string;
-      job_id: string;
-      product_id: string;
-    }[];
+    const rows = (data ?? []) as FlatEpc[];
     for (const r of rows) all.push(joinRow(r, pMap, jMap));
     if (rows.length < PAGE) break;
     lastId = rows[rows.length - 1].id;
@@ -126,17 +122,5 @@ export async function lookupEpc(epcHex: string): Promise<EpcRow | null> {
   if (error) throw error;
   if (!data) return null;
   const { pMap, jMap } = await fetchLookupMaps();
-  return joinRow(
-    data as {
-      id: string;
-      serial: number;
-      epc_hex: string;
-      box_no: string | null;
-      created_at: string;
-      job_id: string;
-      product_id: string;
-    },
-    pMap,
-    jMap
-  );
+  return joinRow(data as FlatEpc, pMap, jMap);
 }

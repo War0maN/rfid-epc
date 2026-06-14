@@ -461,6 +461,9 @@ create unique index products_tenant_gtin_uidx
 
 -- epc_codes: хайрцагны дугаар
 alter table epc_codes add column if not exists box_no text;
+-- epc_codes: хэвлэсэн төлөв (хэвлэсэн огноо; null бол хэвлээгүй)
+alter table epc_codes add column if not exists printed_at timestamptz;
+create index if not exists epc_printed_idx on epc_codes (tenant_id, printed_at);
 
 -- ============================================================
 -- Шошгоны загвар (label designer)

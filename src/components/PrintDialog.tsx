@@ -13,10 +13,12 @@ import { errorMessage } from "../lib/errorMessage";
 interface Props {
   rows: LabelData[];
   onClose: () => void;
+  /** Хэвлэх/ZPL татах амжилттай болоход (хэвлэгдсэн төлөв тэмдэглэхэд). */
+  onPrinted?: () => void;
 }
 
 /** Сонгосон EPC-үүдийг загвараар preview хийж, Browser Print-ээр хэвлэх диалог. */
-export default function PrintDialog({ rows, onClose }: Props) {
+export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
   const [templates, setTemplates] = useState<LabelTemplate[]>([]);
   const [templateId, setTemplateId] = useState<string>("");
   const [preview, setPreview] = useState<string>("");
@@ -88,6 +90,7 @@ export default function PrintDialog({ rows, onClose }: Props) {
       const zpl = await buildBatchZpl(template, rows, offset);
       await sendToPrinter(device, zpl);
       setInfo(`${rows.length} шошго принтер рүү илгээлээ.`);
+      onPrinted?.();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -102,6 +105,7 @@ export default function PrintDialog({ rows, onClose }: Props) {
     try {
       const zpl = await buildBatchZpl(template, rows, offset);
       downloadZplFile(`labels-${new Date().toISOString().slice(0, 10)}.zpl`, zpl);
+      onPrinted?.();
     } catch (e) {
       setError(errorMessage(e));
     } finally {

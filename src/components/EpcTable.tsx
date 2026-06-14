@@ -14,17 +14,19 @@ interface Props {
   refreshKey?: number;
 }
 
-/** Хүснэгтийн багана бүрийн тодорхойлолт (толгой + утга авах + шүүх). */
+/** Хүснэгтийн багана бүрийн тодорхойлолт (толгой + утга авах + шүүх + эрэмбэ). */
 interface ColDef {
   key: string;
   label: string;
   get: (r: EpcRow) => string;
   mono?: boolean;
+  num?: boolean; // тоон эрэмбэлэлт (жишээ нь Serial)
 }
 
 const COLUMNS: ColDef[] = [
   { key: "epc", label: "EPC (hex)", get: (r) => r.epc_hex, mono: true },
-  { key: "serial", label: "Serial", get: (r) => String(r.serial) },
+  { key: "serial", label: "Serial", get: (r) => String(r.serial), num: true },
+  { key: "printed", label: "Төлөв", get: (r) => (r.printed_at ? "хэвлэгдсэн" : "хэвлээгүй") },
   { key: "name", label: "Бараа", get: (r) => r.name ?? "" },
   { key: "sku", label: "SKU", get: (r) => r.sku ?? "", mono: true },
   { key: "gtin", label: "GTIN/баркод", get: (r) => r.gtin ?? "", mono: true },
@@ -62,6 +64,8 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
   const [page, setPage] = useState(0); // 0-ээс эхэлсэн хуудасны дугаар
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showPrint, setShowPrint] = useState(false);
+  // Эрэмбэлэлт (багана + чиглэл). null бол эрэмбэлэхгүй (татсан дараалал).
+  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
 
   // Бүх EPC-г татах (refreshKey өөрчлөгдөх бүрт дахин). setState-г зөвхөн
   // promise callback дотор дуудаж lint-ийн set-state-in-effect-ээс зайлсхийнэ.
@@ -98,10 +102,31 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
     );
   }, [rows, activeFilters]);
 
+  // Эрэмбэлсэн мөрүүд (толгой дээр дарж эрэмбэлнэ).
+  const sorted = useMemo(() => {
+    if (!sort) return filtered;
+    const col = COLUMNS.find((c) => c.key === sort.key);
+    if (!col) return filtered;
+    const dir = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) =>
+      col.num
+        ? (Number(col.get(a)) - Number(col.get(b))) * dir
+        : col.get(a).localeCompare(col.get(b), undefined, { numeric: true }) * dir
+    );
+  }, [filtered, sort]);
+
+  // Толгой дарах: өсөх → буурах → эрэмбэлэхгүй.
+  function toggleSort(key: string) {
+    setSort((s) =>
+      s && s.key === key ? (s.dir === "asc" ? { key, dir: "desc" } : null) : { key, dir: "asc" }
+    );
+    setPage(0);
+  }
+
   // Хуудаслалт. Шүүлт/дата өөрчлөгдөхөд хуудсыг хүрээнд барина.
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
-  const visible = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+  const visible = sorted.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
   function setFilter(key: string, value: string) {
     setFilters((f) => ({ ...f, [key]: value }));
@@ -113,8 +138,29 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
     setPage(0);
   }
 
-  // Хэвлэх мөрүүд: сонгосон байвал тэдгээр, эс бөгөөс шүүсэн бүгд.
-  const printRows = selectedIds.size > 0 ? filtered.filter((r) => selectedIds.has(r.id)) : filtered;
+  // Хэвлэх мөрүүд: сонгосон байвал тэдгээр, эс бөгөөс шүүсэн бүгд (эрэмбэлсэн дарааллаар).
+  const printRows = selectedIds.size > 0 ? sorted.filter((r) => selectedIds.has(r.id)) : sorted;
+
+  /** Сонгосон EPC-үүдийг "хэвлэгдсэн" болгож тэмдэглэнэ (DB + локал). */
+  async function markPrinted(ids: string[]) {
+    if (ids.length === 0) return;
+    const now = new Date().toISOString();
+    const idSet = new Set(ids);
+    // Optimistic: зөвхөн хэвлээгүй мөрд огноо тавина.
+    setRows((rs) => rs.map((r) => (idSet.has(r.id) && !r.printed_at ? { ...r, printed_at: now } : r)));
+    try {
+      for (let i = 0; i < ids.length; i += 500) {
+        const { error: e } = await supabase
+          .from("epc_codes")
+          .update({ printed_at: now })
+          .in("id", ids.slice(i, i + 500))
+          .is("printed_at", null);
+        if (e) throw e;
+      }
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
 
   function toggleRow(id: string) {
     setSelectedIds((s) => {
@@ -135,7 +181,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
   }
 
   function handleExport() {
-    const flat = filtered.map((r) => ({
+    const flat = sorted.map((r) => ({
       epc_hex: r.epc_hex,
       epc_uri: safeUri(r.epc_hex),
       epc_tag_uri: safeTagUri(r.epc_hex),
@@ -147,6 +193,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       job_number: r.job_number ?? "",
       arrival_date: r.arrival_date ?? "",
       supplier: r.supplier ?? "",
+      printed: r.printed_at ? "хэвлэгдсэн" : "хэвлээгүй",
       created_at: r.created_at,
     }));
     const csv = toCsv(flat, [
@@ -161,15 +208,16 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       { key: "job_number", label: "Ажлын №" },
       { key: "arrival_date", label: "Ирсэн огноо" },
       { key: "supplier", label: "Нийлүүлэгч" },
+      { key: "printed", label: "Төлөв" },
       { key: "created_at", label: "Үүссэн" },
     ]);
     downloadCsv(`epc-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
-    void logAuditEvent(supabase, "export_csv", "epc", null, { count: filtered.length });
+    void logAuditEvent(supabase, "export_csv", "epc", null, { count: sorted.length });
   }
 
   function handleExportZpl() {
     const zpl = buildZplBatch(
-      filtered.map((r) => ({
+      sorted.map((r) => ({
         epcHex: r.epc_hex,
         name: r.name,
         gtin: r.gtin,
@@ -179,7 +227,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       }))
     );
     downloadZpl(`epc-labels-${new Date().toISOString().slice(0, 10)}.zpl`, zpl);
-    void logAuditEvent(supabase, "export_zpl", "epc", null, { count: filtered.length });
+    void logAuditEvent(supabase, "export_zpl", "epc", null, { count: sorted.length });
   }
 
   return (
@@ -255,9 +303,17 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
                   key={c.key}
                   className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left align-top"
                 >
-                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <button
+                    type="button"
+                    onClick={() => toggleSort(c.key)}
+                    className="mb-1 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-indigo-600"
+                    title="Эрэмбэлэх"
+                  >
                     {c.label}
-                  </div>
+                    <span className="text-[10px] text-slate-400">
+                      {sort?.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+                    </span>
+                  </button>
                   <input
                     value={filters[c.key] ?? ""}
                     onChange={(e) => setFilter(c.key, e.target.value)}
@@ -308,7 +364,22 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
                           (c.mono ? " font-mono text-xs" : "")
                         }
                       >
-                        {v || <span className="text-slate-300">—</span>}
+                        {c.key === "printed" ? (
+                          r.printed_at ? (
+                            <span
+                              className="rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700"
+                              title={new Date(r.printed_at).toLocaleString()}
+                            >
+                              Хэвлэгдсэн
+                            </span>
+                          ) : (
+                            <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                              Хэвлээгүй
+                            </span>
+                          )
+                        ) : (
+                          v || <span className="text-slate-300">—</span>
+                        )}
                       </td>
                     );
                   })}
@@ -358,7 +429,11 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
 
       {showPrint && (
         <Suspense fallback={null}>
-          <PrintDialog rows={printRows} onClose={() => setShowPrint(false)} />
+          <PrintDialog
+            rows={printRows}
+            onClose={() => setShowPrint(false)}
+            onPrinted={() => markPrinted(printRows.map((r) => r.id))}
+          />
         </Suspense>
       )}
     </div>
