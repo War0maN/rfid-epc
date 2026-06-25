@@ -124,3 +124,102 @@ export async function lookupEpc(epcHex: string): Promise<EpcRow | null> {
   const { pMap, jMap } = await fetchLookupMaps();
   return joinRow(data as FlatEpc, pMap, jMap);
 }
+
+// ============================================================
+// Server-side хуудаслалт / хайлт / эрэмбэ (epc_full view дээр).
+//   Зөвхөн харагдах хуудсыг татна — олон мянган мөртэй ч хурдан.
+// ============================================================
+
+export interface EpcSort {
+  key: string;
+  dir: "asc" | "desc";
+}
+
+export interface EpcPage {
+  rows: EpcRow[];
+  total: number;
+}
+
+/** Хүснэгтийн баганын түлхүүр → DB баганын нэр. */
+const COL_TO_DB: Record<string, string> = {
+  epc: "epc_hex",
+  serial: "serial",
+  printed: "printed_at",
+  name: "name",
+  sku: "sku",
+  gtin: "gtin",
+  box: "box_no",
+  job: "job_number",
+  date: "arrival_date",
+  supplier: "supplier",
+};
+
+/** epc_full дээрх select-д баганын шүүлтүүдийг хэрэглэнэ. */
+type EpcQuery = ReturnType<typeof epcBase>;
+function epcBase(withCount: boolean) {
+  return withCount
+    ? supabase.from("epc_full").select("*", { count: "exact" })
+    : supabase.from("epc_full").select("*");
+}
+
+function applyEpcFilters(q: EpcQuery, filters: Record<string, string>): EpcQuery {
+  let out = q;
+  for (const [key, raw] of Object.entries(filters)) {
+    const val = (raw ?? "").trim();
+    if (!val) continue;
+    const db = COL_TO_DB[key];
+    if (!db) continue;
+    if (key === "printed") {
+      const low = val.toLowerCase();
+      if ("хэвлэгдсэн".startsWith(low)) out = out.not("printed_at", "is", null);
+      else if ("хэвлээгүй".startsWith(low)) out = out.is("printed_at", null);
+    } else if (db === "serial") {
+      const n = val.replace(/\D/g, "");
+      if (n) out = out.eq("serial", n);
+    } else {
+      out = out.ilike(db, `%${val}%`);
+    }
+  }
+  return out;
+}
+
+/** Нэг хуудас EPC-г татна (нийт тоотой нь). filters/sort нь SQL талд. */
+export async function fetchEpcPage(params: {
+  page: number;
+  pageSize: number;
+  filters: Record<string, string>;
+  sort: EpcSort | null;
+}): Promise<EpcPage> {
+  const filtered = applyEpcFilters(epcBase(true), params.filters);
+  const sortDb = params.sort ? COL_TO_DB[params.sort.key] : null;
+  const asc = params.sort?.dir === "asc";
+  let q = filtered.order(sortDb ?? "id", { ascending: sortDb ? asc : true });
+  if (sortDb && sortDb !== "id") q = q.order("id", { ascending: true }); // тогтвортой tiebreak
+  const from = params.page * params.pageSize;
+  const { data, error, count } = await q.range(from, from + params.pageSize - 1);
+  if (error) throw error;
+  return { rows: (data ?? []) as EpcRow[], total: count ?? 0 };
+}
+
+/** Шүүлтэд тохирох БҮХ мөрийг татна (export/print-д). cap-аар хязгаарлана. */
+export async function fetchEpcAllMatching(
+  filters: Record<string, string>,
+  sort: EpcSort | null,
+  cap = 100000
+): Promise<EpcRow[]> {
+  const sortDb = sort ? COL_TO_DB[sort.key] : null;
+  const asc = sort?.dir === "asc";
+  const PAGE = 1000;
+  const out: EpcRow[] = [];
+  for (let from = 0; from < cap; from += PAGE) {
+    const filtered = applyEpcFilters(epcBase(false), filters);
+    let q = filtered.order(sortDb ?? "id", { ascending: sortDb ? asc : true });
+    if (sortDb && sortDb !== "id") q = q.order("id", { ascending: true });
+    const { data, error } = await q.range(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as EpcRow[];
+    out.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}

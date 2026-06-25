@@ -1,5 +1,10 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { fetchAllEpcs, type EpcRow } from "../lib/queries";
+import { lazy, Suspense, useEffect, useState } from "react";
+import {
+  fetchEpcPage,
+  fetchEpcAllMatching,
+  type EpcRow,
+  type EpcSort,
+} from "../lib/queries";
 import { downloadCsv, toCsv } from "../lib/exportCsv";
 import { buildZplBatch, downloadZpl } from "../lib/exportZpl";
 import { sgtin96HexToUri, sgtin96HexToTagUri } from "../lib/epc";
@@ -14,18 +19,17 @@ interface Props {
   refreshKey?: number;
 }
 
-/** Хүснэгтийн багана бүрийн тодорхойлолт (толгой + утга авах + шүүх + эрэмбэ). */
+/** Хүснэгтийн багана бүрийн тодорхойлолт (толгой + утга авах). */
 interface ColDef {
   key: string;
   label: string;
   get: (r: EpcRow) => string;
   mono?: boolean;
-  num?: boolean; // тоон эрэмбэлэлт (жишээ нь Serial)
 }
 
 const COLUMNS: ColDef[] = [
   { key: "epc", label: "EPC (hex)", get: (r) => r.epc_hex, mono: true },
-  { key: "serial", label: "Serial", get: (r) => String(r.serial), num: true },
+  { key: "serial", label: "Serial", get: (r) => String(r.serial) },
   { key: "printed", label: "Төлөв", get: (r) => (r.printed_at ? "хэвлэгдсэн" : "хэвлээгүй") },
   { key: "name", label: "Бараа", get: (r) => r.name ?? "" },
   { key: "sku", label: "SKU", get: (r) => r.sku ?? "", mono: true },
@@ -36,8 +40,8 @@ const COLUMNS: ColDef[] = [
   { key: "supplier", label: "Нийлүүлэгч", get: (r) => r.supplier ?? "" },
 ];
 
-// Нэг хуудсанд харуулах мөрийн тоо (DOM-ийг хөнгөн байлгана; экспорт нь бүгдийг).
-const PAGE_SIZE = 1000;
+// Нэг хуудсанд татах/харуулах мөрийн тоо (server-side хуудаслалт).
+const PAGE_SIZE = 100;
 
 /** hex -> URI; декод бүтэлгүйтвэл хоосон (export эвдрэхгүй). */
 function safeUri(hex: string): string {
@@ -56,98 +60,120 @@ function safeTagUri(hex: string): string {
 }
 
 export default function EpcTable({ refreshKey = 0 }: Props) {
-  const [rows, setRows] = useState<EpcRow[]>([]);
+  const [pageRows, setPageRows] = useState<EpcRow[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false); // export/print бэлдэж байх үед
   const [error, setError] = useState<string | null>(null);
-  // Багана бүрийн шүүлтийн текст (col.key -> хайх утга).
+  // Багана бүрийн шүүлтийн текст (col.key -> хайх утга). debounced нь DB рүү.
   const [filters, setFilters] = useState<Record<string, string>>({});
+  const [debounced, setDebounced] = useState<Record<string, string>>({});
   const [page, setPage] = useState(0); // 0-ээс эхэлсэн хуудасны дугаар
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showPrint, setShowPrint] = useState(false);
-  // Эрэмбэлэлт (багана + чиглэл). null бол эрэмбэлэхгүй (татсан дараалал).
-  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
+  const [sort, setSort] = useState<EpcSort | null>(null);
+  // Сонгосон мөрүүд (хуудас хооронд хадгалагдана; мөрийн дата-г бүхлээр нь хадгална).
+  const [selected, setSelected] = useState<Map<string, EpcRow>>(new Map());
+  const [printRows, setPrintRows] = useState<EpcRow[] | null>(null);
 
-  // Бүх EPC-г татах (refreshKey өөрчлөгдөх бүрт дахин). setState-г зөвхөн
-  // promise callback дотор дуудаж lint-ийн set-state-in-effect-ээс зайлсхийнэ.
+  const hasFilters = Object.values(debounced).some((v) => v.trim());
+
+  // Шүүлтийн оролтыг debounce хийнэ (бичих бүрд DB-рүү явахгүй).
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(filters), 300);
+    return () => clearTimeout(t);
+  }, [filters]);
+
+  // Хуудсыг server-ээс татах (хуудас / шүүлт / эрэмбэ / сэргээх өөрчлөгдөхөд).
+  // setState-г зөвхөн async callback дотор дуудна (lint: set-state-in-effect).
   useEffect(() => {
     let active = true;
-    fetchAllEpcs()
-      .then((data) => {
-        if (active) {
-          setRows(data);
-          setError(null);
-        }
-      })
-      .catch((e) => active && setError(errorMessage(e)))
-      .finally(() => active && setLoading(false));
+    void (async () => {
+      try {
+        const res = await fetchEpcPage({ page, pageSize: PAGE_SIZE, filters: debounced, sort });
+        if (!active) return;
+        setPageRows(res.rows);
+        setTotal(res.total);
+        setError(null);
+      } catch (e) {
+        if (active) setError(errorMessage(e));
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
     return () => {
       active = false;
     };
-  }, [refreshKey]);
+  }, [page, debounced, sort, refreshKey]);
 
-  // Идэвхтэй (хоосон биш) шүүлтүүд
-  const activeFilters = useMemo(
-    () =>
-      COLUMNS.map((c) => ({ col: c, q: (filters[c.key] ?? "").trim().toLowerCase() })).filter(
-        (f) => f.q.length > 0
-      ),
-    [filters]
-  );
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const visible = pageRows;
 
-  // Шүүсэн мөрүүд (бүх багана дээрх шүүлт хослон ажиллана)
-  const filtered = useMemo(() => {
-    if (activeFilters.length === 0) return rows;
-    return rows.filter((r) =>
-      activeFilters.every((f) => f.col.get(r).toLowerCase().includes(f.q))
-    );
-  }, [rows, activeFilters]);
+  // Шинэ хуудас руу шилжих (spinner-ийг тэр даруй харуулна).
+  function goPage(p: number) {
+    setLoading(true);
+    setPage(p);
+  }
 
-  // Эрэмбэлсэн мөрүүд (толгой дээр дарж эрэмбэлнэ).
-  const sorted = useMemo(() => {
-    if (!sort) return filtered;
-    const col = COLUMNS.find((c) => c.key === sort.key);
-    if (!col) return filtered;
-    const dir = sort.dir === "asc" ? 1 : -1;
-    return [...filtered].sort((a, b) =>
-      col.num
-        ? (Number(col.get(a)) - Number(col.get(b))) * dir
-        : col.get(a).localeCompare(col.get(b), undefined, { numeric: true }) * dir
-    );
-  }, [filtered, sort]);
+  function setFilter(key: string, value: string) {
+    setLoading(true);
+    setFilters((f) => ({ ...f, [key]: value }));
+    setPage(0); // шүүх үед эхний хуудас руу
+  }
+
+  function clearFilters() {
+    setLoading(true);
+    setFilters({});
+    setPage(0);
+  }
 
   // Толгой дарах: өсөх → буурах → эрэмбэлэхгүй.
   function toggleSort(key: string) {
+    setLoading(true);
     setSort((s) =>
       s && s.key === key ? (s.dir === "asc" ? { key, dir: "desc" } : null) : { key, dir: "asc" }
     );
     setPage(0);
   }
 
-  // Хуудаслалт. Шүүлт/дата өөрчлөгдөхөд хуудсыг хүрээнд барина.
-  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const safePage = Math.min(page, pageCount - 1);
-  const visible = sorted.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
-
-  function setFilter(key: string, value: string) {
-    setFilters((f) => ({ ...f, [key]: value }));
-    setPage(0); // шүүх үед эхний хуудас руу
+  function toggleRow(r: EpcRow) {
+    setSelected((m) => {
+      const n = new Map(m);
+      if (n.has(r.id)) n.delete(r.id);
+      else n.set(r.id, r);
+      return n;
+    });
+  }
+  const allVisibleSelected = visible.length > 0 && visible.every((r) => selected.has(r.id));
+  function toggleAllVisible() {
+    setSelected((m) => {
+      const n = new Map(m);
+      if (allVisibleSelected) visible.forEach((r) => n.delete(r.id));
+      else visible.forEach((r) => n.set(r.id, r));
+      return n;
+    });
   }
 
-  function clearFilters() {
-    setFilters({});
-    setPage(0);
+  /** Export/print-д ашиглах мөрүүд: сонгосон байвал тэдгээр, эс бөгөөс шүүсэн БҮХ мөр. */
+  async function resolveRows(): Promise<EpcRow[]> {
+    if (selected.size > 0) return [...selected.values()];
+    return fetchEpcAllMatching(debounced, sort);
   }
 
-  // Хэвлэх мөрүүд: сонгосон байвал тэдгээр, эс бөгөөс шүүсэн бүгд (эрэмбэлсэн дарааллаар).
-  const printRows = selectedIds.size > 0 ? sorted.filter((r) => selectedIds.has(r.id)) : sorted;
-
-  /** Сонгосон EPC-үүдийг "хэвлэгдсэн" болгож тэмдэглэнэ (DB + локал). */
+  /** Өгсөн EPC-үүдийг "хэвлэгдсэн" болгож тэмдэглэнэ (DB + локал). */
   async function markPrinted(ids: string[]) {
     if (ids.length === 0) return;
     const now = new Date().toISOString();
     const idSet = new Set(ids);
-    // Optimistic: зөвхөн хэвлээгүй мөрд огноо тавина.
-    setRows((rs) => rs.map((r) => (idSet.has(r.id) && !r.printed_at ? { ...r, printed_at: now } : r)));
+    // Optimistic: харагдаж буй хуудас + сонголтод тусгана.
+    setPageRows((rs) => rs.map((r) => (idSet.has(r.id) && !r.printed_at ? { ...r, printed_at: now } : r)));
+    setSelected((m) => {
+      const n = new Map(m);
+      for (const id of ids) {
+        const r = n.get(id);
+        if (r && !r.printed_at) n.set(id, { ...r, printed_at: now });
+      }
+      return n;
+    });
     try {
       for (let i = 0; i < ids.length; i += 500) {
         const { error: e } = await supabase
@@ -162,88 +188,103 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
     }
   }
 
-  function toggleRow(id: string) {
-    setSelectedIds((s) => {
-      const n = new Set(s);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-  }
-  const allVisibleSelected = visible.length > 0 && visible.every((r) => selectedIds.has(r.id));
-  function toggleAllVisible() {
-    setSelectedIds((s) => {
-      const n = new Set(s);
-      if (allVisibleSelected) visible.forEach((r) => n.delete(r.id));
-      else visible.forEach((r) => n.add(r.id));
-      return n;
-    });
-  }
-
-  function handleExport() {
-    const flat = sorted.map((r) => ({
-      epc_hex: r.epc_hex,
-      epc_uri: safeUri(r.epc_hex),
-      epc_tag_uri: safeTagUri(r.epc_hex),
-      serial: r.serial,
-      product: r.name ?? "",
-      sku: r.sku ?? "",
-      gtin: r.gtin ?? "",
-      box_no: r.box_no ?? "",
-      job_number: r.job_number ?? "",
-      arrival_date: r.arrival_date ?? "",
-      supplier: r.supplier ?? "",
-      printed: r.printed_at ? "хэвлэгдсэн" : "хэвлээгүй",
-      created_at: r.created_at,
-    }));
-    const csv = toCsv(flat, [
-      { key: "epc_hex", label: "EPC (hex)" },
-      { key: "epc_uri", label: "EPC URI" },
-      { key: "epc_tag_uri", label: "EPC Tag URI" },
-      { key: "serial", label: "Serial" },
-      { key: "product", label: "Бараа" },
-      { key: "sku", label: "SKU" },
-      { key: "gtin", label: "GTIN/баркод" },
-      { key: "box_no", label: "Хайрцаг" },
-      { key: "job_number", label: "Ажлын №" },
-      { key: "arrival_date", label: "Ирсэн огноо" },
-      { key: "supplier", label: "Нийлүүлэгч" },
-      { key: "printed", label: "Төлөв" },
-      { key: "created_at", label: "Үүссэн" },
-    ]);
-    downloadCsv(`epc-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
-    void logAuditEvent(supabase, "export_csv", "epc", null, { count: sorted.length });
-  }
-
-  function handleExportZpl() {
-    const zpl = buildZplBatch(
-      sorted.map((r) => ({
-        epcHex: r.epc_hex,
-        name: r.name,
-        gtin: r.gtin,
-        sku: r.sku,
-        boxNo: r.box_no,
+  async function handleExport() {
+    setBusy(true);
+    setError(null);
+    try {
+      const rows = await resolveRows();
+      const flat = rows.map((r) => ({
+        epc_hex: r.epc_hex,
+        epc_uri: safeUri(r.epc_hex),
+        epc_tag_uri: safeTagUri(r.epc_hex),
         serial: r.serial,
-      }))
-    );
-    downloadZpl(`epc-labels-${new Date().toISOString().slice(0, 10)}.zpl`, zpl);
-    void logAuditEvent(supabase, "export_zpl", "epc", null, { count: sorted.length });
+        product: r.name ?? "",
+        sku: r.sku ?? "",
+        gtin: r.gtin ?? "",
+        box_no: r.box_no ?? "",
+        job_number: r.job_number ?? "",
+        arrival_date: r.arrival_date ?? "",
+        supplier: r.supplier ?? "",
+        printed: r.printed_at ? "хэвлэгдсэн" : "хэвлээгүй",
+        created_at: r.created_at,
+      }));
+      const csv = toCsv(flat, [
+        { key: "epc_hex", label: "EPC (hex)" },
+        { key: "epc_uri", label: "EPC URI" },
+        { key: "epc_tag_uri", label: "EPC Tag URI" },
+        { key: "serial", label: "Serial" },
+        { key: "product", label: "Бараа" },
+        { key: "sku", label: "SKU" },
+        { key: "gtin", label: "GTIN/баркод" },
+        { key: "box_no", label: "Хайрцаг" },
+        { key: "job_number", label: "Ажлын №" },
+        { key: "arrival_date", label: "Ирсэн огноо" },
+        { key: "supplier", label: "Нийлүүлэгч" },
+        { key: "printed", label: "Төлөв" },
+        { key: "created_at", label: "Үүссэн" },
+      ]);
+      downloadCsv(`epc-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+      void logAuditEvent(supabase, "export_csv", "epc", null, { count: rows.length });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
   }
+
+  async function handleExportZpl() {
+    setBusy(true);
+    setError(null);
+    try {
+      const rows = await resolveRows();
+      const zpl = buildZplBatch(
+        rows.map((r) => ({
+          epcHex: r.epc_hex,
+          name: r.name,
+          gtin: r.gtin,
+          sku: r.sku,
+          boxNo: r.box_no,
+          serial: r.serial,
+        }))
+      );
+      downloadZpl(`epc-labels-${new Date().toISOString().slice(0, 10)}.zpl`, zpl);
+      void logAuditEvent(supabase, "export_zpl", "epc", null, { count: rows.length });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openPrint() {
+    setBusy(true);
+    setError(null);
+    try {
+      const rows = await resolveRows();
+      if (rows.length === 0) {
+        setError("Хэвлэх мөр алга.");
+        return;
+      }
+      setPrintRows(rows);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Export/print товчны тоо: сонгосон байвал сонголтын тоо, эс бөгөөс нийт (шүүсэн).
+  const outCount = selected.size > 0 ? selected.size : total;
 
   return (
     <div className="space-y-4">
       {/* Үйлдлийн мөр */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-slate-600">
-          Нийт <strong>{rows.length}</strong>
-          {activeFilters.length > 0 && (
-            <>
-              {" · "}шүүсэн <strong>{filtered.length}</strong>
-            </>
-          )}
+          {hasFilters ? "Шүүсэн" : "Нийт"} <strong>{total.toLocaleString()}</strong>
         </span>
         <div className="flex-1" />
-        {activeFilters.length > 0 && (
+        {hasFilters && (
           <button
             onClick={clearFilters}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
@@ -253,39 +294,47 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
         )}
         <button
           onClick={handleExport}
-          disabled={filtered.length === 0}
+          disabled={busy || outCount === 0}
           className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
         >
-          CSV татах ({filtered.length})
+          CSV татах ({outCount.toLocaleString()})
         </button>
         <button
           onClick={handleExportZpl}
-          disabled={filtered.length === 0}
+          disabled={busy || outCount === 0}
           className="rounded-lg bg-slate-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
         >
-          ZPL татах ({filtered.length})
+          ZPL татах ({outCount.toLocaleString()})
         </button>
         <button
-          onClick={() => setShowPrint(true)}
-          disabled={printRows.length === 0}
+          onClick={openPrint}
+          disabled={busy || outCount === 0}
           className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
         >
-          🖨 Хэвлэх ({printRows.length})
+          🖨 Хэвлэх ({outCount.toLocaleString()})
         </button>
-        {selectedIds.size > 0 && (
+        {selected.size > 0 && (
           <button
-            onClick={() => setSelectedIds(new Set())}
+            onClick={() => setSelected(new Map())}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
           >
-            Сонголт цэвэрлэх ({selectedIds.size})
+            Сонголт цэвэрлэх ({selected.size})
           </button>
         )}
-        {loading && <span className="text-sm text-slate-500">Ачаалж байна…</span>}
+        {(loading || busy) && (
+          <span className="flex items-center gap-1.5 text-sm text-slate-500">
+            <svg className="h-4 w-4 animate-spin text-indigo-500" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
+            </svg>
+            {busy ? "Бэлдэж байна…" : "Ачаалж байна…"}
+          </span>
+        )}
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-      {/* Хүснэгт — толгой нь scroll үед дээрээ наалддаг (sticky), багана бүрд шүүлт */}
+      {/* Хүснэгт — толгой нь scroll үед дээрээ наалддаг (sticky), багана бүрд шүүлт/эрэмбэ */}
       <div className="max-h-[70vh] overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="min-w-full border-separate border-spacing-0 text-sm">
           <thead>
@@ -334,25 +383,20 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
                     </svg>
                     <span className="text-sm font-medium">EPC өгөгдөл ачаалж байна…</span>
-                    <span className="text-xs text-slate-400">Олон мянган мөр байвал хэдэн секунд болж магадгүй.</span>
                   </div>
                 </td>
               </tr>
             ) : visible.length === 0 ? (
               <tr>
                 <td colSpan={COLUMNS.length + 1} className="px-4 py-8 text-center text-slate-400">
-                  {rows.length === 0 ? "EPC алга." : "Шүүлтэд тохирох мөр алга."}
+                  {hasFilters ? "Шүүлтэд тохирох мөр алга." : "EPC алга."}
                 </td>
               </tr>
             ) : (
               visible.map((r) => (
-                <tr key={r.id} className={"hover:bg-slate-50" + (selectedIds.has(r.id) ? " bg-indigo-50" : "")}>
+                <tr key={r.id} className={"hover:bg-slate-50" + (selected.has(r.id) ? " bg-indigo-50" : "")}>
                   <td className="border-b border-slate-100 px-2 py-2 text-center">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(r.id)}
-                      onChange={() => toggleRow(r.id)}
-                    />
+                    <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleRow(r)} />
                   </td>
                   {COLUMNS.map((c) => {
                     const v = c.get(r);
@@ -394,31 +438,31 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       {pageCount > 1 && (
         <div className="flex items-center justify-center gap-2 text-sm">
           <button
-            onClick={() => setPage(0)}
+            onClick={() => goPage(0)}
             disabled={safePage === 0}
             className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
           >
             «
           </button>
           <button
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            onClick={() => goPage(Math.max(0, safePage - 1))}
             disabled={safePage === 0}
             className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
           >
             Өмнөх
           </button>
           <span className="px-2 text-slate-600">
-            Хуудас <strong>{safePage + 1}</strong> / {pageCount}
+            Хуудас <strong>{safePage + 1}</strong> / {pageCount.toLocaleString()}
           </span>
           <button
-            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            onClick={() => goPage(Math.min(pageCount - 1, safePage + 1))}
             disabled={safePage >= pageCount - 1}
             className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
           >
             Дараах
           </button>
           <button
-            onClick={() => setPage(pageCount - 1)}
+            onClick={() => goPage(pageCount - 1)}
             disabled={safePage >= pageCount - 1}
             className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
           >
@@ -427,11 +471,11 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
         </div>
       )}
 
-      {showPrint && (
+      {printRows && (
         <Suspense fallback={null}>
           <PrintDialog
             rows={printRows}
-            onClose={() => setShowPrint(false)}
+            onClose={() => setPrintRows(null)}
             onPrinted={() => markPrinted(printRows.map((r) => r.id))}
           />
         </Suspense>
