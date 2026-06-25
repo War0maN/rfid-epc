@@ -493,3 +493,30 @@ drop policy if exists "tenant label_templates" on label_templates;
 create policy "tenant label_templates" on label_templates
   for all using (tenant_id = current_tenant_id())
           with check (tenant_id = current_tenant_id());
+
+-- ============================================================
+-- View: epc_full — EPC + бараа + ажлын талбарууд нэгтгэсэн (server-side
+--   хайлт / эрэмбэ / хуудаслалтад). security_invoker = true тул underlying
+--   хүснэгтүүдийн RLS хэрэгжинэ (зөвхөн өөрийн тенантын мөр харагдана).
+--   Хүснэгтийн жагсаалтыг JS дотор бус, SQL талд хуудаслаж татна — олон
+--   мянган/сая мөртэй ч хурдан.
+-- ============================================================
+create or replace view epc_full
+with (security_invoker = true) as
+select
+  e.id, e.tenant_id, e.serial, e.epc_hex, e.box_no,
+  e.created_at, e.printed_at, e.job_id, e.product_id,
+  p.name, p.gtin, p.sku,
+  j.job_number, j.arrival_date, j.supplier
+from epc_codes e
+left join products p on p.id = e.product_id
+left join jobs    j on j.id = e.job_id;
+
+grant select on epc_full to authenticated;
+
+-- Хайлт хурдасгах trigram индексүүд (ilike-д). Том дата дээр чухал.
+-- Тэмдэглэл: epc_hex нь char(24) тул gin_trgm_ops-д шууд тохирохгүй; 20k мөрд
+-- ilike хурдан тул индексгүй орхив. name/sku нь text — trgm индекстэй.
+create extension if not exists pg_trgm;
+create index if not exists product_name_trgm on products using gin (name gin_trgm_ops);
+create index if not exists product_sku_trgm  on products using gin (sku gin_trgm_ops);
