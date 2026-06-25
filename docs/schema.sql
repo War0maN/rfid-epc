@@ -515,7 +515,8 @@ left join jobs    j on j.id = e.job_id;
 grant select on epc_full to authenticated;
 
 -- Хайлт хурдасгах trigram индексүүд (ilike-д). Том дата дээр чухал.
+-- Тэмдэглэл: epc_hex нь char(24) тул gin_trgm_ops-д шууд тохирохгүй; 20k мөрд
+-- ilike хурдан тул индексгүй орхив. name/sku нь text — trgm индекстэй.
 create extension if not exists pg_trgm;
-create index if not exists epc_hex_trgm  on epc_codes using gin (epc_hex gin_trgm_ops);
 create index if not exists product_name_trgm on products using gin (name gin_trgm_ops);
 create index if not exists product_sku_trgm  on products using gin (sku gin_trgm_ops);
