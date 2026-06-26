@@ -1,0 +1,165 @@
+// ============================================================
+// Каталог: динамик ангилал (мод) + шинж чанарын тодорхойлолт CRUD.
+//   categories      — өөрийгөө заадаг мод (parent_id-ээр хэдэн ч түвшин).
+//   attribute_defs  — тенант бүр өөрийн шинж чанарыг тодорхойлно.
+//   RLS-ийн ачаар бүгд зөвхөн өөрийн тенантад хязгаарлагдана.
+// ============================================================
+import { supabase } from "./supabaseClient";
+
+export interface Category {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  sort: number;
+}
+
+export type AttrInputType = "text" | "number" | "select";
+
+export interface AttributeDef {
+  id: string;
+  category_id: string | null; // null = бүх ангилалд хамаарна
+  label: string;
+  input_type: AttrInputType;
+  options: string[]; // select үед сонголтууд
+  required: boolean;
+  sort: number;
+}
+
+/** Мод дүрслэхэд: ангилал + түүний хүүхдүүд (рекурсив). */
+export interface CategoryNode extends Category {
+  children: CategoryNode[];
+}
+
+// ---------- Categories ----------
+
+export async function listCategories(): Promise<Category[]> {
+  const { data, error } = await supabase
+    .from("categories")
+    .select("id, parent_id, name, sort")
+    .order("sort", { ascending: true })
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as Category[];
+}
+
+/** Хавтгай жагсаалтыг мод болгоно (parent_id-ээр). */
+export function buildTree(rows: Category[]): CategoryNode[] {
+  const byId = new Map<string, CategoryNode>();
+  for (const r of rows) byId.set(r.id, { ...r, children: [] });
+  const roots: CategoryNode[] = [];
+  for (const node of byId.values()) {
+    if (node.parent_id && byId.has(node.parent_id)) byId.get(node.parent_id)!.children.push(node);
+    else roots.push(node);
+  }
+  return roots;
+}
+
+export async function createCategory(name: string, parentId: string | null): Promise<Category> {
+  const { data, error } = await supabase
+    .from("categories")
+    .insert({ name: name.trim(), parent_id: parentId })
+    .select("id, parent_id, name, sort")
+    .single();
+  if (error) throw error;
+  return data as Category;
+}
+
+export async function renameCategory(id: string, name: string): Promise<void> {
+  const { error } = await supabase.from("categories").update({ name: name.trim() }).eq("id", id);
+  if (error) throw error;
+}
+
+/** Ангилал устгана (хүүхдүүд нь cascade-аар хамт устана). */
+export async function deleteCategory(id: string): Promise<void> {
+  const { error } = await supabase.from("categories").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ---------- Attribute definitions ----------
+
+interface AttrRow {
+  id: string;
+  category_id: string | null;
+  label: string;
+  input_type: AttrInputType;
+  options: string[] | null;
+  required: boolean;
+  sort: number;
+}
+
+function toAttr(r: AttrRow): AttributeDef {
+  return { ...r, options: r.options ?? [] };
+}
+
+export async function listAttributeDefs(): Promise<AttributeDef[]> {
+  const { data, error } = await supabase
+    .from("attribute_defs")
+    .select("id, category_id, label, input_type, options, required, sort")
+    .order("sort", { ascending: true })
+    .order("label", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as AttrRow[]).map(toAttr);
+}
+
+export interface AttributeDefInput {
+  category_id: string | null;
+  label: string;
+  input_type: AttrInputType;
+  options: string[];
+  required: boolean;
+}
+
+export async function createAttributeDef(input: AttributeDefInput): Promise<AttributeDef> {
+  const { data, error } = await supabase
+    .from("attribute_defs")
+    .insert({
+      category_id: input.category_id,
+      label: input.label.trim(),
+      input_type: input.input_type,
+      options: input.input_type === "select" ? input.options : [],
+      required: input.required,
+    })
+    .select("id, category_id, label, input_type, options, required, sort")
+    .single();
+  if (error) throw error;
+  return toAttr(data as AttrRow);
+}
+
+export async function updateAttributeDef(
+  id: string,
+  patch: Partial<AttributeDefInput>
+): Promise<void> {
+  const upd: Record<string, unknown> = {};
+  if (patch.label !== undefined) upd.label = patch.label.trim();
+  if (patch.input_type !== undefined) upd.input_type = patch.input_type;
+  if (patch.options !== undefined) upd.options = patch.options;
+  if (patch.required !== undefined) upd.required = patch.required;
+  if (patch.category_id !== undefined) upd.category_id = patch.category_id;
+  const { error } = await supabase.from("attribute_defs").update(upd).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteAttributeDef(id: string): Promise<void> {
+  const { error } = await supabase.from("attribute_defs").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * Тухайн ангилалд хамаарах шинж чанарууд: глобал (category_id=null) + энэ
+ * ангиллынх + эцэг ангиллуудынх (удамшина). Бараа үүсгэх форм энэ жагсаалтыг
+ * ашиглана.
+ */
+export function attrsForCategory(
+  defs: AttributeDef[],
+  categoryId: string | null,
+  cats: Category[]
+): AttributeDef[] {
+  const ids = new Set<string | null>([null]); // глобал
+  let cur: string | null = categoryId;
+  const byId = new Map(cats.map((c) => [c.id, c]));
+  while (cur) {
+    ids.add(cur);
+    cur = byId.get(cur)?.parent_id ?? null;
+  }
+  return defs.filter((d) => ids.has(d.category_id)).sort((a, b) => a.sort - b.sort);
+}
