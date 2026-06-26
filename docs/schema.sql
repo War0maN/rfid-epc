@@ -520,3 +520,56 @@ grant select on epc_full to authenticated;
 create extension if not exists pg_trgm;
 create index if not exists product_name_trgm on products using gin (name gin_trgm_ops);
 create index if not exists product_sku_trgm  on products using gin (sku gin_trgm_ops);
+
+-- ============================================================
+-- Каталог (Phase 1): динамик ангилал + шинж чанарын тодорхойлолт
+--   categories      — өөрийгөө заадаг мод (хэдэн ч түвшин)
+--   attribute_defs  — тенант бүр өөрийн шинж чанарыг тодорхойлно
+--                     (нэг компани "Размер", нөгөө нь "Өнгө" нэмж болно)
+--   Утгыг (Phase 2) products.attributes jsonb-д хадгална.
+-- ============================================================
+create table if not exists categories (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenants(id) default current_tenant_id(),
+  parent_id   uuid references categories(id) on delete cascade, -- null = дээд түвшин
+  name        text not null,
+  sort        int not null default 0,
+  created_at  timestamptz not null default now()
+);
+create index if not exists categories_tenant_idx on categories (tenant_id, parent_id, sort);
+
+alter table categories enable row level security;
+drop policy if exists "tenant categories" on categories;
+create policy "tenant categories" on categories
+  for all using (tenant_id = current_tenant_id())
+          with check (tenant_id = current_tenant_id());
+
+create table if not exists attribute_defs (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenants(id) default current_tenant_id(),
+  category_id uuid references categories(id) on delete cascade, -- null = бүх ангилалд
+  label       text not null,                       -- "Өнгө", "Размер"
+  input_type  text not null default 'text' check (input_type in ('text','number','select')),
+  options     jsonb not null default '[]'::jsonb,  -- select-ийн сонголтууд ["Улаан","Хөх"]
+  required    boolean not null default false,
+  sort        int not null default 0,
+  created_at  timestamptz not null default now()
+);
+create index if not exists attribute_defs_tenant_idx on attribute_defs (tenant_id, category_id, sort);
+
+alter table attribute_defs enable row level security;
+drop policy if exists "tenant attribute_defs" on attribute_defs;
+create policy "tenant attribute_defs" on attribute_defs
+  for all using (tenant_id = current_tenant_id())
+          with check (tenant_id = current_tenant_id());
+
+-- Audit trigger (хэн ангилал/шинж чанар өөрчилснийг хянана)
+drop trigger if exists audit_categories on categories;
+create trigger audit_categories
+  after insert or update or delete on categories
+  for each row execute function audit_trigger('category');
+
+drop trigger if exists audit_attribute_defs on attribute_defs;
+create trigger audit_attribute_defs
+  after insert or update or delete on attribute_defs
+  for each row execute function audit_trigger('attribute');

@@ -17,6 +17,8 @@ const ENTITY_LABEL: Record<string, string> = {
   product: "Бараа",
   tenant: "Тохиргоо",
   epc: "EPC",
+  category: "Ангилал",
+  attribute: "Шинж чанар",
 };
 
 /** Логийн мөрөөс хүн уншихуйц товч тайлбар гаргана. */
@@ -33,6 +35,8 @@ function describe(row: AuditRow): string {
   if (row.entity === "job") return src.job_number ? `№ ${src.job_number}` : "";
   if (row.entity === "product") return (src.name as string) || (src.gtin as string) || "";
   if (row.entity === "tenant") return (src.name as string) || "";
+  if (row.entity === "category") return (src.name as string) || "";
+  if (row.entity === "attribute") return (src.label as string) || "";
   return "";
 }
 
