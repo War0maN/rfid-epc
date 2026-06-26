@@ -1,25 +1,42 @@
 // ============================================================
-// Excel packing list импорт -> бараа upsert -> Job -> EPC генерац
+// Excel импорт -> бараа (ангилал + шинж чанар) upsert -> Job -> EPC генерац
 // Багана (толгойн нэрийг уян хатан таниулна):
-//   name    — барааны нэр            (нэр / name / product)
-//   sku     — нийлүүлэгчийн SKU/код   (sku / code / артикул)
-//   barcode — EAN/баркод (GTIN)      (barcode / ean / gtin / баркод)   [сонголт]
-//   piece   — тоо ширхэг             (piece / qty / quantity / тоо)    [ЗААВАЛ]
-//   box     — хайрцагны дугаар       (box / box no / хайрцаг)          [сонголт]
-// Баркодтой бараа -> SGTIN-96, баркодгүй бараа -> GID-96 (GS1-гүй).
-// Баркодгүй барааг sku (эс бөгөөс нэр)-ээр давтагдалгүй болгож тоолно.
-// Нэг бараа олон хайрцагт орж болно — (бараа, box) бүр тусдаа мөр болж,
-// EPC-д харгалзах box_no хадгалагдана (шошго наахад мөшгих).
+//   name     — барааны нэр           (нэр / name / product)
+//   sku      — SKU/код               (sku / code / артикул)
+//   barcode  — EAN/баркод (GTIN)     (barcode / ean / gtin / баркод)   [сонголт]
+//   piece    — тоо ширхэг            (piece / qty / quantity / тоо)    [ЗААВАЛ]
+//   box      — хайрцагны дугаар      (box / box no / хайрцаг)          [сонголт]
+//   category — ангилал (зам)         (category / ангилал)              [сонголт]
+//              зам: "Хувцас / Дээд хувцас" ("/", ">", "|"-ээр салгана)
+//   * Бусад БҮХ багана = динамик шинж чанар (Өнгө, Размер, Материал…).
+//     Утга нь products.attributes-д {толгой: утга} болж хадгалагдана.
+//
+// Баркодтой бараа -> SGTIN-96, баркодгүй -> GID-96. Баркодгүй барааны вариант
+// бүр (нэр + шинж чанар)-аар давтагдалгүй болж тоологдоно.
 // ============================================================
 import readXlsxFile from "read-excel-file/universal";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateEpcsForJob, type JobLine } from "./generateEpcs";
 import { normalizeGtin } from "./epc";
+import { ensureCategoriesByPaths } from "./catalog";
 
-/** Баркодгүй барааны давтагдалгүй түлхүүр (sku эс бөгөөс нэр), нормчилсон. */
-function extKeyOf(sku: string | null, name: string | null): string | null {
-  const k = (sku ?? name ?? "").trim().toLowerCase();
-  return k || null;
+/**
+ * Баркодгүй барааны давтагдалгүй түлхүүр. SKU байвал түүгээр; эс бөгөөс
+ * нэр + шинж чанарын утгуудаар (вариант бүр ялгаатай). Юу ч байхгүй бол null.
+ */
+function extKeyOf(
+  name: string | null,
+  sku: string | null,
+  attributes: Record<string, string>
+): string | null {
+  if (sku && sku.trim()) return sku.trim().toLowerCase();
+  const sig = Object.keys(attributes)
+    .sort()
+    .map((k) => `${k}=${attributes[k]}`)
+    .join("|");
+  const base = (name ?? "").trim();
+  if (!base && !sig) return null;
+  return `${base}·${sig}`.toLowerCase();
 }
 
 export interface ImportJobInput {
@@ -30,25 +47,46 @@ export interface ImportJobInput {
 }
 
 interface CleanRow {
-  gtin: string | null;   // нормчилсон (14 орон) GTIN, эсвэл null (баркодгүй)
-  extKey: string | null; // баркодгүй үед давтагдалгүй түлхүүр (sku/нэр)
+  gtin: string | null;
+  extKey: string | null;
   sku: string | null;
   name: string | null;
   piece: number;
   boxNo: string | null;
+  categoryPath: string | null;
+  attributes: Record<string, string>;
 }
 
-/** Толгойн мөрнөөс багана бүрийн индексийг (уян хатан) олно. */
-function columnIndexes(header: unknown[]): Record<string, number> {
-  const norm = header.map((h) => String(h ?? "").trim().toLowerCase());
-  const find = (cands: string[]) => norm.findIndex((h) => cands.includes(h));
-  return {
-    name: find(["name", "нэр", "барааны нэр", "product", "бараа"]),
-    sku: find(["sku", "code", "код", "артикул", "article"]),
-    barcode: find(["barcode", "bar code", "ean", "ean13", "gtin", "баркод", "бар код"]),
-    piece: find(["piece", "pieces", "pcs", "qty", "quantity", "count", "тоо", "ширхэг", "тоо ширхэг"]),
-    box: find(["box", "box no", "box_no", "boxno", "box №", "хайрцаг", "хайрцагны дугаар", "хайрцаг №"]),
-  };
+interface HeaderMap {
+  name: number;
+  sku: number;
+  barcode: number;
+  piece: number;
+  box: number;
+  category: number;
+  attrCols: { idx: number; label: string }[]; // бусад бүх багана = шинж чанар
+}
+
+/** Толгойн мөрнөөс багануудыг таниулна (нөөц + динамик шинж чанарын багана). */
+function parseHeader(header: unknown[]): HeaderMap {
+  const norm = header.map((h) => String(h ?? "").trim());
+  const lower = norm.map((s) => s.toLowerCase());
+  const find = (cands: string[]) => lower.findIndex((h) => cands.includes(h));
+
+  const name = find(["name", "нэр", "барааны нэр", "product", "бараа"]);
+  const sku = find(["sku", "code", "код", "артикул", "article"]);
+  const barcode = find(["barcode", "bar code", "ean", "ean13", "gtin", "баркод", "бар код"]);
+  const piece = find(["piece", "pieces", "pcs", "qty", "quantity", "count", "тоо", "ширхэг", "тоо ширхэг"]);
+  const box = find(["box", "box no", "box_no", "boxno", "box №", "хайрцаг", "хайрцагны дугаар", "хайрцаг №"]);
+  const category = find(["category", "categories", "ангилал", "ангиллал", "анги"]);
+
+  const reserved = new Set([name, sku, barcode, piece, box, category].filter((i) => i >= 0));
+  const attrCols: { idx: number; label: string }[] = [];
+  for (let i = 0; i < norm.length; i++) {
+    if (reserved.has(i) || !norm[i]) continue;
+    attrCols.push({ idx: i, label: norm[i] });
+  }
+  return { name, sku, barcode, piece, box, category, attrCols };
 }
 
 function cell(row: unknown[], idx: number): string {
@@ -57,15 +95,11 @@ function cell(row: unknown[], idx: number): string {
   return v == null ? "" : String(v).trim();
 }
 
-/** Excel файлыг уншиж, цэвэр мөр болгож, GTIN-ийг шалгана. */
+/** Excel файлыг уншиж, цэвэр мөр болгоно. */
 async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: string[] }> {
-  // File-ийг өөрсдөө ArrayBuffer болгож уншина (браузерын FileReader-ийн
-  // "could not be read" алдаанаас зайлсхийнэ).
   const buffer = await file.arrayBuffer();
   const raw = await readXlsxFile(buffer);
 
-  // read-excel-file нь зарим тохиолдолд мөрийн массив, заримд [{sheet, data}]
-  // хэлбэрээр буцаадаг — хоёуланг зохицуулна (эхний sheet-ийг авна).
   let rows: unknown[][];
   if (Array.isArray(raw) && (raw.length === 0 || Array.isArray(raw[0]))) {
     rows = raw as unknown as unknown[][];
@@ -76,14 +110,12 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
   }
   if (rows.length < 2) throw new Error("Файлд толгой + дор хаяж нэг мөр байх ёстой.");
 
-  const col = columnIndexes(rows[0]);
+  const col = parseHeader(rows[0]);
   if (col.piece < 0) throw new Error("'piece' (тоо ширхэг) багана олдсонгүй.");
   if (col.barcode < 0 && col.sku < 0 && col.name < 0) {
     throw new Error("Барааг таних багана (barcode, sku эсвэл name) олдсонгүй.");
   }
 
-  // Алдаатай/хоосон мөрийг алгасаад үргэлжилнэ (нэг муу мөр бүх импортыг
-  // зогсоохгүй). Алгассан тоо/шалтгааныг буцааж UI-д харуулна.
   const out: CleanRow[] = [];
   const skipped: string[] = [];
   for (let i = 1; i < rows.length; i++) {
@@ -93,8 +125,16 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
     const rawBarcode = cell(row, col.barcode);
     const sku = cell(row, col.sku) || null;
     const name = cell(row, col.name) || null;
+    const categoryPath = cell(row, col.category) || null;
 
-    // Баркодтой бол GTIN болгож шалгана; баркодгүй бол sku/нэрээр таниулна.
+    // Динамик шинж чанарууд (бусад баганаас)
+    const attributes: Record<string, string> = {};
+    for (const ac of col.attrCols) {
+      const v = cell(row, ac.idx);
+      if (v) attributes[ac.label] = v;
+    }
+
+    // Баркодтой бол GTIN; эс бөгөөс sku/нэр/шинж чанараар таниулна.
     let gtin: string | null = null;
     let extKey: string | null = null;
     if (rawBarcode) {
@@ -105,8 +145,8 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
         continue;
       }
     } else {
-      extKey = extKeyOf(sku, name);
-      if (!extKey) continue; // баркод ч, нэр/sku ч алга (нийт дүн г.м.) — чимээгүй алгасна
+      extKey = extKeyOf(name, sku, attributes);
+      if (!extKey) continue; // таних утгагүй (нийт дүн г.м.) — чимээгүй алгасна
     }
 
     const piece = parseInt(cell(row, col.piece).replace(/\D/g, ""), 10);
@@ -115,14 +155,7 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
       continue;
     }
 
-    out.push({
-      gtin,
-      extKey,
-      sku,
-      name,
-      piece,
-      boxNo: cell(row, col.box) || null,
-    });
+    out.push({ gtin, extKey, sku, name, piece, boxNo: cell(row, col.box) || null, categoryPath, attributes });
   }
   if (out.length === 0) {
     throw new Error(
@@ -132,7 +165,7 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
   return { rows: out, skipped };
 }
 
-/** Excel packing list-ийг импортлож, бараа upsert, Job үүсгэж EPC генерацлэнэ. */
+/** Excel-ийг импортлож, бараа (ангилал+шинж чанар) upsert, Job үүсгэж EPC генерацлэнэ. */
 export async function importPackingListXlsx(
   supabase: SupabaseClient,
   file: Blob,
@@ -144,10 +177,13 @@ export async function importPackingListXlsx(
   if (tErr) throw tErr;
   const tenantId = tenant.id as string;
 
-  // 1) Бараа upsert — хоёр салаагаар (давхцалгүй):
-  //    a) GTIN-тэй бараа — onConflict (tenant_id, gtin), SGTIN-96 кодлоно.
-  //    b) Баркодгүй бараа — onConflict (tenant_id, ext_key), GID-96 кодлоно.
-  //    upsert-ийн буцаасан мөрийг шууд ашиглаж түлхүүр -> id map үүсгэнэ.
+  // 0) Ангиллын замуудыг шийдэж/үүсгэх (path -> category_id).
+  const catMap = await ensureCategoriesByPaths(
+    rows.map((r) => r.categoryPath).filter((p): p is string => !!p)
+  );
+  const catId = (r: CleanRow) => (r.categoryPath ? catMap.get(r.categoryPath) ?? null : null);
+
+  // 1) Бараа upsert — хоёр салаагаар (давхцалгүй).
   const idByGtin = new Map<string, string>();
   const idByExtKey = new Map<string, string>();
 
@@ -164,6 +200,8 @@ export async function importPackingListXlsx(
       gtin: r.gtin,
       sku: r.sku,
       name: r.name,
+      category_id: catId(r),
+      attributes: r.attributes,
       source: "packing_list" as const,
     }));
     const { data, error: uErr } = await supabase
@@ -181,6 +219,8 @@ export async function importPackingListXlsx(
       ext_key: r.extKey,
       sku: r.sku,
       name: r.name,
+      category_id: catId(r),
+      attributes: r.attributes,
       source: "packing_list" as const,
     }));
     const { data, error: uErr } = await supabase
@@ -191,7 +231,7 @@ export async function importPackingListXlsx(
     for (const p of data as { id: string; ext_key: string }[]) idByExtKey.set(p.ext_key, p.id);
   }
 
-  // 3) (product, box) бүрээр тоог нэгтгэх
+  // 2) (product, box) бүрээр тоог нэгтгэх
   const lineMap = new Map<string, JobLine>();
   for (const r of rows) {
     const productId = r.gtin ? idByGtin.get(r.gtin) : r.extKey ? idByExtKey.get(r.extKey) : undefined;
@@ -202,7 +242,7 @@ export async function importPackingListXlsx(
     else lineMap.set(key, { productId, count: r.piece, boxNo: r.boxNo });
   }
 
-  // 4) Job үүсгэх
+  // 3) Job үүсгэх
   const { data: jobRow, error: jErr } = await supabase
     .from("jobs")
     .insert({
@@ -217,7 +257,7 @@ export async function importPackingListXlsx(
     .single();
   if (jErr) throw jErr;
 
-  // 5) EPC генерац (allocate -> encode -> insert, box_no-той)
+  // 4) EPC генерац (allocate -> encode -> insert)
   const epcs = await generateEpcsForJob(supabase, {
     jobId: jobRow.id,
     lines: [...lineMap.values()],
@@ -228,6 +268,7 @@ export async function importPackingListXlsx(
     totalEpcs: epcs.length,
     productCount: byGtin.size + byExtKey.size,
     boxCount: new Set(rows.map((r) => r.boxNo ?? "")).size,
+    categoryCount: catMap.size,
     skippedCount: skipped.length,
     skippedSample: skipped.slice(0, 5),
   };

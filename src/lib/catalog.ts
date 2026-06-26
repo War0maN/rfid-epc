@@ -144,6 +144,38 @@ export async function deleteAttributeDef(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Excel импортод: ангиллын замуудыг (path) шийдэж, байхгүй түвшнийг үүсгэнэ.
+ * Замыг "/", ">", "|"-ийн аль нэгээр салгана. Буцаалт: эх path → leaf id.
+ * Цөөн ангиллд зориулсан (түвшин бүрд нэг insert) — мянган бараанд ч цөөн зам.
+ */
+export async function ensureCategoriesByPaths(paths: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const unique = [...new Set(paths.map((p) => p.trim()).filter(Boolean))];
+  if (unique.length === 0) return result;
+
+  const existing = await listCategories();
+  const key = (parentId: string | null, name: string) => `${parentId ?? ""}|${name.toLowerCase()}`;
+  const byKey = new Map<string, string>();
+  for (const c of existing) byKey.set(key(c.parent_id, c.name.trim()), c.id);
+
+  for (const path of unique) {
+    const levels = path.split(/[/>|]/).map((s) => s.trim()).filter(Boolean);
+    let parentId: string | null = null;
+    for (const levelName of levels) {
+      const k = key(parentId, levelName);
+      let id = byKey.get(k);
+      if (!id) {
+        id = (await createCategory(levelName, parentId)).id;
+        byKey.set(k, id);
+      }
+      parentId = id;
+    }
+    if (parentId) result.set(path, parentId);
+  }
+  return result;
+}
+
 /** Ангиллын мод → dropdown сонголтууд (бүтэн зам: "A / B / C"). */
 export function categoryOptions(rows: Category[]): { id: string; label: string }[] {
   const tree = buildTree(rows);

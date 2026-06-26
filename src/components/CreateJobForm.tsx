@@ -13,6 +13,7 @@ interface Result {
   totalEpcs: number;
   productCount: number;
   boxCount: number;
+  categoryCount: number;
   skippedCount: number;
   skippedSample: string[];
 }
@@ -134,11 +135,14 @@ export default function CreateJobForm({ onCreated }: Props) {
             className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
           />
           <p className="mt-2 text-xs text-slate-500">
-            Багана: <code className="rounded bg-slate-100 px-1">name, sku, barcode, piece, box</code>.
-            <code className="rounded bg-slate-100 px-1">barcode</code> (EAN/GTIN) болон{" "}
-            <code className="rounded bg-slate-100 px-1">piece</code> заавал. EPC-г баркод бүрээс шууд
-            үүсгэх тул брэнд хамаарахгүй. <code className="rounded bg-slate-100 px-1">box</code> нь
-            шошго наахад аль хайрцгийнх болохыг мөшгинө.
+            Багана: <code className="rounded bg-slate-100 px-1">name, sku, barcode, piece, box, category</code>{" "}
+            болон <strong>дурын шинж чанарын багана</strong> (Өнгө, Размер…).{" "}
+            <code className="rounded bg-slate-100 px-1">piece</code> заавал;{" "}
+            <code className="rounded bg-slate-100 px-1">barcode</code> сонголт (байвал SGTIN-96, эс
+            бөгөөс GID-96). <code className="rounded bg-slate-100 px-1">category</code> нь зам байж
+            болно (ж: <code className="rounded bg-slate-100 px-1">Хувцас / Дээд</code>) — байхгүй
+            ангилал автоматаар үүснэ. Нөөц баганаас бусад бүх багана шинж чанар болж бараанд
+            хадгалагдана.
           </p>
         </div>
 
@@ -150,7 +154,9 @@ export default function CreateJobForm({ onCreated }: Props) {
           <div className="mt-4 space-y-2">
             <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
               Амжилттай! <strong>{result.totalEpcs}</strong> EPC үүслээ ({result.productCount} бараа,{" "}
-              {result.boxCount} хайрцаг). "EPC хүснэгт" таб дээр харна уу.
+              {result.boxCount} хайрцаг
+              {result.categoryCount > 0 ? `, ${result.categoryCount} ангилал` : ""}). "EPC хүснэгт"
+              таб дээр харна уу.
             </p>
             {result.skippedCount > 0 && (
               <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
