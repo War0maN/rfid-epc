@@ -144,6 +144,21 @@ export async function deleteAttributeDef(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Ангиллын мод → dropdown сонголтууд (бүтэн зам: "A / B / C"). */
+export function categoryOptions(rows: Category[]): { id: string; label: string }[] {
+  const tree = buildTree(rows);
+  const out: { id: string; label: string }[] = [];
+  const walk = (nodes: CategoryNode[], prefix: string) => {
+    for (const n of nodes) {
+      const label = prefix ? `${prefix} / ${n.name}` : n.name;
+      out.push({ id: n.id, label });
+      walk(n.children, label);
+    }
+  };
+  walk(tree, "");
+  return out;
+}
+
 /**
  * Тухайн ангилалд хамаарах шинж чанарууд: глобал (category_id=null) + энэ
  * ангиллынх + эцэг ангиллуудынх (удамшина). Бараа үүсгэх форм энэ жагсаалтыг

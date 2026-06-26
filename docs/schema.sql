@@ -687,3 +687,13 @@ drop trigger if exists audit_attribute_defs on attribute_defs;
 create trigger audit_attribute_defs
   after insert or update or delete on attribute_defs
   for each row execute function audit_trigger('attribute');
+
+-- ============================================================
+-- Каталог (Phase 2): бараа -> ангилал + динамик шинж чанарын утга
+--   category_id — аль ангилалд (leaf) хамаарах
+--   attributes  — шинж чанарын утгууд {"Өнгө":"Улаан","Размер":"L"}
+--   Апп дотор бараа үүсгэхэд (баркодгүй → GID-96) ашиглана.
+-- ============================================================
+alter table products add column if not exists category_id uuid references categories(id);
+alter table products add column if not exists attributes  jsonb not null default '{}'::jsonb;
+create index if not exists products_category_idx on products (tenant_id, category_id);

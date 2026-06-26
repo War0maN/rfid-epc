@@ -10,14 +10,16 @@ import EpcLookup from "./components/EpcLookup";
 import AuditLog from "./components/AuditLog";
 import Members from "./components/Members";
 import Catalog from "./components/Catalog";
+import CreateProduct from "./components/CreateProduct";
 import { lazy, Suspense } from "react";
 // Шошгоны дизайнер (Konva/bwip-js том) — зөвхөн нээх үед ачаална.
 const Labels = lazy(() => import("./components/Labels"));
 
-type Tab = "create" | "table" | "lookup" | "labels" | "catalog" | "audit" | "members";
+type Tab = "create" | "product" | "table" | "lookup" | "labels" | "catalog" | "audit" | "members";
 
 const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "create", label: "Шинэ ажил" },
+  { id: "product", label: "Бараа үүсгэх" },
   { id: "table", label: "EPC хүснэгт" },
   { id: "lookup", label: "Хайлт" },
   { id: "labels", label: "Шошго" },
@@ -128,6 +130,14 @@ function App() {
       <main className="mx-auto max-w-6xl px-4 py-6">
         {tab === "create" && (
           <CreateJobForm
+            onCreated={() => {
+              setRefreshKey((k) => k + 1);
+              setTab("table");
+            }}
+          />
+        )}
+        {tab === "product" && (
+          <CreateProduct
             onCreated={() => {
               setRefreshKey((k) => k + 1);
               setTab("table");
