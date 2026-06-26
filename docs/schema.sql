@@ -498,13 +498,17 @@ create trigger trg_tenant_manager_number
 update tenants set manager_number = nextval('tenant_manager_seq')
  where manager_number is null;
 
+-- Constraint-уудыг pg_constraint-аас шалгаж байж нэмнэ (re-run найдвартай;
+-- "relation already exists" 42P07-аас зайлсхийнэ).
 do $$ begin
-  alter table tenants add constraint tenants_manager_number_key unique (manager_number);
-exception when duplicate_object then null; end $$;
-do $$ begin
-  alter table tenants add constraint tenants_manager_number_range
-    check (manager_number is null or (manager_number >= 0 and manager_number <= 268435455));
-exception when duplicate_object then null; end $$;
+  if not exists (select 1 from pg_constraint where conname = 'tenants_manager_number_key') then
+    alter table tenants add constraint tenants_manager_number_key unique (manager_number);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'tenants_manager_number_range') then
+    alter table tenants add constraint tenants_manager_number_range
+      check (manager_number is null or (manager_number >= 0 and manager_number <= 268435455));
+  end if;
+end $$;
 
 -- ---- products.object_class (24-бит) + ext_key ----
 -- Тенант тус бүрд барааны дугаарыг 1-ээс өсгөж онооно.
