@@ -619,7 +619,9 @@ create policy "tenant label_templates" on label_templates
 --   Хүснэгтийн жагсаалтыг JS дотор бус, SQL талд хуудаслаж татна — олон
 --   мянган/сая мөртэй ч хурдан.
 -- ============================================================
-create or replace view epc_full
+-- DROP + CREATE (REPLACE нь баганын эрэмбэ/нэр өөрчлөхийг зөвшөөрдөггүй).
+drop view if exists epc_full;
+create view epc_full
 with (security_invoker = true) as
 select
   e.id, e.tenant_id, e.serial, e.epc_hex, e.box_no,
