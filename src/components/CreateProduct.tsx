@@ -30,6 +30,8 @@ export default function CreateProduct({ onCreated }: Props) {
   const [sku, setSku] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [attrValues, setAttrValues] = useState<Record<string, string>>({}); // def.id -> value
+  // Урьдчилан тодорхойлоогүй нэмэлт шинж чанар (автоматаар бүртгэгдэнэ).
+  const [extra, setExtra] = useState<{ label: string; value: string }[]>([]);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +80,12 @@ export default function CreateProduct({ onCreated }: Props) {
       const val = (attrValues[a.id] ?? "").trim();
       if (val) attributes[a.label] = val;
     }
+    // Нэмэлт (чөлөөт) шинж чанарууд — нэр+утга хоёулаа байвал.
+    for (const ex of extra) {
+      const l = ex.label.trim();
+      const v = ex.value.trim();
+      if (l && v) attributes[l] = v;
+    }
 
     setBusy(true);
     try {
@@ -94,6 +102,7 @@ export default function CreateProduct({ onCreated }: Props) {
       setSku("");
       setQuantity(1);
       setAttrValues({});
+      setExtra([]);
       onCreated?.();
     } catch (err) {
       setError(errorMessage(err));
@@ -202,6 +211,58 @@ export default function CreateProduct({ onCreated }: Props) {
                 </div>
               </div>
             )}
+
+            {/* Нэмэлт (чөлөөт) шинж чанар — автоматаар каталогт бүртгэгдэнэ */}
+            <div className="mt-4 rounded-lg border border-dashed border-slate-300 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Нэмэлт шинж чанар
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setExtra((x) => [...x, { label: "", value: "" }])}
+                  className="text-xs text-indigo-600 hover:underline"
+                >
+                  + Нэмэх
+                </button>
+              </div>
+              {extra.length === 0 ? (
+                <p className="text-xs text-slate-400">
+                  Жагсаалтад байхгүй шинж чанар (ж: Үнэ, Материал) нэмбэл автоматаар бүртгэгдэнэ.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {extra.map((row, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        value={row.label}
+                        onChange={(e) =>
+                          setExtra((x) => x.map((r, j) => (j === i ? { ...r, label: e.target.value } : r)))
+                        }
+                        placeholder="Нэр (ж: Үнэ)"
+                        className={inp + " max-w-[180px]"}
+                      />
+                      <input
+                        value={row.value}
+                        onChange={(e) =>
+                          setExtra((x) => x.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))
+                        }
+                        placeholder="Утга (ж: 50000)"
+                        className={inp}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setExtra((x) => x.filter((_, j) => j !== i))}
+                        className="shrink-0 text-sm text-red-500 hover:text-red-700"
+                        title="Хасах"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Тоо ширхэг */}
             <div className="mt-4 max-w-[200px]">

@@ -18,7 +18,7 @@ import readXlsxFile from "read-excel-file/universal";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateEpcsForJob, type JobLine } from "./generateEpcs";
 import { normalizeGtin } from "./epc";
-import { ensureCategoriesByPaths } from "./catalog";
+import { ensureCategoriesByPaths, ensureAttributeDefs } from "./catalog";
 
 /**
  * Баркодгүй барааны давтагдалгүй түлхүүр. SKU байвал түүгээр; эс бөгөөс
@@ -177,10 +177,13 @@ export async function importPackingListXlsx(
   if (tErr) throw tErr;
   const tenantId = tenant.id as string;
 
-  // 0) Ангиллын замуудыг шийдэж/үүсгэх (path -> category_id).
+  // 0) Ангилал болон шинж чанаруудыг автоматаар бүртгэх.
   const catMap = await ensureCategoriesByPaths(
     rows.map((r) => r.categoryPath).filter((p): p is string => !!p)
   );
+  const attrLabels = new Set<string>();
+  for (const r of rows) for (const k of Object.keys(r.attributes)) attrLabels.add(k);
+  await ensureAttributeDefs([...attrLabels]);
   const catId = (r: CleanRow) => (r.categoryPath ? catMap.get(r.categoryPath) ?? null : null);
 
   // 1) Бараа upsert — хоёр салаагаар (давхцалгүй).

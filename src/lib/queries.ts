@@ -21,6 +21,10 @@ export interface EpcRow {
   name: string | null;
   gtin: string;
   sku: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  attributes: Record<string, string>; // {"Өнгө":"Улаан","Размер":"L"}
+  attributes_text: string | null; // хайх/харуулах текст
   job_number: string | null;
   arrival_date: string | null;
   supplier: string | null;
@@ -31,6 +35,8 @@ interface ProductLite {
   name: string | null;
   gtin: string;
   sku: string | null;
+  category_id: string | null;
+  attributes: Record<string, string> | null;
 }
 interface JobLite {
   id: string;
@@ -39,17 +45,29 @@ interface JobLite {
   supplier: string | null;
 }
 
-/** products + jobs-ийг нэг удаа татаж lookup map болгоно (жижиг хүснэгтүүд). */
+/** Шинж чанарын объектыг харуулах текст болгоно ("Өнгө: Улаан · Размер: L"). */
+function attrsToText(attrs: Record<string, string>): string {
+  return Object.keys(attrs)
+    .sort()
+    .map((k) => `${k}: ${attrs[k]}`)
+    .join(" · ");
+}
+
+/** products + jobs + categories-ийг нэг удаа татаж lookup map болгоно. */
 async function fetchLookupMaps() {
-  const [{ data: prods, error: pErr }, { data: jobs, error: jErr }] = await Promise.all([
-    supabase.from("products").select("id, name, gtin, sku"),
-    supabase.from("jobs").select("id, job_number, arrival_date, supplier"),
-  ]);
+  const [{ data: prods, error: pErr }, { data: jobs, error: jErr }, { data: cats, error: cErr }] =
+    await Promise.all([
+      supabase.from("products").select("id, name, gtin, sku, category_id, attributes"),
+      supabase.from("jobs").select("id, job_number, arrival_date, supplier"),
+      supabase.from("categories").select("id, name"),
+    ]);
   if (pErr) throw pErr;
   if (jErr) throw jErr;
+  if (cErr) throw cErr;
   const pMap = new Map((prods as ProductLite[]).map((p) => [p.id, p]));
   const jMap = new Map((jobs as JobLite[]).map((j) => [j.id, j]));
-  return { pMap, jMap };
+  const cMap = new Map((cats as { id: string; name: string }[]).map((c) => [c.id, c.name]));
+  return { pMap, jMap, cMap };
 }
 
 interface FlatEpc {
@@ -66,15 +84,21 @@ interface FlatEpc {
 function joinRow(
   r: FlatEpc,
   pMap: Map<string, ProductLite>,
-  jMap: Map<string, JobLite>
+  jMap: Map<string, JobLite>,
+  cMap: Map<string, string>
 ): EpcRow {
   const p = pMap.get(r.product_id);
   const j = jMap.get(r.job_id);
+  const attributes = p?.attributes ?? {};
   return {
     ...r,
     name: p?.name ?? null,
     gtin: p?.gtin ?? "",
     sku: p?.sku ?? null,
+    category_id: p?.category_id ?? null,
+    category_name: p?.category_id ? (cMap.get(p.category_id) ?? null) : null,
+    attributes,
+    attributes_text: attrsToText(attributes),
     job_number: j?.job_number ?? null,
     arrival_date: j?.arrival_date ?? null,
     supplier: j?.supplier ?? null,
@@ -88,7 +112,7 @@ const FLAT_SELECT = "id, serial, epc_hex, box_no, created_at, printed_at, job_id
  * keyset (id-ээр) хуудаслалтаар татаад products/jobs-той JS дотор холбоно.
  */
 export async function fetchAllEpcs(): Promise<EpcRow[]> {
-  const { pMap, jMap } = await fetchLookupMaps();
+  const { pMap, jMap, cMap } = await fetchLookupMaps();
 
   // Supabase нэг хүсэлтэд дээд тал нь 1000 мөр буцаадаг (default cap) тул
   // PAGE-г 1000 болгоно. Бүрэн хуудас (=1000) ирвэл цааш үргэлжилнэ.
@@ -105,7 +129,7 @@ export async function fetchAllEpcs(): Promise<EpcRow[]> {
     const { data, error } = await q;
     if (error) throw error;
     const rows = (data ?? []) as FlatEpc[];
-    for (const r of rows) all.push(joinRow(r, pMap, jMap));
+    for (const r of rows) all.push(joinRow(r, pMap, jMap, cMap));
     if (rows.length < PAGE) break;
     lastId = rows[rows.length - 1].id;
   }
@@ -121,8 +145,8 @@ export async function lookupEpc(epcHex: string): Promise<EpcRow | null> {
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const { pMap, jMap } = await fetchLookupMaps();
-  return joinRow(data as FlatEpc, pMap, jMap);
+  const { pMap, jMap, cMap } = await fetchLookupMaps();
+  return joinRow(data as FlatEpc, pMap, jMap, cMap);
 }
 
 // ============================================================
@@ -148,6 +172,8 @@ const COL_TO_DB: Record<string, string> = {
   name: "name",
   sku: "sku",
   gtin: "gtin",
+  category: "category_name",
+  attr: "attributes_text",
   box: "box_no",
   job: "job_number",
   date: "arrival_date",

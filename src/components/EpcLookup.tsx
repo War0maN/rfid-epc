@@ -108,6 +108,8 @@ export default function EpcLookup() {
               value={<span className="break-all font-mono text-xs">{safeTagUri(state.row.epc_hex)}</span>}
             />
             <Field label="Бараа" value={state.row.name || "—"} />
+            <Field label="Ангилал" value={state.row.category_name || "—"} />
+            <Field label="Шинж чанар" value={state.row.attributes_text || "—"} />
             <Field
               label="GTIN/баркод"
               value={<span className="font-mono">{state.row.gtin ?? "—"}</span>}

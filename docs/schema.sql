@@ -625,10 +625,18 @@ select
   e.id, e.tenant_id, e.serial, e.epc_hex, e.box_no,
   e.created_at, e.printed_at, e.job_id, e.product_id,
   p.name, p.gtin, p.sku,
+  p.category_id, c.name as category_name,
+  p.attributes,
+  -- шинж чанаруудыг хайх/харуулахад текст хэлбэрээр ("Өнгө: Улаан · Размер: L")
+  (
+    select string_agg(t.k || ': ' || t.v, ' · ' order by t.k)
+    from jsonb_each_text(coalesce(p.attributes, '{}'::jsonb)) as t(k, v)
+  ) as attributes_text,
   j.job_number, j.arrival_date, j.supplier
 from epc_codes e
-left join products p on p.id = e.product_id
-left join jobs    j on j.id = e.job_id;
+left join products   p on p.id = e.product_id
+left join categories c on c.id = p.category_id
+left join jobs       j on j.id = e.job_id;
 
 grant select on epc_full to authenticated;
 

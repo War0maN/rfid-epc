@@ -6,6 +6,7 @@
 // ============================================================
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateEpcsForJob } from "./generateEpcs";
+import { ensureAttributeDefs } from "./catalog";
 
 export interface CreateCatalogProductInput {
   categoryId: string | null;
@@ -41,6 +42,9 @@ export async function createCatalogProductAndEpcs(
   const { data: tenant, error: tErr } = await supabase.from("tenants").select("id").single();
   if (tErr) throw tErr;
   const tenantId = (tenant as { id: string }).id;
+
+  // Ашигласан шинж чанаруудыг каталогт автоматаар бүртгэнэ (динамик).
+  await ensureAttributeDefs(Object.keys(input.attributes));
 
   // 1) Бараа upsert (баркодгүй → GID-96). object_class-ийг DB trigger онооно.
   const extKey = extKeyFor(name, input.sku, input.attributes);

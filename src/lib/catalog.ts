@@ -208,5 +208,36 @@ export function attrsForCategory(
     ids.add(cur);
     cur = byId.get(cur)?.parent_id ?? null;
   }
-  return defs.filter((d) => ids.has(d.category_id)).sort((a, b) => a.sort - b.sort);
+  const applicable = defs.filter((d) => ids.has(d.category_id)).sort((a, b) => a.sort - b.sort);
+  // Нэг label давхар (глобал + ангилал) бол ангиллынхыг үлдээж давхардлыг арилгана.
+  const byLabel = new Map<string, AttributeDef>();
+  for (const d of applicable) {
+    const k = d.label.trim().toLowerCase();
+    const ex = byLabel.get(k);
+    if (!ex || (ex.category_id === null && d.category_id !== null)) byLabel.set(k, d);
+  }
+  return [...byLabel.values()].sort((a, b) => a.sort - b.sort);
+}
+
+/**
+ * Өгсөн шинж чанарын нэрсийг глобал attribute_defs-д автоматаар бүртгэнэ
+ * (байхгүйг нь л, text төрлөөр). Импорт/бараа үүсгэх үед дуудна — компанийн
+ * шинж чанарууд дата-наас динамикаар бүртгэгдэнэ.
+ */
+export async function ensureAttributeDefs(labels: string[]): Promise<void> {
+  const unique = [...new Set(labels.map((l) => l.trim()).filter(Boolean))];
+  if (unique.length === 0) return;
+  const existing = await listAttributeDefs();
+  const have = new Set(existing.map((d) => d.label.trim().toLowerCase()));
+  for (const label of unique) {
+    if (have.has(label.toLowerCase())) continue;
+    await createAttributeDef({
+      category_id: null,
+      label,
+      input_type: "text",
+      options: [],
+      required: false,
+    });
+    have.add(label.toLowerCase());
+  }
 }
