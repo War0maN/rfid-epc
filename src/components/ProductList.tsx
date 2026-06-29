@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabaseClient";
 import { listProducts, deleteProduct, type ProductRow } from "../lib/products";
 import { generateEpcsForProduct } from "../lib/createProduct";
 import { listAttributeDefs, dedupAttrs, type AttributeDef } from "../lib/catalog";
+import { listBranches, type Branch } from "../lib/branches";
 import { errorMessage } from "../lib/errorMessage";
 import ProductForm from "./ProductForm";
 
@@ -54,9 +55,11 @@ export default function ProductList({ isAdmin, onEpcsGenerated }: Props) {
   const [hidden, setHidden] = useState<Set<string>>(loadHidden);
   const [showColPicker, setShowColPicker] = useState(false);
 
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [form, setForm] = useState<ProductRow | "new" | null>(null);
   const [genFor, setGenFor] = useState<ProductRow | null>(null);
   const [genQty, setGenQty] = useState("1");
+  const [genBranch, setGenBranch] = useState<string>("");
   const [genBusy, setGenBusy] = useState(false);
 
   function reload() {
@@ -73,11 +76,13 @@ export default function ProductList({ isAdmin, onEpcsGenerated }: Props) {
 
   useEffect(() => {
     let active = true;
-    Promise.all([listProducts(), listAttributeDefs()])
-      .then(([p, d]) => {
+    Promise.all([listProducts(), listAttributeDefs(), listBranches()])
+      .then(([p, d, b]) => {
         if (!active) return;
         setRows(p);
         setAttrDefs(d);
+        setBranches(b);
+        setGenBranch(b[0]?.id ?? "");
       })
       .catch((e) => active && setError(errorMessage(e)))
       .finally(() => active && setLoading(false));
@@ -161,7 +166,7 @@ export default function ProductList({ isAdmin, onEpcsGenerated }: Props) {
     setGenBusy(true);
     setError(null);
     try {
-      const count = await generateEpcsForProduct(supabase, genFor.id, qty);
+      const count = await generateEpcsForProduct(supabase, genFor.id, qty, genBranch || null);
       setInfo(`"${genFor.name}" бараанд ${count} EPC үүслээ.`);
       setGenFor(null);
       setGenQty("1");
@@ -301,6 +306,15 @@ export default function ProductList({ isAdmin, onEpcsGenerated }: Props) {
           <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
             <h3 className="mb-1 text-lg font-semibold text-slate-900">EPC үүсгэх</h3>
             <p className="mb-4 text-sm text-slate-500"><strong>{genFor.name}</strong> — хэдэн ширхэг EPC үүсгэх вэ? (одоо {genFor.epc_count}ш)</p>
+            {branches.length > 0 && (
+              <div className="mb-3">
+                <label className="mb-1 block text-xs font-medium text-slate-600">Салбар</label>
+                <select value={genBranch} onChange={(e) => setGenBranch(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  {branches.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
+                </select>
+              </div>
+            )}
+            <label className="mb-1 block text-xs font-medium text-slate-600">Тоо ширхэг</label>
             <input
               type="number"
               min={1}

@@ -37,6 +37,7 @@ const STATIC_COLUMNS: ColDef[] = [
   { key: "cat1", label: "Үндсэн ангилал", get: (r) => r.category_l1 ?? "" },
   { key: "cat2", label: "Дэд ангилал", get: (r) => r.category_l2 ?? "" },
   { key: "cat3", label: "Барааны ангилал", get: (r) => r.category_l3 ?? "" },
+  { key: "branch", label: "Салбар", get: (r) => r.branch_name ?? "" },
   { key: "sku", label: "SKU", get: (r) => r.sku ?? "", mono: true },
   { key: "price", label: "Үнэ", get: (r) => (r.price != null ? String(r.price) : "") },
   { key: "gtin", label: "GTIN/баркод", get: (r) => r.gtin ?? "", mono: true },

@@ -704,6 +704,50 @@ alter table products add column if not exists price numeric;
 create index if not exists products_category_idx on products (tenant_id, category_id);
 
 -- ============================================================
+-- Phase 2: Салбар (branch) — EPC ширхэг бүр аль салбарт байгааг заана.
+--   Бүтээгдэхүүн нийтийн, харин EPC instance нь салбарт харьяалагдана.
+--   epc_full view (доор) branch_id/branch_name-ийг гаргана.
+-- ============================================================
+create table if not exists branches (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references tenants(id) default current_tenant_id(),
+  name        text not null,
+  code        text,                      -- импортод таних код (нэрнээс найдвартай)
+  sort        int not null default 0,
+  created_at  timestamptz not null default now()
+);
+create index if not exists branches_tenant_idx on branches (tenant_id, sort);
+
+alter table branches enable row level security;
+drop policy if exists "tenant branches" on branches;
+create policy "tenant branches" on branches
+  for all using (tenant_id = current_tenant_id())
+          with check (tenant_id = current_tenant_id());
+
+drop trigger if exists audit_branches on branches;
+create trigger audit_branches
+  after insert or update or delete on branches
+  for each row execute function audit_trigger('branch');
+
+-- EPC-д салбар (одоогийн байршил)
+alter table epc_codes add column if not exists branch_id uuid references branches(id);
+create index if not exists epc_branch_idx on epc_codes (tenant_id, branch_id);
+
+-- Тенант бүрд default салбар ("Үндсэн агуулах") + хуучин EPC-г түүнд оноох.
+do $$
+declare v_tenant uuid; v_branch uuid;
+begin
+  for v_tenant in select id from tenants loop
+    select id into v_branch from branches where tenant_id = v_tenant order by created_at limit 1;
+    if v_branch is null then
+      insert into branches (tenant_id, name, code) values (v_tenant, 'Үндсэн агуулах', 'MAIN')
+      returning id into v_branch;
+    end if;
+    update epc_codes set branch_id = v_branch where tenant_id = v_tenant and branch_id is null;
+  end loop;
+end $$;
+
+-- ============================================================
 -- View: epc_full — EPC + бараа + ангилал + ажлын талбарууд нэгтгэсэн.
 --   Файлын ТӨГСГӨЛД байрлуулсан — бүх багана (products.price/category_id/
 --   attributes) болон categories хүснэгт үүссэний дараа.
@@ -715,6 +759,7 @@ with (security_invoker = true) as
 select
   e.id, e.tenant_id, e.serial, e.epc_hex, e.box_no,
   e.created_at, e.printed_at, e.job_id, e.product_id,
+  e.branch_id, b.name as branch_name,
   p.name, p.gtin, p.sku, p.price,
   p.category_id,
   -- 3 түвшний ангилал (дээдээс доош). leaf нь L1/L2/L3-ийн аль нь ч байж болно.
@@ -735,6 +780,7 @@ select
   j.job_number, j.arrival_date, j.supplier
 from epc_codes e
 left join products   p  on p.id = e.product_id
+left join branches   b  on b.id = e.branch_id
 left join categories c1 on c1.id = p.category_id
 left join categories c2 on c2.id = c1.parent_id
 left join categories c3 on c3.id = c2.parent_id

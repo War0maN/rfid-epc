@@ -19,6 +19,7 @@ const ENTITY_LABEL: Record<string, string> = {
   epc: "EPC",
   category: "Ангилал",
   attribute: "Шинж чанар",
+  branch: "Салбар",
 };
 
 /** Логийн мөрөөс хүн уншихуйц товч тайлбар гаргана. */
@@ -37,6 +38,7 @@ function describe(row: AuditRow): string {
   if (row.entity === "tenant") return (src.name as string) || "";
   if (row.entity === "category") return (src.name as string) || "";
   if (row.entity === "attribute") return (src.label as string) || "";
+  if (row.entity === "branch") return (src.name as string) || "";
   return "";
 }
 

@@ -185,7 +185,8 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
 export async function importPackingListXlsx(
   supabase: SupabaseClient,
   file: Blob,
-  job: ImportJobInput
+  job: ImportJobInput,
+  branchId: string | null = null
 ) {
   const { rows, skipped } = await parseFile(file);
 
@@ -282,6 +283,7 @@ export async function importPackingListXlsx(
   const epcs = await generateEpcsForJob(supabase, {
     jobId: jobRow.id,
     lines: [...lineMap.values()],
+    branchId,
   });
 
   return {

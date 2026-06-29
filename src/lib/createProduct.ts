@@ -81,7 +81,8 @@ export async function upsertCatalogProduct(
 export async function generateEpcsForProduct(
   supabase: SupabaseClient,
   productId: string,
-  quantity: number
+  quantity: number,
+  branchId: string | null = null
 ): Promise<number> {
   if (!Number.isFinite(quantity) || quantity < 1) {
     throw new Error("Тоо ширхэг 1-ээс багагүй байх ёстой.");
@@ -108,6 +109,7 @@ export async function generateEpcsForProduct(
   const epcs = await generateEpcsForJob(supabase, {
     jobId: (job as { id: string }).id,
     lines: [{ productId, count: quantity }],
+    branchId,
   });
   return epcs.length;
 }

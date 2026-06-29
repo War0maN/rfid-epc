@@ -18,6 +18,8 @@ export interface EpcRow {
   printed_at: string | null; // хэвлэсэн огноо (null бол хэвлээгүй)
   job_id: string;
   product_id: string;
+  branch_id: string | null;
+  branch_name: string | null;
   name: string | null;
   gtin: string;
   sku: string | null;
@@ -73,6 +75,7 @@ async function fetchLookupMaps() {
   if (pErr) throw pErr;
   if (jErr) throw jErr;
   if (cErr) throw cErr;
+  const { data: brs } = await supabase.from("branches").select("id, name");
   const pMap = new Map((prods as ProductLite[]).map((p) => [p.id, p]));
   const jMap = new Map((jobs as JobLite[]).map((j) => [j.id, j]));
   const cMap = new Map(
@@ -81,7 +84,8 @@ async function fetchLookupMaps() {
       { name: c.name, parent_id: c.parent_id },
     ])
   );
-  return { pMap, jMap, cMap };
+  const bMap = new Map(((brs ?? []) as { id: string; name: string }[]).map((b) => [b.id, b.name]));
+  return { pMap, jMap, cMap, bMap };
 }
 
 /** Leaf category id-ээс дээш 3 түвшнийг (дээдээс доош) гаргана. */
@@ -109,13 +113,15 @@ interface FlatEpc {
   printed_at: string | null;
   job_id: string;
   product_id: string;
+  branch_id: string | null;
 }
 
 function joinRow(
   r: FlatEpc,
   pMap: Map<string, ProductLite>,
   jMap: Map<string, JobLite>,
-  cMap: Map<string, CatLite>
+  cMap: Map<string, CatLite>,
+  bMap: Map<string, string>
 ): EpcRow {
   const p = pMap.get(r.product_id);
   const j = jMap.get(r.job_id);
@@ -123,6 +129,7 @@ function joinRow(
   const lv = categoryLevels(p?.category_id ?? null, cMap);
   return {
     ...r,
+    branch_name: r.branch_id ? (bMap.get(r.branch_id) ?? null) : null,
     name: p?.name ?? null,
     gtin: p?.gtin ?? "",
     sku: p?.sku ?? null,
@@ -140,14 +147,14 @@ function joinRow(
   };
 }
 
-const FLAT_SELECT = "id, serial, epc_hex, box_no, created_at, printed_at, job_id, product_id";
+const FLAT_SELECT = "id, serial, epc_hex, box_no, created_at, printed_at, job_id, product_id, branch_id";
 
 /**
  * Бүх EPC-г татна (1000-ийн хязгааргүй). epc_codes-г JOIN-гүй хавтгай,
  * keyset (id-ээр) хуудаслалтаар татаад products/jobs-той JS дотор холбоно.
  */
 export async function fetchAllEpcs(): Promise<EpcRow[]> {
-  const { pMap, jMap, cMap } = await fetchLookupMaps();
+  const { pMap, jMap, cMap, bMap } = await fetchLookupMaps();
 
   // Supabase нэг хүсэлтэд дээд тал нь 1000 мөр буцаадаг (default cap) тул
   // PAGE-г 1000 болгоно. Бүрэн хуудас (=1000) ирвэл цааш үргэлжилнэ.
@@ -164,7 +171,7 @@ export async function fetchAllEpcs(): Promise<EpcRow[]> {
     const { data, error } = await q;
     if (error) throw error;
     const rows = (data ?? []) as FlatEpc[];
-    for (const r of rows) all.push(joinRow(r, pMap, jMap, cMap));
+    for (const r of rows) all.push(joinRow(r, pMap, jMap, cMap, bMap));
     if (rows.length < PAGE) break;
     lastId = rows[rows.length - 1].id;
   }
@@ -180,8 +187,8 @@ export async function lookupEpc(epcHex: string): Promise<EpcRow | null> {
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  const { pMap, jMap, cMap } = await fetchLookupMaps();
-  return joinRow(data as FlatEpc, pMap, jMap, cMap);
+  const { pMap, jMap, cMap, bMap } = await fetchLookupMaps();
+  return joinRow(data as FlatEpc, pMap, jMap, cMap, bMap);
 }
 
 // ============================================================
@@ -212,6 +219,7 @@ const COL_TO_DB: Record<string, string> = {
   cat2: "category_l2",
   cat3: "category_l3",
   attr: "attributes_text",
+  branch: "branch_name",
   box: "box_no",
   job: "job_number",
   date: "arrival_date",

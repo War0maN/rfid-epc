@@ -37,9 +37,10 @@ async function getTenantConfig(supabase: SupabaseClient) {
  */
 export async function generateEpcsForJob(
   supabase: SupabaseClient,
-  params: { jobId: string; lines: JobLine[] }
+  params: { jobId: string; lines: JobLine[]; branchId?: string | null }
 ): Promise<GeneratedEpc[]> {
   const tenant = await getTenantConfig(supabase);
+  const branchId = params.branchId ?? null;
   const filter = tenant.default_filter_value ?? 1;
   const lines = params.lines.filter((l) => l.count >= 1);
 
@@ -80,6 +81,7 @@ export async function generateEpcsForJob(
     job_id: string;
     product_id: string;
     box_no: string | null;
+    branch_id: string | null;
     serial: string;
     epc_hex: string;
   }[] = [];
@@ -118,6 +120,7 @@ export async function generateEpcsForJob(
         job_id: params.jobId,
         product_id: line.productId,
         box_no: line.boxNo ?? null,
+        branch_id: branchId,
         serial: serialStr,
         epc_hex: b.epcHex,
       });

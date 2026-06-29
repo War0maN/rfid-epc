@@ -11,11 +11,12 @@ import AuditLog from "./components/AuditLog";
 import Members from "./components/Members";
 import Catalog from "./components/Catalog";
 import ProductList from "./components/ProductList";
+import Branches from "./components/Branches";
 import { lazy, Suspense } from "react";
 // Шошгоны дизайнер (Konva/bwip-js том) — зөвхөн нээх үед ачаална.
 const Labels = lazy(() => import("./components/Labels"));
 
-type Tab = "create" | "products" | "table" | "lookup" | "labels" | "catalog" | "audit" | "members";
+type Tab = "create" | "products" | "table" | "lookup" | "labels" | "catalog" | "branches" | "audit" | "members";
 
 const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "create", label: "Шинэ ажил" },
@@ -24,6 +25,7 @@ const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "lookup", label: "Хайлт" },
   { id: "labels", label: "Шошго" },
   { id: "catalog", label: "Ангилал" },
+  { id: "branches", label: "Салбар" },
   { id: "audit", label: "Аудит" },
   { id: "members", label: "Хэрэглэгчид", adminOnly: true },
 ];
@@ -152,6 +154,7 @@ function App() {
           </Suspense>
         )}
         {tab === "catalog" && <Catalog />}
+        {tab === "branches" && <Branches isAdmin={profile.role === "admin"} />}
         {tab === "audit" && <AuditLog />}
         {tab === "members" && profile.role === "admin" && <Members />}
       </main>

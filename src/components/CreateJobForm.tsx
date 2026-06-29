@@ -1,7 +1,8 @@
 import { errorMessage } from "../lib/errorMessage";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { importPackingListXlsx } from "../lib/importPackingList";
+import { listBranches, type Branch } from "../lib/branches";
 
 interface Props {
   /** Амжилттай үүсгэсний дараа эцэг компонентод мэдэгдэх (жагсаалт сэргээх). */
@@ -26,10 +27,26 @@ export default function CreateJobForm({ onCreated }: Props) {
   const [note, setNote] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchId, setBranchId] = useState<string>("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    listBranches()
+      .then((b) => {
+        if (!active) return;
+        setBranches(b);
+        setBranchId(b[0]?.id ?? "");
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   function reset() {
     setJobNumber("");
@@ -51,12 +68,17 @@ export default function CreateJobForm({ onCreated }: Props) {
 
     setLoading(true);
     try {
-      const res = await importPackingListXlsx(supabase, file, {
-        jobNumber: jobNumber.trim(),
-        arrivalDate,
-        supplier: supplier.trim() || undefined,
-        note: note.trim() || undefined,
-      });
+      const res = await importPackingListXlsx(
+        supabase,
+        file,
+        {
+          jobNumber: jobNumber.trim(),
+          arrivalDate,
+          supplier: supplier.trim() || undefined,
+          note: note.trim() || undefined,
+        },
+        branchId || null
+      );
       setResult(res);
       reset();
       onCreated?.(res.jobId);
@@ -111,6 +133,19 @@ export default function CreateJobForm({ onCreated }: Props) {
               placeholder="Нийлүүлэгчийн нэр"
             />
           </div>
+
+          {branches.length > 0 && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Салбар</label>
+              <select
+                value={branchId}
+                onChange={(e) => setBranchId(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              >
+                {branches.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Тэмдэглэл</label>
