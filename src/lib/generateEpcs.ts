@@ -8,9 +8,10 @@ import { sgtin96BatchFromGtin, gid96Batch } from "./epc";
 import { logAuditEvent } from "./audit";
 
 export interface JobLine {
-  productId: string;     // products.id
-  count: number;         // тоо ширхэг (piece)
-  boxNo?: string | null; // хайрцагны дугаар (box No)
+  productId: string;       // products.id
+  count: number;           // тоо ширхэг (piece)
+  boxNo?: string | null;   // хайрцагны дугаар (box No)
+  branchId?: string | null; // салбар (мөр тус бүрд; байхгүй бол default)
 }
 
 export interface GeneratedEpc {
@@ -120,7 +121,7 @@ export async function generateEpcsForJob(
         job_id: params.jobId,
         product_id: line.productId,
         box_no: line.boxNo ?? null,
-        branch_id: branchId,
+        branch_id: line.branchId ?? branchId,
         serial: serialStr,
         epc_hex: b.epcHex,
       });

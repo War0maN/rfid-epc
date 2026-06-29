@@ -170,8 +170,10 @@ export default function CreateJobForm({ onCreated }: Props) {
             className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
           />
           <p className="mt-2 text-xs text-slate-500">
-            Багана: <code className="rounded bg-slate-100 px-1">name, sku, price, barcode, piece, box, category</code>{" "}
+            Багана: <code className="rounded bg-slate-100 px-1">name, sku, price, barcode, piece, box, branch, category</code>{" "}
             болон <strong>дурын шинж чанарын багана</strong> (Өнгө, Размер…).{" "}
+            <code className="rounded bg-slate-100 px-1">branch</code> (салбарын код/нэр) байвал мөр
+            бүрийг тэр салбарт; байхгүй бол дээрх "Салбар" сонголтыг ашиглана.{" "}
             <code className="rounded bg-slate-100 px-1">piece</code> заавал;{" "}
             <code className="rounded bg-slate-100 px-1">barcode</code> сонголт (байвал SGTIN-96, эс
             бөгөөс GID-96). <code className="rounded bg-slate-100 px-1">category</code> нь зам байж

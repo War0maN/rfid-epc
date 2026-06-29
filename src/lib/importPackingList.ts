@@ -54,6 +54,7 @@ interface CleanRow {
   price: number | null;
   piece: number;
   boxNo: string | null;
+  branchValue: string | null; // салбарын код эсвэл нэр (Excel-ээс)
   categoryPath: string | null;
   attributes: Record<string, string>;
 }
@@ -65,6 +66,7 @@ interface HeaderMap {
   price: number;
   piece: number;
   box: number;
+  branch: number;
   category: number;
   attrCols: { idx: number; label: string }[]; // бусад бүх багана = шинж чанар
 }
@@ -81,15 +83,16 @@ function parseHeader(header: unknown[]): HeaderMap {
   const price = find(["price", "үнэ", "une", "amount", "цэн"]);
   const piece = find(["piece", "pieces", "pcs", "qty", "quantity", "count", "тоо", "ширхэг", "тоо ширхэг"]);
   const box = find(["box", "box no", "box_no", "boxno", "box №", "хайрцаг", "хайрцагны дугаар", "хайрцаг №"]);
+  const branch = find(["branch", "салбар", "салбарын дугаар", "салбарын код", "branch code", "store"]);
   const category = find(["category", "categories", "ангилал", "ангиллал", "анги"]);
 
-  const reserved = new Set([name, sku, barcode, price, piece, box, category].filter((i) => i >= 0));
+  const reserved = new Set([name, sku, barcode, price, piece, box, branch, category].filter((i) => i >= 0));
   const attrCols: { idx: number; label: string }[] = [];
   for (let i = 0; i < norm.length; i++) {
     if (reserved.has(i) || !norm[i]) continue;
     attrCols.push({ idx: i, label: norm[i] });
   }
-  return { name, sku, barcode, price, piece, box, category, attrCols };
+  return { name, sku, barcode, price, piece, box, branch, category, attrCols };
 }
 
 function cell(row: unknown[], idx: number): string {
@@ -169,6 +172,7 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
       price: Number.isFinite(price as number) ? price : null,
       piece,
       boxNo: cell(row, col.box) || null,
+      branchValue: cell(row, col.branch) || null,
       categoryPath,
       attributes,
     });
@@ -202,6 +206,17 @@ export async function importPackingListXlsx(
   for (const r of rows) for (const k of Object.keys(r.attributes)) attrLabels.add(k);
   await ensureAttributeDefs([...attrLabels]);
   const catId = (r: CleanRow) => (r.categoryPath ? catMap.get(r.categoryPath) ?? null : null);
+
+  // Салбарыг код эсвэл нэрээр таних (Excel-ийн branch баганаас). Олдоогүй/хоосон
+  // бол формоос сонгосон default branchId-г ашиглана.
+  const { data: brs } = await supabase.from("branches").select("id, name, code");
+  const branchByKey = new Map<string, string>();
+  for (const b of (brs ?? []) as { id: string; name: string; code: string | null }[]) {
+    if (b.code) branchByKey.set(b.code.trim().toLowerCase(), b.id);
+    branchByKey.set(b.name.trim().toLowerCase(), b.id);
+  }
+  const resolveBranch = (r: CleanRow): string | null =>
+    (r.branchValue ? branchByKey.get(r.branchValue.trim().toLowerCase()) : null) ?? branchId;
 
   // 1) Бараа upsert — хоёр салаагаар (давхцалгүй).
   const idByGtin = new Map<string, string>();
@@ -253,15 +268,16 @@ export async function importPackingListXlsx(
     for (const p of data as { id: string; ext_key: string }[]) idByExtKey.set(p.ext_key, p.id);
   }
 
-  // 2) (product, box) бүрээр тоог нэгтгэх
+  // 2) (product, box, branch) бүрээр тоог нэгтгэх
   const lineMap = new Map<string, JobLine>();
   for (const r of rows) {
     const productId = r.gtin ? idByGtin.get(r.gtin) : r.extKey ? idByExtKey.get(r.extKey) : undefined;
     if (!productId) throw new Error(`бараа олдсонгүй (${r.gtin ?? r.extKey ?? "?"})`);
-    const key = `${productId}|${r.boxNo ?? ""}`;
+    const brId = resolveBranch(r);
+    const key = `${productId}|${r.boxNo ?? ""}|${brId ?? ""}`;
     const existing = lineMap.get(key);
     if (existing) existing.count += r.piece;
-    else lineMap.set(key, { productId, count: r.piece, boxNo: r.boxNo });
+    else lineMap.set(key, { productId, count: r.piece, boxNo: r.boxNo, branchId: brId });
   }
 
   // 3) Job үүсгэх
