@@ -757,6 +757,11 @@ update products
    set attributes = attributes - 'branch' - 'Branch' - 'BRANCH' - 'салбар' - 'Салбар' - 'box' - 'Box'
  where attributes ?| array['branch','Branch','BRANCH','салбар','Салбар','box','Box'];
 
+-- Бараа устгахад түүний EPC хамт устах (ON DELETE CASCADE) — цэвэрлэхэд хэрэгтэй.
+alter table epc_codes drop constraint if exists epc_codes_product_id_fkey;
+alter table epc_codes add constraint epc_codes_product_id_fkey
+  foreign key (product_id) references products(id) on delete cascade;
+
 -- ============================================================
 -- View: epc_full — EPC + бараа + ангилал + ажлын талбарууд нэгтгэсэн.
 --   Файлын ТӨГСГӨЛД байрлуулсан — бүх багана (products.price/category_id/
