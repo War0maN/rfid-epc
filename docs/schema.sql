@@ -619,40 +619,8 @@ create policy "tenant label_templates" on label_templates
 --   Хүснэгтийн жагсаалтыг JS дотор бус, SQL талд хуудаслаж татна — олон
 --   мянган/сая мөртэй ч хурдан.
 -- ============================================================
--- DROP + CREATE (REPLACE нь баганын эрэмбэ/нэр өөрчлөхийг зөвшөөрдөггүй).
-drop view if exists epc_full;
-create view epc_full
-with (security_invoker = true) as
-select
-  e.id, e.tenant_id, e.serial, e.epc_hex, e.box_no,
-  e.created_at, e.printed_at, e.job_id, e.product_id,
-  p.name, p.gtin, p.sku, p.price,
-  p.category_id,
-  -- 3 түвшний ангилал (дээдээс доош). leaf нь L1/L2/L3-ийн аль нь ч байж болно.
-  coalesce(c3.name, c2.name, c1.name) as category_l1,
-  case when c3.id is not null then c2.name when c2.id is not null then c1.name end as category_l2,
-  case when c3.id is not null then c1.name end as category_l3,
-  c1.name as category_name, -- leaf (хуучин нэр, тааруулга)
-  concat_ws(' / ',
-    coalesce(c3.name, c2.name, c1.name),
-    case when c3.id is not null then c2.name when c2.id is not null then c1.name end,
-    case when c3.id is not null then c1.name end
-  ) as category_path,
-  p.attributes,
-  -- шинж чанаруудыг хайх/харуулахад текст хэлбэрээр ("Өнгө: Улаан · Размер: L")
-  (
-    select string_agg(t.k || ': ' || t.v, ' · ' order by t.k)
-    from jsonb_each_text(coalesce(p.attributes, '{}'::jsonb)) as t(k, v)
-  ) as attributes_text,
-  j.job_number, j.arrival_date, j.supplier
-from epc_codes e
-left join products   p  on p.id = e.product_id
-left join categories c1 on c1.id = p.category_id   -- leaf
-left join categories c2 on c2.id = c1.parent_id    -- эцэг
-left join categories c3 on c3.id = c2.parent_id    -- өвөг
-left join jobs       j  on j.id = e.job_id;
-
-grant select on epc_full to authenticated;
+-- epc_full view-г энэ файлын ТӨГСГӨЛД шилжүүлэв — бүх багана/хүснэгт (products.price,
+-- categories г.м.) үүссэний дараа байхын тулд. (Доош, файлын төгсгөлийг харна уу.)
 
 -- Хайлт хурдасгах trigram индексүүд (ilike-д). Том дата дээр чухал.
 -- Тэмдэглэл: epc_hex нь char(24) тул gin_trgm_ops-д шууд тохирохгүй; 20k мөрд
@@ -734,3 +702,42 @@ alter table products add column if not exists attributes  jsonb not null default
 -- Үнэ — тогтмол талбар (борлуулалтад хэрэгтэй; шинж чанар биш).
 alter table products add column if not exists price numeric;
 create index if not exists products_category_idx on products (tenant_id, category_id);
+
+-- ============================================================
+-- View: epc_full — EPC + бараа + ангилал + ажлын талбарууд нэгтгэсэн.
+--   Файлын ТӨГСГӨЛД байрлуулсан — бүх багана (products.price/category_id/
+--   attributes) болон categories хүснэгт үүссэний дараа.
+--   security_invoker = true тул RLS хэрэгжинэ (зөвхөн өөрийн тенант).
+-- ============================================================
+drop view if exists epc_full;
+create view epc_full
+with (security_invoker = true) as
+select
+  e.id, e.tenant_id, e.serial, e.epc_hex, e.box_no,
+  e.created_at, e.printed_at, e.job_id, e.product_id,
+  p.name, p.gtin, p.sku, p.price,
+  p.category_id,
+  -- 3 түвшний ангилал (дээдээс доош). leaf нь L1/L2/L3-ийн аль нь ч байж болно.
+  coalesce(c3.name, c2.name, c1.name) as category_l1,
+  case when c3.id is not null then c2.name when c2.id is not null then c1.name end as category_l2,
+  case when c3.id is not null then c1.name end as category_l3,
+  c1.name as category_name, -- leaf (хуучин нэр, тааруулга)
+  concat_ws(' / ',
+    coalesce(c3.name, c2.name, c1.name),
+    case when c3.id is not null then c2.name when c2.id is not null then c1.name end,
+    case when c3.id is not null then c1.name end
+  ) as category_path,
+  p.attributes,
+  (
+    select string_agg(t.k || ': ' || t.v, ' · ' order by t.k)
+    from jsonb_each_text(coalesce(p.attributes, '{}'::jsonb)) as t(k, v)
+  ) as attributes_text,
+  j.job_number, j.arrival_date, j.supplier
+from epc_codes e
+left join products   p  on p.id = e.product_id
+left join categories c1 on c1.id = p.category_id
+left join categories c2 on c2.id = c1.parent_id
+left join categories c3 on c3.id = c2.parent_id
+left join jobs       j  on j.id = e.job_id;
+
+grant select on epc_full to authenticated;
