@@ -9,14 +9,14 @@ import { generateEpcsForJob } from "./generateEpcs";
 import { ensureAttributeDefs } from "./catalog";
 import { normalizeGtin } from "./epc";
 
-export interface CreateCatalogProductInput {
+export interface ProductInput {
+  id?: string; // байвал засна (update); эс бөгөөс шинээр
   categoryId: string | null;
   name: string;
   sku: string | null;
   gtin: string | null; // баркод (байвал SGTIN-96, эс бөгөөс GID-96)
   price: number | null;
   attributes: Record<string, string>; // { "Өнгө": "Улаан", "Размер": "L" }
-  quantity: number;
 }
 
 /**
@@ -32,48 +32,64 @@ function extKeyFor(name: string, sku: string | null, attributes: Record<string, 
   return `${name.trim()}·${sig}`.toLowerCase();
 }
 
-export async function createCatalogProductAndEpcs(
+/** Бараа (master) үүсгэх/засах — EPC үүсгэхгүй. productId буцаана. */
+export async function upsertCatalogProduct(
   supabase: SupabaseClient,
-  input: CreateCatalogProductInput
-): Promise<{ productId: string; jobId: string; count: number }> {
+  input: ProductInput
+): Promise<string> {
   const name = input.name.trim();
   if (!name) throw new Error("Барааны нэр оруулна уу.");
-  if (!Number.isFinite(input.quantity) || input.quantity < 1) {
-    throw new Error("Тоо ширхэг 1-ээс багагүй байх ёстой.");
-  }
 
   const { data: tenant, error: tErr } = await supabase.from("tenants").select("id").single();
   if (tErr) throw tErr;
   const tenantId = (tenant as { id: string }).id;
 
-  // Ашигласан шинж чанаруудыг каталогт автоматаар бүртгэнэ (динамик).
   await ensureAttributeDefs(Object.keys(input.attributes));
 
   // Баркод байвал нормчилж шалгана (SGTIN-96); эс бөгөөс GID-96.
   const gtin = input.gtin?.trim() ? normalizeGtin(input.gtin) : null;
 
-  // 1) Бараа upsert. Баркодтой бол (tenant,gtin)-ээр, эс бөгөөс (tenant,ext_key)-ээр
-  //    давхцалгүй. object_class-ийг DB trigger автоматаар онооно.
-  const row = {
-    tenant_id: tenantId,
+  const fields = {
     sku: input.sku?.trim() || null,
     name,
     price: input.price,
     category_id: input.categoryId,
     attributes: input.attributes,
-    source: "in_app" as const,
-    gtin: gtin, // null бол GID-96
+    gtin, // null бол GID-96
     ext_key: gtin ? null : extKeyFor(name, input.sku, input.attributes),
   };
+
+  // Засвар (id өгсөн) бол update; эс бөгөөс upsert (давхцалгүй).
+  if (input.id) {
+    const { error } = await supabase.from("products").update(fields).eq("id", input.id);
+    if (error) throw error;
+    return input.id;
+  }
   const { data: prod, error: pErr } = await supabase
     .from("products")
-    .upsert(row, { onConflict: gtin ? "tenant_id,gtin" : "tenant_id,ext_key" })
+    .upsert(
+      { tenant_id: tenantId, source: "in_app" as const, ...fields },
+      { onConflict: gtin ? "tenant_id,gtin" : "tenant_id,ext_key" }
+    )
     .select("id")
     .single();
   if (pErr) throw pErr;
-  const productId = (prod as { id: string }).id;
+  return (prod as { id: string }).id;
+}
 
-  // 2) Job үүсгэх (бараа үүсгэх багц бүр нэг Job).
+/** Тухайн бараанаас quantity ширхэг EPC үүсгэнэ (serial үргэлжилнэ). */
+export async function generateEpcsForProduct(
+  supabase: SupabaseClient,
+  productId: string,
+  quantity: number
+): Promise<number> {
+  if (!Number.isFinite(quantity) || quantity < 1) {
+    throw new Error("Тоо ширхэг 1-ээс багагүй байх ёстой.");
+  }
+  const { data: tenant, error: tErr } = await supabase.from("tenants").select("id").single();
+  if (tErr) throw tErr;
+  const tenantId = (tenant as { id: string }).id;
+
   const now = new Date();
   const jobNumber = `БАР-${now.getTime().toString(36).toUpperCase()}`;
   const { data: job, error: jErr } = await supabase
@@ -88,13 +104,10 @@ export async function createCatalogProductAndEpcs(
     .select("id")
     .single();
   if (jErr) throw jErr;
-  const jobId = (job as { id: string }).id;
 
-  // 3) EPC генерац (GID-96, тоо ширхгээр).
   const epcs = await generateEpcsForJob(supabase, {
-    jobId,
-    lines: [{ productId, count: input.quantity }],
+    jobId: (job as { id: string }).id,
+    lines: [{ productId, count: quantity }],
   });
-
-  return { productId, jobId, count: epcs.length };
+  return epcs.length;
 }

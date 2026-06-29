@@ -741,3 +741,46 @@ left join categories c3 on c3.id = c2.parent_id
 left join jobs       j  on j.id = e.job_id;
 
 grant select on epc_full to authenticated;
+
+-- ============================================================
+-- Phase 1: Бүтээгдэхүүн (master) — жагсаалт + үлдэгдэл, админ-only устгах
+-- ============================================================
+
+-- View: products_full — бүтээгдэхүүн + ангиллын түвшин + үлдэгдэл (EPC тоо).
+drop view if exists products_full;
+create view products_full
+with (security_invoker = true) as
+select
+  p.id, p.tenant_id, p.name, p.sku, p.gtin, p.price, p.source, p.created_at,
+  p.category_id, p.attributes,
+  coalesce(c3.name, c2.name, c1.name) as category_l1,
+  case when c3.id is not null then c2.name when c2.id is not null then c1.name end as category_l2,
+  case when c3.id is not null then c1.name end as category_l3,
+  (select count(*) from epc_codes e where e.product_id = p.id) as epc_count
+from products p
+left join categories c1 on c1.id = p.category_id
+left join categories c2 on c2.id = c1.parent_id
+left join categories c3 on c3.id = c2.parent_id;
+grant select on products_full to authenticated;
+
+-- Админ-only УСТГАХ (products, epc_codes). select/insert/update нь тенантын гишүүдэд
+-- (импорт/генерац/markPrinted ажиллахын тулд). "for all" policy-г задлан солино.
+drop policy if exists "tenant products" on products;
+drop policy if exists "products read"   on products;
+drop policy if exists "products insert" on products;
+drop policy if exists "products update" on products;
+drop policy if exists "products delete" on products;
+create policy "products read"   on products for select using (tenant_id = current_tenant_id());
+create policy "products insert" on products for insert with check (tenant_id = current_tenant_id());
+create policy "products update" on products for update using (tenant_id = current_tenant_id()) with check (tenant_id = current_tenant_id());
+create policy "products delete" on products for delete using (tenant_id = current_tenant_id() and is_tenant_admin());
+
+drop policy if exists "tenant epc_codes" on epc_codes;
+drop policy if exists "epc read"   on epc_codes;
+drop policy if exists "epc insert" on epc_codes;
+drop policy if exists "epc update" on epc_codes;
+drop policy if exists "epc delete" on epc_codes;
+create policy "epc read"   on epc_codes for select using (tenant_id = current_tenant_id());
+create policy "epc insert" on epc_codes for insert with check (tenant_id = current_tenant_id());
+create policy "epc update" on epc_codes for update using (tenant_id = current_tenant_id()) with check (tenant_id = current_tenant_id());
+create policy "epc delete" on epc_codes for delete using (tenant_id = current_tenant_id() and is_tenant_admin());
