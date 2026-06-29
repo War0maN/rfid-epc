@@ -180,6 +180,19 @@ const COL_TO_DB: Record<string, string> = {
   supplier: "supplier",
 };
 
+/**
+ * Баганын түлхүүр → DB баганын нэр (эсвэл jsonb зам). "attr:<нэр>" нь шинж
+ * чанарын динамик багана → attributes->>'нэр' jsonb замаар шүүж/эрэмбэлнэ.
+ */
+function colToDb(key: string): string | null {
+  if (key.startsWith("attr:")) {
+    const label = key.slice(5);
+    const safe = /^[^\s"]+$/.test(label) ? label : `"${label.replace(/"/g, "")}"`;
+    return `attributes->>${safe}`;
+  }
+  return COL_TO_DB[key] ?? null;
+}
+
 /** epc_full дээрх select-д баганын шүүлтүүдийг хэрэглэнэ. */
 type EpcQuery = ReturnType<typeof epcBase>;
 function epcBase(withCount: boolean) {
@@ -193,7 +206,7 @@ function applyEpcFilters(q: EpcQuery, filters: Record<string, string>): EpcQuery
   for (const [key, raw] of Object.entries(filters)) {
     const val = (raw ?? "").trim();
     if (!val) continue;
-    const db = COL_TO_DB[key];
+    const db = colToDb(key);
     if (!db) continue;
     if (key === "printed") {
       const low = val.toLowerCase();
@@ -217,7 +230,7 @@ export async function fetchEpcPage(params: {
   sort: EpcSort | null;
 }): Promise<EpcPage> {
   const filtered = applyEpcFilters(epcBase(true), params.filters);
-  const sortDb = params.sort ? COL_TO_DB[params.sort.key] : null;
+  const sortDb = params.sort ? colToDb(params.sort.key) : null;
   const asc = params.sort?.dir === "asc";
   let q = filtered.order(sortDb ?? "id", { ascending: sortDb ? asc : true });
   if (sortDb && sortDb !== "id") q = q.order("id", { ascending: true }); // тогтвортой tiebreak
@@ -233,7 +246,7 @@ export async function fetchEpcAllMatching(
   sort: EpcSort | null,
   cap = 100000
 ): Promise<EpcRow[]> {
-  const sortDb = sort ? COL_TO_DB[sort.key] : null;
+  const sortDb = sort ? colToDb(sort.key) : null;
   const asc = sort?.dir === "asc";
   const PAGE = 1000;
   const out: EpcRow[] = [];

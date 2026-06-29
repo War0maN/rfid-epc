@@ -1,10 +1,11 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
   fetchEpcPage,
   fetchEpcAllMatching,
   type EpcRow,
   type EpcSort,
 } from "../lib/queries";
+import { listAttributeDefs, type AttributeDef } from "../lib/catalog";
 import { downloadCsv, toCsv } from "../lib/exportCsv";
 import { buildZplBatch, downloadZpl } from "../lib/exportZpl";
 import { epcHexToUri, epcHexToTagUri } from "../lib/epc";
@@ -27,13 +28,13 @@ interface ColDef {
   mono?: boolean;
 }
 
-const COLUMNS: ColDef[] = [
+// Тогтмол багана. Шинж чанарын багана нь attribute_defs-ээс динамикаар нэмэгдэнэ.
+const STATIC_COLUMNS: ColDef[] = [
   { key: "epc", label: "EPC (hex)", get: (r) => r.epc_hex, mono: true },
   { key: "serial", label: "Serial", get: (r) => String(r.serial) },
   { key: "printed", label: "Төлөв", get: (r) => (r.printed_at ? "хэвлэгдсэн" : "хэвлээгүй") },
   { key: "name", label: "Бараа", get: (r) => r.name ?? "" },
   { key: "category", label: "Ангилал", get: (r) => r.category_name ?? "" },
-  { key: "attr", label: "Шинж чанар", get: (r) => r.attributes_text ?? "" },
   { key: "sku", label: "SKU", get: (r) => r.sku ?? "", mono: true },
   { key: "gtin", label: "GTIN/баркод", get: (r) => r.gtin ?? "", mono: true },
   { key: "box", label: "Хайрцаг", get: (r) => r.box_no ?? "" },
@@ -44,6 +45,16 @@ const COLUMNS: ColDef[] = [
 
 // Нэг хуудсанд татах/харуулах мөрийн тоо (server-side хуудаслалт).
 const PAGE_SIZE = 100;
+
+// Нуусан баганыг localStorage-д хадгална (хэрэглэгч бүрд тогтоно).
+const HIDDEN_KEY = "epcHiddenCols";
+function loadHidden(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]") as string[]);
+  } catch {
+    return new Set();
+  }
+}
 
 /** hex -> URI; декод бүтэлгүйтвэл хоосон (export эвдрэхгүй). SGTIN/GID хоёуланг. */
 function safeUri(hex: string): string {
@@ -75,8 +86,52 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
   // Сонгосон мөрүүд (хуудас хооронд хадгалагдана; мөрийн дата-г бүхлээр нь хадгална).
   const [selected, setSelected] = useState<Map<string, EpcRow>>(new Map());
   const [printRows, setPrintRows] = useState<EpcRow[] | null>(null);
+  // Динамик шинж чанарын багана + нуух/гаргах удирдлага.
+  const [attrDefs, setAttrDefs] = useState<AttributeDef[]>([]);
+  const [hidden, setHidden] = useState<Set<string>>(loadHidden);
+  const [showColPicker, setShowColPicker] = useState(false);
 
   const hasFilters = Object.values(debounced).some((v) => v.trim());
+
+  // Шинж чанаруудыг татаж динамик багана болгоно (импорт/үүсгэхэд шинэчилнэ).
+  useEffect(() => {
+    let active = true;
+    listAttributeDefs()
+      .then((d) => active && setAttrDefs(d))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [refreshKey]);
+
+  // Бүх багана = тогтмол + шинж чанар бүр (attr:<нэр>).
+  const columns = useMemo<ColDef[]>(() => {
+    const attrCols: ColDef[] = attrDefs.map((d) => ({
+      key: `attr:${d.label}`,
+      label: d.label,
+      get: (r: EpcRow) => r.attributes?.[d.label] ?? "",
+    }));
+    return [...STATIC_COLUMNS, ...attrCols];
+  }, [attrDefs]);
+
+  const visibleColumns = useMemo(
+    () => columns.filter((c) => !hidden.has(c.key)),
+    [columns, hidden]
+  );
+
+  function toggleColumn(key: string) {
+    setHidden((h) => {
+      const n = new Set(h);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      try {
+        localStorage.setItem(HIDDEN_KEY, JSON.stringify([...n]));
+      } catch {
+        /* localStorage байхгүй бол үл хамаарна */
+      }
+      return n;
+    });
+  }
 
   // Шүүлтийн оролтыг debounce хийнэ (бичих бүрд DB-рүү явахгүй).
   useEffect(() => {
@@ -195,27 +250,35 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
     setError(null);
     try {
       const rows = await resolveRows();
-      const flat = rows.map((r) => ({
-        epc_hex: r.epc_hex,
-        epc_uri: safeUri(r.epc_hex),
-        epc_tag_uri: safeTagUri(r.epc_hex),
-        serial: r.serial,
-        product: r.name ?? "",
-        sku: r.sku ?? "",
-        gtin: r.gtin ?? "",
-        box_no: r.box_no ?? "",
-        job_number: r.job_number ?? "",
-        arrival_date: r.arrival_date ?? "",
-        supplier: r.supplier ?? "",
-        printed: r.printed_at ? "хэвлэгдсэн" : "хэвлээгүй",
-        created_at: r.created_at,
-      }));
+      const attrLabels = attrDefs.map((d) => d.label);
+      const flat = rows.map((r) => {
+        const base: Record<string, unknown> = {
+          epc_hex: r.epc_hex,
+          epc_uri: safeUri(r.epc_hex),
+          epc_tag_uri: safeTagUri(r.epc_hex),
+          serial: r.serial,
+          product: r.name ?? "",
+          category: r.category_name ?? "",
+          sku: r.sku ?? "",
+          gtin: r.gtin ?? "",
+          box_no: r.box_no ?? "",
+          job_number: r.job_number ?? "",
+          arrival_date: r.arrival_date ?? "",
+          supplier: r.supplier ?? "",
+          printed: r.printed_at ? "хэвлэгдсэн" : "хэвлээгүй",
+          created_at: r.created_at,
+        };
+        for (const l of attrLabels) base[`a_${l}`] = r.attributes?.[l] ?? "";
+        return base;
+      });
       const csv = toCsv(flat, [
         { key: "epc_hex", label: "EPC (hex)" },
         { key: "epc_uri", label: "EPC URI" },
         { key: "epc_tag_uri", label: "EPC Tag URI" },
         { key: "serial", label: "Serial" },
         { key: "product", label: "Бараа" },
+        { key: "category", label: "Ангилал" },
+        ...attrLabels.map((l) => ({ key: `a_${l}`, label: l })),
         { key: "sku", label: "SKU" },
         { key: "gtin", label: "GTIN/баркод" },
         { key: "box_no", label: "Хайрцаг" },
@@ -286,6 +349,40 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
           {hasFilters ? "Шүүсэн" : "Нийт"} <strong>{total.toLocaleString()}</strong>
         </span>
         <div className="flex-1" />
+
+        {/* Баганын нуух/гаргах сонгогч */}
+        <div className="relative">
+          <button
+            onClick={() => setShowColPicker((s) => !s)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            ⚙ Багана
+          </button>
+          {showColPicker && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowColPicker(false)} />
+              <div className="absolute right-0 z-20 mt-1 max-h-80 w-60 overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+                <div className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Харагдах багана
+                </div>
+                {columns.map((c) => (
+                  <label
+                    key={c.key}
+                    className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!hidden.has(c.key)}
+                      onChange={() => toggleColumn(c.key)}
+                    />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
         {hasFilters && (
           <button
             onClick={clearFilters}
@@ -349,7 +446,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
                   title="Энэ хуудсыг бүгдийг сонгох"
                 />
               </th>
-              {COLUMNS.map((c) => (
+              {visibleColumns.map((c) => (
                 <th
                   key={c.key}
                   className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left align-top"
@@ -378,7 +475,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
           <tbody>
             {loading && visible.length === 0 ? (
               <tr>
-                <td colSpan={COLUMNS.length + 1} className="px-4 py-16 text-center">
+                <td colSpan={visibleColumns.length + 1} className="px-4 py-16 text-center">
                   <div className="flex flex-col items-center gap-3 text-slate-500">
                     <svg className="h-8 w-8 animate-spin text-indigo-500" viewBox="0 0 24 24" fill="none">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -390,7 +487,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
               </tr>
             ) : visible.length === 0 ? (
               <tr>
-                <td colSpan={COLUMNS.length + 1} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={visibleColumns.length + 1} className="px-4 py-8 text-center text-slate-400">
                   {hasFilters ? "Шүүлтэд тохирох мөр алга." : "EPC алга."}
                 </td>
               </tr>
@@ -400,7 +497,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
                   <td className="border-b border-slate-100 px-2 py-2 text-center">
                     <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleRow(r)} />
                   </td>
-                  {COLUMNS.map((c) => {
+                  {visibleColumns.map((c) => {
                     const v = c.get(r);
                     return (
                       <td
