@@ -747,6 +747,16 @@ begin
   end loop;
 end $$;
 
+-- Цэвэрлэгээ: "branch/салбар/box/price" зэрэг нөөц нэртэй шинж чанарыг арилгана.
+-- (Эдгээр нь одоо тогтмол багана тул шинж чанар байх ёсгүй. Хуучин импортоос
+--  санамсаргүй үүссэнийг цэгцэлнэ — re-run аюулгүй.)
+delete from attribute_defs
+ where lower(btrim(label)) in
+   ('branch','салбар','салбарын дугаар','салбарын код','branch code','store','box','хайрцаг');
+update products
+   set attributes = attributes - 'branch' - 'Branch' - 'BRANCH' - 'салбар' - 'Салбар' - 'box' - 'Box'
+ where attributes ?| array['branch','Branch','BRANCH','салбар','Салбар','box','Box'];
+
 -- ============================================================
 -- View: epc_full — EPC + бараа + ангилал + ажлын талбарууд нэгтгэсэн.
 --   Файлын ТӨГСГӨЛД байрлуулсан — бүх багана (products.price/category_id/
