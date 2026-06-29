@@ -627,7 +627,17 @@ select
   e.id, e.tenant_id, e.serial, e.epc_hex, e.box_no,
   e.created_at, e.printed_at, e.job_id, e.product_id,
   p.name, p.gtin, p.sku,
-  p.category_id, c.name as category_name,
+  p.category_id,
+  -- 3 түвшний ангилал (дээдээс доош). leaf нь L1/L2/L3-ийн аль нь ч байж болно.
+  coalesce(c3.name, c2.name, c1.name) as category_l1,
+  case when c3.id is not null then c2.name when c2.id is not null then c1.name end as category_l2,
+  case when c3.id is not null then c1.name end as category_l3,
+  c1.name as category_name, -- leaf (хуучин нэр, тааруулга)
+  concat_ws(' / ',
+    coalesce(c3.name, c2.name, c1.name),
+    case when c3.id is not null then c2.name when c2.id is not null then c1.name end,
+    case when c3.id is not null then c1.name end
+  ) as category_path,
   p.attributes,
   -- шинж чанаруудыг хайх/харуулахад текст хэлбэрээр ("Өнгө: Улаан · Размер: L")
   (
@@ -636,9 +646,11 @@ select
   ) as attributes_text,
   j.job_number, j.arrival_date, j.supplier
 from epc_codes e
-left join products   p on p.id = e.product_id
-left join categories c on c.id = p.category_id
-left join jobs       j on j.id = e.job_id;
+left join products   p  on p.id = e.product_id
+left join categories c1 on c1.id = p.category_id   -- leaf
+left join categories c2 on c2.id = c1.parent_id    -- эцэг
+left join categories c3 on c3.id = c2.parent_id    -- өвөг
+left join jobs       j  on j.id = e.job_id;
 
 grant select on epc_full to authenticated;
 
@@ -701,6 +713,15 @@ drop trigger if exists audit_attribute_defs on attribute_defs;
 create trigger audit_attribute_defs
   after insert or update or delete on attribute_defs
   for each row execute function audit_trigger('attribute');
+
+-- ---- Шинж чанарыг ГЛОБАЛ болгож, давхардсан нэрийг нэгтгэх ----
+-- Олон улсын PIM-ийн дагуу шинж чанар нэг л глобал санд байна (ангилал бүрд
+-- давтахгүй). Хуучин ангилалд хуваарилсан/давхардсан мөрийг цэгцэлнэ (re-run ОК).
+update attribute_defs set category_id = null where category_id is not null;
+delete from attribute_defs a using attribute_defs b
+ where a.tenant_id = b.tenant_id
+   and lower(btrim(a.label)) = lower(btrim(b.label))
+   and a.ctid > b.ctid;
 
 -- ============================================================
 -- Каталог (Phase 2): бараа -> ангилал + динамик шинж чанарын утга

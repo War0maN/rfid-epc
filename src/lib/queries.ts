@@ -22,7 +22,10 @@ export interface EpcRow {
   gtin: string;
   sku: string | null;
   category_id: string | null;
-  category_name: string | null;
+  category_l1: string | null; // Үндсэн ангилал
+  category_l2: string | null; // Дэд ангилал
+  category_l3: string | null; // Барааны ангилал
+  category_name: string | null; // leaf (хуучин тааруулга)
   attributes: Record<string, string>; // {"Өнгө":"Улаан","Размер":"L"}
   attributes_text: string | null; // хайх/харуулах текст
   job_number: string | null;
@@ -37,6 +40,10 @@ interface ProductLite {
   sku: string | null;
   category_id: string | null;
   attributes: Record<string, string> | null;
+}
+interface CatLite {
+  name: string;
+  parent_id: string | null;
 }
 interface JobLite {
   id: string;
@@ -59,15 +66,36 @@ async function fetchLookupMaps() {
     await Promise.all([
       supabase.from("products").select("id, name, gtin, sku, category_id, attributes"),
       supabase.from("jobs").select("id, job_number, arrival_date, supplier"),
-      supabase.from("categories").select("id, name"),
+      supabase.from("categories").select("id, name, parent_id"),
     ]);
   if (pErr) throw pErr;
   if (jErr) throw jErr;
   if (cErr) throw cErr;
   const pMap = new Map((prods as ProductLite[]).map((p) => [p.id, p]));
   const jMap = new Map((jobs as JobLite[]).map((j) => [j.id, j]));
-  const cMap = new Map((cats as { id: string; name: string }[]).map((c) => [c.id, c.name]));
+  const cMap = new Map(
+    (cats as { id: string; name: string; parent_id: string | null }[]).map((c) => [
+      c.id,
+      { name: c.name, parent_id: c.parent_id },
+    ])
+  );
   return { pMap, jMap, cMap };
+}
+
+/** Leaf category id-ээс дээш 3 түвшнийг (дээдээс доош) гаргана. */
+function categoryLevels(
+  leafId: string | null,
+  cMap: Map<string, CatLite>
+): { l1: string | null; l2: string | null; l3: string | null } {
+  const chain: string[] = [];
+  let cur = leafId;
+  while (cur && chain.length < 5) {
+    const c = cMap.get(cur);
+    if (!c) break;
+    chain.unshift(c.name); // дээд талд эцэг
+    cur = c.parent_id;
+  }
+  return { l1: chain[0] ?? null, l2: chain[1] ?? null, l3: chain[2] ?? null };
 }
 
 interface FlatEpc {
@@ -85,18 +113,22 @@ function joinRow(
   r: FlatEpc,
   pMap: Map<string, ProductLite>,
   jMap: Map<string, JobLite>,
-  cMap: Map<string, string>
+  cMap: Map<string, CatLite>
 ): EpcRow {
   const p = pMap.get(r.product_id);
   const j = jMap.get(r.job_id);
   const attributes = p?.attributes ?? {};
+  const lv = categoryLevels(p?.category_id ?? null, cMap);
   return {
     ...r,
     name: p?.name ?? null,
     gtin: p?.gtin ?? "",
     sku: p?.sku ?? null,
     category_id: p?.category_id ?? null,
-    category_name: p?.category_id ? (cMap.get(p.category_id) ?? null) : null,
+    category_l1: lv.l1,
+    category_l2: lv.l2,
+    category_l3: lv.l3,
+    category_name: p?.category_id ? (cMap.get(p.category_id)?.name ?? null) : null,
     attributes,
     attributes_text: attrsToText(attributes),
     job_number: j?.job_number ?? null,
@@ -172,7 +204,9 @@ const COL_TO_DB: Record<string, string> = {
   name: "name",
   sku: "sku",
   gtin: "gtin",
-  category: "category_name",
+  cat1: "category_l1",
+  cat2: "category_l2",
+  cat3: "category_l3",
   attr: "attributes_text",
   box: "box_no",
   job: "job_number",

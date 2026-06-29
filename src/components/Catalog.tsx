@@ -9,6 +9,9 @@ import {
   updateAttributeDef,
   deleteAttributeDef,
   buildTree,
+  dedupAttrs,
+  CATEGORY_LEVELS,
+  MAX_CATEGORY_DEPTH,
   type Category,
   type CategoryNode,
   type AttributeDef,
@@ -32,12 +35,12 @@ const TYPE_LABEL: Record<AttrInputType, string> = {
 export default function Catalog() {
   const [cats, setCats] = useState<Category[]>([]);
   const [attrs, setAttrs] = useState<AttributeDef[]>([]);
-  const [selectedCatId, setSelectedCatId] = useState<string | null>(null); // null = глобал
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Ангилал нэмэх/нэр солих төлөв
   const [addParent, setAddParent] = useState<string | null | false>(false); // false=нэмэхгүй
+  const [addLevel, setAddLevel] = useState(""); // нэмэх түвшний нэр (placeholder)
   const [addName, setAddName] = useState("");
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameName, setRenameName] = useState("");
@@ -70,17 +73,13 @@ export default function Catalog() {
   }, []);
 
   const tree = useMemo(() => buildTree(cats), [cats]);
-  const catName = (id: string | null) =>
-    id === null ? "Бүх ангилал (глобал)" : (cats.find((c) => c.id === id)?.name ?? "—");
-  // Сонгосон ангилалд ШУУД тодорхойлсон шинж чанарууд (засварлахад).
-  const ownAttrs = useMemo(
-    () => attrs.filter((a) => a.category_id === selectedCatId).sort((a, b) => a.sort - b.sort),
-    [attrs, selectedCatId]
-  );
+  // Шинж чанар нэг л глобал жагсаалт (давхардлыг арилгасан).
+  const globalAttrs = useMemo(() => dedupAttrs(attrs), [attrs]);
 
   // ----- Ангилал үйлдлүүд -----
-  function startAdd(parentId: string | null) {
+  function startAdd(parentId: string | null, levelName: string) {
     setAddParent(parentId);
+    setAddLevel(levelName);
     setAddName("");
   }
   function saveAdd() {
@@ -110,22 +109,16 @@ export default function Catalog() {
       : `"${c.name}" ангилал устах. Үргэлжлүүлэх үү?`;
     if (!window.confirm(msg)) return;
     deleteCategory(c.id)
-      .then(() => {
-        if (selectedCatId === c.id) setSelectedCatId(null);
-        reload();
-      })
+      .then(reload)
       .catch((e) => setError(errorMessage(e)));
   }
 
   function renderNode(node: CategoryNode, depth: number): React.ReactNode {
-    const selected = node.id === selectedCatId;
+    const canAddChild = depth < MAX_CATEGORY_DEPTH - 1; // 3 түвшнээс хэтрэхгүй
     return (
       <div key={node.id}>
         <div
-          className={
-            "group flex items-center gap-1 rounded px-2 py-1 text-sm " +
-            (selected ? "bg-indigo-50 text-indigo-700" : "hover:bg-slate-50 text-slate-700")
-          }
+          className="group flex items-center gap-1 rounded px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
           style={{ paddingLeft: depth * 16 + 8 }}
         >
           {renameId === node.id ? (
@@ -142,11 +135,22 @@ export default function Catalog() {
             </>
           ) : (
             <>
-              <button onClick={() => setSelectedCatId(node.id)} className="flex-1 text-left font-medium">
+              <span className="flex-1 font-medium">
                 {node.name}
-              </button>
+                <span className="ml-1.5 text-[10px] font-normal text-slate-400">
+                  {CATEGORY_LEVELS[depth] ?? ""}
+                </span>
+              </span>
               <div className="hidden gap-1 group-hover:flex">
-                <button onClick={() => startAdd(node.id)} className="text-xs text-slate-400 hover:text-indigo-600" title="Дэд ангилал нэмэх">＋</button>
+                {canAddChild && (
+                  <button
+                    onClick={() => startAdd(node.id, CATEGORY_LEVELS[depth + 1])}
+                    className="text-xs text-slate-400 hover:text-indigo-600"
+                    title={`${CATEGORY_LEVELS[depth + 1]} нэмэх`}
+                  >
+                    ＋
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setRenameId(node.id);
@@ -169,7 +173,7 @@ export default function Catalog() {
               value={addName}
               onChange={(e) => setAddName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && saveAdd()}
-              placeholder="Дэд ангиллын нэр"
+              placeholder={`${addLevel} нэр`}
               className={inp + " h-7 max-w-[160px]"}
             />
             <button onClick={saveAdd} className="text-xs text-indigo-600">✓</button>
@@ -186,8 +190,8 @@ export default function Catalog() {
       <div>
         <h2 className="text-lg font-semibold text-slate-900">Ангилал ба шинж чанар</h2>
         <p className="text-sm text-slate-500">
-          Барааны ангиллын модоо болон өнгө/размер зэрэг шинж чанаруудаа энд тодорхойлно. Эдгээрийг
-          бараа үүсгэхэд ашиглана.
+          Ангилал нь 3 түвшинтэй ({CATEGORY_LEVELS.join(" → ")}) — заавал бүгдийг бөглөх албагүй.
+          Шинж чанар (өнгө/размер/үнэ…) нь нэг л глобал жагсаалтад тодорхойлогдоно.
         </p>
       </div>
 
@@ -198,7 +202,9 @@ export default function Catalog() {
         <div className="w-full shrink-0 rounded-xl border border-slate-200 bg-white p-3 lg:w-80">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-semibold text-slate-700">Ангилал</span>
-            <button onClick={() => startAdd(null)} className={btn}>+ Үндсэн ангилал</button>
+            <button onClick={() => startAdd(null, CATEGORY_LEVELS[0])} className={btn}>
+              + {CATEGORY_LEVELS[0]}
+            </button>
           </div>
 
           {addParent === null && (
@@ -208,24 +214,13 @@ export default function Catalog() {
                 value={addName}
                 onChange={(e) => setAddName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && saveAdd()}
-                placeholder="Ангиллын нэр"
+                placeholder={`${addLevel} нэр`}
                 className={inp + " h-7"}
               />
               <button onClick={saveAdd} className="text-xs text-indigo-600">✓</button>
               <button onClick={() => setAddParent(false)} className="text-xs text-slate-400">✕</button>
             </div>
           )}
-
-          {/* Глобал сонголт */}
-          <button
-            onClick={() => setSelectedCatId(null)}
-            className={
-              "mb-1 w-full rounded px-2 py-1 text-left text-sm font-medium " +
-              (selectedCatId === null ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:bg-slate-50")
-            }
-          >
-            ★ Бүх ангилалд (глобал)
-          </button>
 
           {loading ? (
             <p className="px-2 py-4 text-sm text-slate-400">Ачаалж байна…</p>
@@ -236,23 +231,18 @@ export default function Catalog() {
           )}
         </div>
 
-        {/* Баруун: шинж чанарууд */}
+        {/* Баруун: шинж чанарууд (нэг глобал жагсаалт) */}
         <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-3">
-            <span className="text-sm font-semibold text-slate-700">Шинж чанар</span>
-            <span className="ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-              {catName(selectedCatId)}
-            </span>
+            <span className="text-sm font-semibold text-slate-700">Шинж чанар (глобал)</span>
             <p className="mt-1 text-xs text-slate-400">
-              {selectedCatId === null
-                ? "Глобал шинж чанар бүх ангилалд хэрэглэгдэнэ."
-                : "Энэ ангилалд тодорхойлсон шинж чанар. Эцэг ангилал + глобалынх удамшина."}
+              Энд тодорхойлсон шинж чанар бүх бараанд хэрэглэгдэнэ. Бараа үүсгэхэд эдгээр талбар гарна.
             </p>
           </div>
 
           <AttrList
-            attrs={ownAttrs}
-            categoryId={selectedCatId}
+            attrs={globalAttrs}
+            categoryId={null}
             onChanged={reload}
             onError={(m) => setError(m)}
           />

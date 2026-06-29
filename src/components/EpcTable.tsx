@@ -5,7 +5,7 @@ import {
   type EpcRow,
   type EpcSort,
 } from "../lib/queries";
-import { listAttributeDefs, type AttributeDef } from "../lib/catalog";
+import { listAttributeDefs, dedupAttrs, type AttributeDef } from "../lib/catalog";
 import { downloadCsv, toCsv } from "../lib/exportCsv";
 import { buildZplBatch, downloadZpl } from "../lib/exportZpl";
 import { epcHexToUri, epcHexToTagUri } from "../lib/epc";
@@ -34,7 +34,9 @@ const STATIC_COLUMNS: ColDef[] = [
   { key: "serial", label: "Serial", get: (r) => String(r.serial) },
   { key: "printed", label: "Төлөв", get: (r) => (r.printed_at ? "хэвлэгдсэн" : "хэвлээгүй") },
   { key: "name", label: "Бараа", get: (r) => r.name ?? "" },
-  { key: "category", label: "Ангилал", get: (r) => r.category_name ?? "" },
+  { key: "cat1", label: "Үндсэн ангилал", get: (r) => r.category_l1 ?? "" },
+  { key: "cat2", label: "Дэд ангилал", get: (r) => r.category_l2 ?? "" },
+  { key: "cat3", label: "Барааны ангилал", get: (r) => r.category_l3 ?? "" },
   { key: "sku", label: "SKU", get: (r) => r.sku ?? "", mono: true },
   { key: "gtin", label: "GTIN/баркод", get: (r) => r.gtin ?? "", mono: true },
   { key: "box", label: "Хайрцаг", get: (r) => r.box_no ?? "" },
@@ -106,7 +108,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
 
   // Бүх багана = тогтмол + шинж чанар бүр (attr:<нэр>).
   const columns = useMemo<ColDef[]>(() => {
-    const attrCols: ColDef[] = attrDefs.map((d) => ({
+    const attrCols: ColDef[] = dedupAttrs(attrDefs).map((d) => ({
       key: `attr:${d.label}`,
       label: d.label,
       get: (r: EpcRow) => r.attributes?.[d.label] ?? "",
@@ -250,7 +252,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
     setError(null);
     try {
       const rows = await resolveRows();
-      const attrLabels = attrDefs.map((d) => d.label);
+      const attrLabels = dedupAttrs(attrDefs).map((d) => d.label);
       const flat = rows.map((r) => {
         const base: Record<string, unknown> = {
           epc_hex: r.epc_hex,
@@ -258,7 +260,9 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
           epc_tag_uri: safeTagUri(r.epc_hex),
           serial: r.serial,
           product: r.name ?? "",
-          category: r.category_name ?? "",
+          cat1: r.category_l1 ?? "",
+          cat2: r.category_l2 ?? "",
+          cat3: r.category_l3 ?? "",
           sku: r.sku ?? "",
           gtin: r.gtin ?? "",
           box_no: r.box_no ?? "",
@@ -277,7 +281,9 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
         { key: "epc_tag_uri", label: "EPC Tag URI" },
         { key: "serial", label: "Serial" },
         { key: "product", label: "Бараа" },
-        { key: "category", label: "Ангилал" },
+        { key: "cat1", label: "Үндсэн ангилал" },
+        { key: "cat2", label: "Дэд ангилал" },
+        { key: "cat3", label: "Барааны ангилал" },
         ...attrLabels.map((l) => ({ key: `a_${l}`, label: l })),
         { key: "sku", label: "SKU" },
         { key: "gtin", label: "GTIN/баркод" },

@@ -30,6 +30,32 @@ export interface CategoryNode extends Category {
   children: CategoryNode[];
 }
 
+/** Ангиллын 3 түвшний нэр (дээдээс доош). Заавал бүгдийг бөглөх албагүй. */
+export const CATEGORY_LEVELS = ["Үндсэн ангилал", "Дэд ангилал", "Барааны ангилал"];
+export const MAX_CATEGORY_DEPTH = CATEGORY_LEVELS.length;
+
+/** Ангиллын зангилааны гүн (1 = дээд түвшин). */
+export function nodeDepth(id: string, cats: Category[]): number {
+  const byId = new Map(cats.map((c) => [c.id, c]));
+  let d = 1;
+  let cur = byId.get(id)?.parent_id ?? null;
+  while (cur) {
+    d++;
+    cur = byId.get(cur)?.parent_id ?? null;
+  }
+  return d;
+}
+
+/** Давхардсан нэрийг (label) арилгаж глобал шинж чанарын жагсаалт буцаана. */
+export function dedupAttrs(defs: AttributeDef[]): AttributeDef[] {
+  const byLabel = new Map<string, AttributeDef>();
+  for (const d of defs) {
+    const k = d.label.trim().toLowerCase();
+    if (!byLabel.has(k)) byLabel.set(k, d);
+  }
+  return [...byLabel.values()].sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label));
+}
+
 // ---------- Categories ----------
 
 export async function listCategories(): Promise<Category[]> {
@@ -160,7 +186,12 @@ export async function ensureCategoriesByPaths(paths: string[]): Promise<Map<stri
   for (const c of existing) byKey.set(key(c.parent_id, c.name.trim()), c.id);
 
   for (const path of unique) {
-    const levels = path.split(/[/>|]/).map((s) => s.trim()).filter(Boolean);
+    // Хамгийн ихдээ 3 түвшин (Үндсэн → Дэд → Барааны ангилал).
+    const levels = path
+      .split(/[/>|]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, MAX_CATEGORY_DEPTH);
     let parentId: string | null = null;
     for (const levelName of levels) {
       const k = key(parentId, levelName);
