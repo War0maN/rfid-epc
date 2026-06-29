@@ -32,6 +32,7 @@ export default function CreateProduct({ onCreated }: Props) {
   const categoryId = l3Id ?? l2Id ?? l1Id;
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
+  const [gtin, setGtin] = useState("");
   const [price, setPrice] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [attrValues, setAttrValues] = useState<Record<string, string>>({}); // def.id -> value
@@ -107,6 +108,7 @@ export default function CreateProduct({ onCreated }: Props) {
         categoryId,
         name: name.trim(),
         sku: sku.trim() || null,
+        gtin: gtin.trim() || null,
         price: priceNum != null && Number.isFinite(priceNum) ? priceNum : null,
         attributes,
         quantity,
@@ -115,6 +117,7 @@ export default function CreateProduct({ onCreated }: Props) {
       // Формыг хэсэгчлэн цэвэрлэх (ангиллыг үлдээж дараагийн бараанд хурдан)
       setName("");
       setSku("");
+      setGtin("");
       setPrice("");
       setQuantity(1);
       setAttrValues({});
@@ -221,6 +224,15 @@ export default function CreateProduct({ onCreated }: Props) {
                   onChange={(e) => setPrice(e.target.value)}
                   placeholder="Заавал биш"
                   className={inp}
+                />
+              </div>
+              <div>
+                <label className={lbl}>GTIN / баркод</label>
+                <input
+                  value={gtin}
+                  onChange={(e) => setGtin(e.target.value)}
+                  placeholder="Заавал биш (байвал SGTIN-96)"
+                  className={inp + " font-mono"}
                 />
               </div>
             </div>
