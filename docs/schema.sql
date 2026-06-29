@@ -626,7 +626,7 @@ with (security_invoker = true) as
 select
   e.id, e.tenant_id, e.serial, e.epc_hex, e.box_no,
   e.created_at, e.printed_at, e.job_id, e.product_id,
-  p.name, p.gtin, p.sku,
+  p.name, p.gtin, p.sku, p.price,
   p.category_id,
   -- 3 түвшний ангилал (дээдээс доош). leaf нь L1/L2/L3-ийн аль нь ч байж болно.
   coalesce(c3.name, c2.name, c1.name) as category_l1,
@@ -731,4 +731,6 @@ delete from attribute_defs a using attribute_defs b
 -- ============================================================
 alter table products add column if not exists category_id uuid references categories(id);
 alter table products add column if not exists attributes  jsonb not null default '{}'::jsonb;
+-- Үнэ — тогтмол талбар (борлуулалтад хэрэгтэй; шинж чанар биш).
+alter table products add column if not exists price numeric;
 create index if not exists products_category_idx on products (tenant_id, category_id);

@@ -12,6 +12,7 @@ export interface CreateCatalogProductInput {
   categoryId: string | null;
   name: string;
   sku: string | null;
+  price: number | null;
   attributes: Record<string, string>; // { "Өнгө": "Улаан", "Размер": "L" }
   quantity: number;
 }
@@ -57,6 +58,7 @@ export async function createCatalogProductAndEpcs(
         ext_key: extKey,
         sku: input.sku?.trim() || null,
         name,
+        price: input.price,
         category_id: input.categoryId,
         attributes: input.attributes,
         source: "in_app" as const,

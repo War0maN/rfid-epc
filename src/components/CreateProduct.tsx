@@ -3,8 +3,8 @@ import { supabase } from "../lib/supabaseClient";
 import {
   listCategories,
   listAttributeDefs,
-  categoryOptions,
   attrsForCategory,
+  CATEGORY_LEVELS,
   type Category,
   type AttributeDef,
 } from "../lib/catalog";
@@ -25,9 +25,14 @@ export default function CreateProduct({ onCreated }: Props) {
   const [defs, setDefs] = useState<AttributeDef[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  const [categoryId, setCategoryId] = useState<string | null>(null);
+  // Ангилал — 3 холбоост (cascading) сонголт. Гүн нь сонгосон хамгийн доод түвшин.
+  const [l1Id, setL1Id] = useState<string | null>(null);
+  const [l2Id, setL2Id] = useState<string | null>(null);
+  const [l3Id, setL3Id] = useState<string | null>(null);
+  const categoryId = l3Id ?? l2Id ?? l1Id;
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
+  const [price, setPrice] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [attrValues, setAttrValues] = useState<Record<string, string>>({}); // def.id -> value
   // Урьдчилан тодорхойлоогүй нэмэлт шинж чанар (автоматаар бүртгэгдэнэ).
@@ -52,7 +57,15 @@ export default function CreateProduct({ onCreated }: Props) {
     };
   }, []);
 
-  const catOpts = useMemo(() => categoryOptions(cats), [cats]);
+  // Cascading сонголтын тус бүрийн сонголтууд (эцэг id-ээр шүүж эрэмбэлнэ).
+  const kids = (parentId: string | null) =>
+    cats
+      .filter((c) => c.parent_id === parentId)
+      .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
+  const l1Opts = useMemo(() => kids(null), [cats]); // eslint-disable-line react-hooks/exhaustive-deps
+  const l2Opts = useMemo(() => (l1Id ? kids(l1Id) : []), [cats, l1Id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const l3Opts = useMemo(() => (l2Id ? kids(l2Id) : []), [cats, l2Id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const attrs = useMemo(
     () => attrsForCategory(defs, categoryId, cats),
     [defs, categoryId, cats]
@@ -89,17 +102,20 @@ export default function CreateProduct({ onCreated }: Props) {
 
     setBusy(true);
     try {
+      const priceNum = price.trim() ? Number(price.replace(/[^0-9.]/g, "")) : null;
       const res = await createCatalogProductAndEpcs(supabase, {
         categoryId,
         name: name.trim(),
         sku: sku.trim() || null,
+        price: priceNum != null && Number.isFinite(priceNum) ? priceNum : null,
         attributes,
         quantity,
       });
       setResult({ count: res.count });
-      // Формыг хэсэгчлэн цэвэрлэх (ангилал/шинж чанарыг үлдээж дараагийн бараанд хурдан)
+      // Формыг хэсэгчлэн цэвэрлэх (ангиллыг үлдээж дараагийн бараанд хурдан)
       setName("");
       setSku("");
+      setPrice("");
       setQuantity(1);
       setAttrValues({});
       setExtra([]);
@@ -123,25 +139,51 @@ export default function CreateProduct({ onCreated }: Props) {
           <p className="text-sm text-slate-400">Ачаалж байна…</p>
         ) : (
           <>
-            {/* Ангилал */}
+            {/* Ангилал — 3 холбоост сонголт (заавал бүгдийг сонгох албагүй) */}
             <div className="mb-4">
               <label className={lbl}>Ангилал</label>
-              <select
-                value={categoryId ?? ""}
-                onChange={(e) => {
-                  setCategoryId(e.target.value || null);
-                  setAttrValues({});
-                }}
-                className={inp}
-              >
-                <option value="">— Ангилалгүй (зөвхөн глобал шинж чанар) —</option>
-                {catOpts.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              {catOpts.length === 0 && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <select
+                  value={l1Id ?? ""}
+                  onChange={(e) => {
+                    setL1Id(e.target.value || null);
+                    setL2Id(null);
+                    setL3Id(null);
+                  }}
+                  className={inp}
+                >
+                  <option value="">{CATEGORY_LEVELS[0]}…</option>
+                  {l1Opts.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={l2Id ?? ""}
+                  onChange={(e) => {
+                    setL2Id(e.target.value || null);
+                    setL3Id(null);
+                  }}
+                  disabled={l2Opts.length === 0}
+                  className={inp + " disabled:bg-slate-50 disabled:text-slate-400"}
+                >
+                  <option value="">{CATEGORY_LEVELS[1]}…</option>
+                  {l2Opts.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={l3Id ?? ""}
+                  onChange={(e) => setL3Id(e.target.value || null)}
+                  disabled={l3Opts.length === 0}
+                  className={inp + " disabled:bg-slate-50 disabled:text-slate-400"}
+                >
+                  <option value="">{CATEGORY_LEVELS[2]}…</option>
+                  {l3Opts.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              {l1Opts.length === 0 && (
                 <p className="mt-1 text-xs text-amber-600">
                   Ангилал алга. "Ангилал" таб дээр эхлээд үүсгэвэл энд сонгож болно.
                 </p>
@@ -166,6 +208,17 @@ export default function CreateProduct({ onCreated }: Props) {
                 <input
                   value={sku}
                   onChange={(e) => setSku(e.target.value)}
+                  placeholder="Заавал биш"
+                  className={inp}
+                />
+              </div>
+              <div>
+                <label className={lbl}>Үнэ</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
                   placeholder="Заавал биш"
                   className={inp}
                 />

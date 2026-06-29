@@ -51,6 +51,7 @@ interface CleanRow {
   extKey: string | null;
   sku: string | null;
   name: string | null;
+  price: number | null;
   piece: number;
   boxNo: string | null;
   categoryPath: string | null;
@@ -61,6 +62,7 @@ interface HeaderMap {
   name: number;
   sku: number;
   barcode: number;
+  price: number;
   piece: number;
   box: number;
   category: number;
@@ -76,17 +78,18 @@ function parseHeader(header: unknown[]): HeaderMap {
   const name = find(["name", "нэр", "барааны нэр", "product", "бараа"]);
   const sku = find(["sku", "code", "код", "артикул", "article"]);
   const barcode = find(["barcode", "bar code", "ean", "ean13", "gtin", "баркод", "бар код"]);
+  const price = find(["price", "үнэ", "une", "amount", "цэн"]);
   const piece = find(["piece", "pieces", "pcs", "qty", "quantity", "count", "тоо", "ширхэг", "тоо ширхэг"]);
   const box = find(["box", "box no", "box_no", "boxno", "box №", "хайрцаг", "хайрцагны дугаар", "хайрцаг №"]);
   const category = find(["category", "categories", "ангилал", "ангиллал", "анги"]);
 
-  const reserved = new Set([name, sku, barcode, piece, box, category].filter((i) => i >= 0));
+  const reserved = new Set([name, sku, barcode, price, piece, box, category].filter((i) => i >= 0));
   const attrCols: { idx: number; label: string }[] = [];
   for (let i = 0; i < norm.length; i++) {
     if (reserved.has(i) || !norm[i]) continue;
     attrCols.push({ idx: i, label: norm[i] });
   }
-  return { name, sku, barcode, piece, box, category, attrCols };
+  return { name, sku, barcode, price, piece, box, category, attrCols };
 }
 
 function cell(row: unknown[], idx: number): string {
@@ -155,7 +158,20 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
       continue;
     }
 
-    out.push({ gtin, extKey, sku, name, piece, boxNo: cell(row, col.box) || null, categoryPath, attributes });
+    const priceRaw = cell(row, col.price).replace(/[^0-9.]/g, "");
+    const price = priceRaw ? Number(priceRaw) : null;
+
+    out.push({
+      gtin,
+      extKey,
+      sku,
+      name,
+      price: Number.isFinite(price as number) ? price : null,
+      piece,
+      boxNo: cell(row, col.box) || null,
+      categoryPath,
+      attributes,
+    });
   }
   if (out.length === 0) {
     throw new Error(
@@ -203,6 +219,7 @@ export async function importPackingListXlsx(
       gtin: r.gtin,
       sku: r.sku,
       name: r.name,
+      price: r.price,
       category_id: catId(r),
       attributes: r.attributes,
       source: "packing_list" as const,
@@ -222,6 +239,7 @@ export async function importPackingListXlsx(
       ext_key: r.extKey,
       sku: r.sku,
       name: r.name,
+      price: r.price,
       category_id: catId(r),
       attributes: r.attributes,
       source: "packing_list" as const,
