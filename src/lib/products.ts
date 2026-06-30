@@ -29,8 +29,17 @@ export async function listProducts(): Promise<ProductRow[]> {
   return (data ?? []) as ProductRow[];
 }
 
-/** Бараа устгах (зөвхөн админ — RLS-ээр хамгаалагдсан). */
+/** Бараа устгах (зөвхөн админ — RLS-ээр хамгаалагдсан). EPC бүртгэлтэй бол хоригдоно. */
 export async function deleteProduct(id: string): Promise<void> {
   const { error } = await supabase.from("products").delete().eq("id", id);
-  if (error) throw error;
+  if (error) {
+    // 23503 = foreign_key_violation — энэ бараанд EPC бүртгэлтэй (түүхэн дата).
+    if ((error as { code?: string }).code === "23503") {
+      throw new Error(
+        "Энэ бараанд EPC бүртгэлтэй тул устгах боломжгүй. " +
+          "Эхлээд холбогдох Ажлыг устгаж EPC-г цэвэрлэнэ үү (үлдэгдэл 0 болсны дараа устгана)."
+      );
+    }
+    throw error;
+  }
 }

@@ -4,6 +4,15 @@
 // ============================================================
 import { supabase } from "./supabaseClient";
 
+/** Давхцсан код (23505) бол найрсаг мессеж, эс бөгөөс эх алдааг буцаана. */
+function branchError(error: { code?: string } | null): Error | null {
+  if (!error) return null;
+  if (error.code === "23505") {
+    return new Error("Энэ код өөр салбарт бүртгэлтэй байна. Өөр код оруулна уу.");
+  }
+  return error as unknown as Error;
+}
+
 export interface Branch {
   id: string;
   name: string;
@@ -33,7 +42,8 @@ export async function createBranch(name: string, code: string | null): Promise<B
     .insert({ name: name.trim(), code: code?.trim() || null })
     .select("id, name, code, sort")
     .single();
-  if (error) throw error;
+  const friendly = branchError(error);
+  if (friendly) throw friendly;
   return data as Branch;
 }
 
@@ -42,10 +52,19 @@ export async function updateBranch(id: string, name: string, code: string | null
     .from("branches")
     .update({ name: name.trim(), code: code?.trim() || null })
     .eq("id", id);
-  if (error) throw error;
+  const friendly = branchError(error);
+  if (friendly) throw friendly;
 }
 
 export async function deleteBranch(id: string): Promise<void> {
   const { error } = await supabase.from("branches").delete().eq("id", id);
-  if (error) throw error;
+  if (error) {
+    // 23503 = foreign_key_violation — энэ салбарт EPC бүртгэлтэй байна.
+    if ((error as { code?: string }).code === "23503") {
+      throw new Error(
+        "Энэ салбарт EPC бүртгэлтэй тул устгах боломжгүй. Эхлээд барааг өөр салбарт шилжүүлнэ үү."
+      );
+    }
+    throw error;
+  }
 }

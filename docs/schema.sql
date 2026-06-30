@@ -717,6 +717,9 @@ create table if not exists branches (
   created_at  timestamptz not null default now()
 );
 create index if not exists branches_tenant_idx on branches (tenant_id, sort);
+-- Код нь тенант дотор давтагдашгүй (импортод найдвартай таних). Хоосон код хязгааргүй.
+create unique index if not exists branches_code_uniq
+  on branches (tenant_id, lower(code)) where code is not null;
 
 alter table branches enable row level security;
 drop policy if exists "tenant branches" on branches;
@@ -757,10 +760,13 @@ update products
    set attributes = attributes - 'branch' - 'Branch' - 'BRANCH' - 'салбар' - 'Салбар' - 'box' - 'Box'
  where attributes ?| array['branch','Branch','BRANCH','салбар','Салбар','box','Box'];
 
--- Бараа устгахад түүний EPC хамт устах (ON DELETE CASCADE) — цэвэрлэхэд хэрэгтэй.
+-- EPC бол түүхэн дата (тайлан/мөшгилт) — EPC бүртгэлтэй бараа устгаж БОЛОХГҮЙ
+-- (RESTRICT). Цэвэрлэх шаардлагатай бол эхлээд холбогдох Ажлыг (job) устгана —
+-- тэгвэл түүний EPC хамт устаж (job_id ON DELETE CASCADE), үлдэгдэлгүй болсон
+-- барааг дараа нь устгах боломжтой болно. Доороос дээш дараалалтай.
 alter table epc_codes drop constraint if exists epc_codes_product_id_fkey;
 alter table epc_codes add constraint epc_codes_product_id_fkey
-  foreign key (product_id) references products(id) on delete cascade;
+  foreign key (product_id) references products(id);  -- ON DELETE NO ACTION (=RESTRICT)
 
 -- ============================================================
 -- View: epc_full — EPC + бараа + ангилал + ажлын талбарууд нэгтгэсэн.

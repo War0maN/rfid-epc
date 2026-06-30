@@ -149,8 +149,15 @@ export default function ProductList({ isAdmin, onEpcsGenerated }: Props) {
   }
 
   function handleDelete(p: ProductRow) {
-    const extra = p.epc_count > 0 ? ` (${p.epc_count} EPC хамт устана!)` : "";
-    if (!window.confirm(`"${p.name}" барааг устгах уу?${extra}`)) return;
+    // EPC бол түүхэн дата — бүртгэлтэй бол устгахыг урьдчилан хориглоно.
+    if (p.epc_count > 0) {
+      setError(
+        `"${p.name}" бараанд ${p.epc_count} ширхэг EPC бүртгэлтэй тул устгах боломжгүй. ` +
+          "Эхлээд холбогдох Ажлыг устгаж EPC-г цэвэрлэнэ үү."
+      );
+      return;
+    }
+    if (!window.confirm(`"${p.name}" барааг устгах уу?`)) return;
     deleteProduct(p.id)
       .then(reload)
       .catch((e) => setError(errorMessage(e)));

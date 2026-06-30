@@ -95,10 +95,19 @@ export async function renameCategory(id: string, name: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Ангилал устгана (хүүхдүүд нь cascade-аар хамт устана). */
+/** Ангилал устгана (хүүхэд дэд ангилал cascade-аар хамт устана). Бараатай бол хоригдоно. */
 export async function deleteCategory(id: string): Promise<void> {
   const { error } = await supabase.from("categories").delete().eq("id", id);
-  if (error) throw error;
+  if (error) {
+    // 23503 = foreign_key_violation — энэ ангилал (эсвэл доорх дэд ангилал)-д бараа бий.
+    if ((error as { code?: string }).code === "23503") {
+      throw new Error(
+        "Энэ ангилалд (эсвэл доорх дэд ангилалд) бараа бүртгэлтэй тул устгах боломжгүй. " +
+          "Эхлээд барааг өөр ангилалд зөөх эсвэл устгана уу."
+      );
+    }
+    throw error;
+  }
 }
 
 // ---------- Attribute definitions ----------
