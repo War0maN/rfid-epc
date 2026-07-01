@@ -144,7 +144,9 @@ function App() {
             onEpcsGenerated={() => setRefreshKey((k) => k + 1)}
           />
         )}
-        {tab === "table" && <EpcTable refreshKey={refreshKey} />}
+        {tab === "table" && (
+          <EpcTable refreshKey={refreshKey} isAdmin={profile.role === "admin"} />
+        )}
         {tab === "lookup" && <EpcLookup />}
         {tab === "labels" && (
           <Suspense

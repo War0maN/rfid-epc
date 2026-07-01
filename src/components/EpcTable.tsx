@@ -12,12 +12,20 @@ import { epcHexToUri, epcHexToTagUri } from "../lib/epc";
 import { supabase } from "../lib/supabaseClient";
 import { logAuditEvent } from "../lib/audit";
 import { errorMessage } from "../lib/errorMessage";
+import {
+  EPC_STATUSES,
+  STATUS_LABEL,
+  badgeOf,
+  labelOf,
+  type EpcStatus,
+} from "../lib/epcStatus";
 // bwip-js (баркод) том тул хэвлэх диалогийг зөвхөн нээх үед ачаална.
 const PrintDialog = lazy(() => import("./PrintDialog"));
 
 /** Сэргээх дохио: энэ тоо өөрчлөгдөхөд дахин татна. */
 interface Props {
   refreshKey?: number;
+  isAdmin?: boolean; // гараар төлөв солих зөвхөн админд
 }
 
 /** Хүснэгтийн багана бүрийн тодорхойлолт (толгой + утга авах). */
@@ -32,7 +40,7 @@ interface ColDef {
 const STATIC_COLUMNS: ColDef[] = [
   { key: "epc", label: "EPC (hex)", get: (r) => r.epc_hex, mono: true },
   { key: "serial", label: "Serial", get: (r) => String(r.serial) },
-  { key: "printed", label: "Төлөв", get: (r) => (r.printed_at ? "хэвлэгдсэн" : "хэвлээгүй") },
+  { key: "status", label: "Төлөв", get: (r) => labelOf(r.status) },
   { key: "name", label: "Бараа", get: (r) => r.name ?? "" },
   { key: "cat1", label: "Үндсэн ангилал", get: (r) => r.category_l1 ?? "" },
   { key: "cat2", label: "Дэд ангилал", get: (r) => r.category_l2 ?? "" },
@@ -76,7 +84,7 @@ function safeTagUri(hex: string): string {
   }
 }
 
-export default function EpcTable({ refreshKey = 0 }: Props) {
+export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
   const [pageRows, setPageRows] = useState<EpcRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -220,18 +228,22 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
     return fetchEpcAllMatching(debounced, sort);
   }
 
-  /** Өгсөн EPC-үүдийг "хэвлэгдсэн" болгож тэмдэглэнэ (DB + локал). */
+  /** Өгсөн EPC-үүдийг хэвлэгдсэн (printed_at) + Идэвхтэй (status) болгоно. */
   async function markPrinted(ids: string[]) {
     if (ids.length === 0) return;
     const now = new Date().toISOString();
     const idSet = new Set(ids);
-    // Optimistic: харагдаж буй хуудас + сонголтод тусгана.
-    setPageRows((rs) => rs.map((r) => (idSet.has(r.id) && !r.printed_at ? { ...r, printed_at: now } : r)));
+    // Optimistic: зөвхөн одоо Хэвлээгүй мөрд (хэвлэх нь sold/transferring-ийг буцаахгүй).
+    const activate = (r: EpcRow): EpcRow =>
+      idSet.has(r.id) && r.status === "unprinted"
+        ? { ...r, printed_at: now, status: "active" }
+        : r;
+    setPageRows((rs) => rs.map(activate));
     setSelected((m) => {
       const n = new Map(m);
       for (const id of ids) {
         const r = n.get(id);
-        if (r && !r.printed_at) n.set(id, { ...r, printed_at: now });
+        if (r) n.set(id, activate(r));
       }
       return n;
     });
@@ -239,13 +251,51 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
       for (let i = 0; i < ids.length; i += 500) {
         const { error: e } = await supabase
           .from("epc_codes")
-          .update({ printed_at: now })
+          .update({ printed_at: now, status: "active" })
           .in("id", ids.slice(i, i + 500))
           .is("printed_at", null);
         if (e) throw e;
       }
+      void logAuditEvent(supabase, "print", "epc", null, { count: ids.length });
     } catch (e) {
       setError(errorMessage(e));
+    }
+  }
+
+  /** Сонгосон EPC-үүдийн төлөвийг гараар өөрчилнө (зөвхөн админ). */
+  async function changeStatus(target: EpcStatus) {
+    const ids = [...selected.keys()];
+    if (ids.length === 0) return;
+    setBusy(true);
+    setError(null);
+    // Optimistic: харагдаж буй хуудас + сонголтод тусгана.
+    const idSet = new Set(ids);
+    const apply = (r: EpcRow): EpcRow => (idSet.has(r.id) ? { ...r, status: target } : r);
+    setPageRows((rs) => rs.map(apply));
+    setSelected((m) => {
+      const n = new Map(m);
+      for (const id of ids) {
+        const r = n.get(id);
+        if (r) n.set(id, apply(r));
+      }
+      return n;
+    });
+    try {
+      for (let i = 0; i < ids.length; i += 500) {
+        const { error: e } = await supabase
+          .from("epc_codes")
+          .update({ status: target })
+          .in("id", ids.slice(i, i + 500));
+        if (e) throw e;
+      }
+      void logAuditEvent(supabase, "status_change", "epc", null, {
+        status: target,
+        count: ids.length,
+      });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -272,7 +322,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
           job_number: r.job_number ?? "",
           arrival_date: r.arrival_date ?? "",
           supplier: r.supplier ?? "",
-          printed: r.printed_at ? "хэвлэгдсэн" : "хэвлээгүй",
+          status: labelOf(r.status),
           created_at: r.created_at,
         };
         for (const l of attrLabels) base[`a_${l}`] = r.attributes?.[l] ?? "";
@@ -295,7 +345,7 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
         { key: "job_number", label: "Ажлын №" },
         { key: "arrival_date", label: "Ирсэн огноо" },
         { key: "supplier", label: "Нийлүүлэгч" },
-        { key: "printed", label: "Төлөв" },
+        { key: "status", label: "Төлөв" },
         { key: "created_at", label: "Үүссэн" },
       ]);
       downloadCsv(`epc-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
@@ -422,6 +472,26 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
         >
           🖨 Хэвлэх ({outCount.toLocaleString()})
         </button>
+        {isAdmin && selected.size > 0 && (
+          <select
+            value=""
+            disabled={busy}
+            onChange={(e) => {
+              const v = e.target.value as EpcStatus;
+              if (v) void changeStatus(v);
+              e.target.value = "";
+            }}
+            title="Сонгосон EPC-ийн төлөв өөрчлөх"
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <option value="">Төлөв өөрчлөх ({selected.size})…</option>
+            {EPC_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                → {STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        )}
         {selected.size > 0 && (
           <button
             onClick={() => setSelected(new Map())}
@@ -472,12 +542,27 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
                       {sort?.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
                     </span>
                   </button>
-                  <input
-                    value={filters[c.key] ?? ""}
-                    onChange={(e) => setFilter(c.key, e.target.value)}
-                    placeholder="Шүүх…"
-                    className="w-full min-w-[90px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
-                  />
+                  {c.key === "status" ? (
+                    <select
+                      value={filters[c.key] ?? ""}
+                      onChange={(e) => setFilter(c.key, e.target.value)}
+                      className="w-full min-w-[110px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+                    >
+                      <option value="">Бүгд</option>
+                      {EPC_STATUSES.map((s) => (
+                        <option key={s} value={s}>
+                          {STATUS_LABEL[s]}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={filters[c.key] ?? ""}
+                      onChange={(e) => setFilter(c.key, e.target.value)}
+                      placeholder="Шүүх…"
+                      className="w-full min-w-[90px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+                    />
+                  )}
                 </th>
               ))}
             </tr>
@@ -517,19 +602,13 @@ export default function EpcTable({ refreshKey = 0 }: Props) {
                           (c.mono ? " font-mono text-xs" : "")
                         }
                       >
-                        {c.key === "printed" ? (
-                          r.printed_at ? (
-                            <span
-                              className="rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700"
-                              title={new Date(r.printed_at).toLocaleString()}
-                            >
-                              Хэвлэгдсэн
-                            </span>
-                          ) : (
-                            <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-                              Хэвлээгүй
-                            </span>
-                          )
+                        {c.key === "status" ? (
+                          <span
+                            className={"rounded px-2 py-0.5 text-xs font-medium " + badgeOf(r.status)}
+                            title={r.printed_at ? `Хэвлэсэн: ${new Date(r.printed_at).toLocaleString()}` : undefined}
+                          >
+                            {labelOf(r.status)}
+                          </span>
                         ) : (
                           v || <span className="text-slate-300">—</span>
                         )}

@@ -15,6 +15,8 @@ export type AuditAction =
   | "update"
   | "delete"
   | "generate"
+  | "print"
+  | "status_change"
   | "export_csv"
   | "export_zpl";
 

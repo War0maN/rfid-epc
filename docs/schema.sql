@@ -466,6 +466,36 @@ alter table epc_codes add column if not exists printed_at timestamptz;
 create index if not exists epc_printed_idx on epc_codes (tenant_id, printed_at);
 
 -- ============================================================
+-- Phase 3: EPC төлөв (status lifecycle).
+--   Хэвлээгүй → Идэвхтэй → Борлуулсан / Шилжүүлж буй / Бусад.
+--   status нь lifecycle-ийн эх сурвалж; printed_at нь хэзээ хэвлэснийг тэмдэглэнэ.
+--   Үлдэгдэл (Phase 4) = 'active' төлөвтэй EPC-ийн тоо.
+-- ============================================================
+alter table epc_codes add column if not exists status text not null default 'unprinted'
+  check (status in ('unprinted','active','sold','transferring','other'));
+create index if not exists epc_status_idx on epc_codes (tenant_id, status);
+
+-- Backfill (idempotent): хэвлэгдсэн нь Идэвхтэй, бусад нь Хэвлээгүй.
+update epc_codes set status = 'active' where printed_at is not null and status = 'unprinted';
+
+-- Устгалын хориг: идэвхтэй/борлуулсан/шилжиж буй/бусад EPC бол түүхэн дата —
+-- хэзээ ч устгаж болохгүй. Зөвхөн Хэвлээгүй EPC устгагдана (цэвэрлэгээ).
+-- Энэ нь Job-cascade устгал болон шууд устгал бүрийг хамгаална.
+create or replace function epc_block_active_delete() returns trigger as $$
+begin
+  if old.status <> 'unprinted' then
+    raise exception 'EPC-г устгах боломжгүй: % төлөвтэй (зөвхөн Хэвлээгүй EPC устгана).', old.status
+      using errcode = '23503';
+  end if;
+  return old;
+end $$ language plpgsql;
+
+drop trigger if exists epc_no_delete_active on epc_codes;
+create trigger epc_no_delete_active
+  before delete on epc_codes
+  for each row execute function epc_block_active_delete();
+
+-- ============================================================
 -- Migration: GID-96 (GS1-гүй) дэмжлэг — баркодгүй бараа
 --   Баркод/GTIN байхгүй барааг GID-96-аар кодлоно. Дугаарыг сервер тал
 --   автоматаар (trigger) онооно — апп тал нэмж дуудах шаардлагагүй.
@@ -779,7 +809,7 @@ create view epc_full
 with (security_invoker = true) as
 select
   e.id, e.tenant_id, e.serial, e.epc_hex, e.box_no,
-  e.created_at, e.printed_at, e.job_id, e.product_id,
+  e.created_at, e.printed_at, e.status, e.job_id, e.product_id,
   e.branch_id, b.name as branch_name,
   p.name, p.gtin, p.sku, p.price,
   p.category_id,

@@ -7,6 +7,7 @@
 // keyset (id > сүүлийн) тул олон мянган мөрд ч хурдан.
 // ============================================================
 import { supabase } from "./supabaseClient";
+import type { EpcStatus } from "./epcStatus";
 
 /** EPC хүснэгтийн нэг мөр (products/jobs-ийн талбарууд хавтгайгаар нэгдсэн). */
 export interface EpcRow {
@@ -16,6 +17,7 @@ export interface EpcRow {
   box_no: string | null;
   created_at: string;
   printed_at: string | null; // хэвлэсэн огноо (null бол хэвлээгүй)
+  status: EpcStatus; // lifecycle төлөв (Хэвлээгүй/Идэвхтэй/Борлуулсан/...)
   job_id: string;
   product_id: string;
   branch_id: string | null;
@@ -111,6 +113,7 @@ interface FlatEpc {
   box_no: string | null;
   created_at: string;
   printed_at: string | null;
+  status: EpcStatus;
   job_id: string;
   product_id: string;
   branch_id: string | null;
@@ -147,7 +150,7 @@ function joinRow(
   };
 }
 
-const FLAT_SELECT = "id, serial, epc_hex, box_no, created_at, printed_at, job_id, product_id, branch_id";
+const FLAT_SELECT = "id, serial, epc_hex, box_no, created_at, printed_at, status, job_id, product_id, branch_id";
 
 /**
  * Бүх EPC-г татна (1000-ийн хязгааргүй). epc_codes-г JOIN-гүй хавтгай,
@@ -210,7 +213,7 @@ export interface EpcPage {
 const COL_TO_DB: Record<string, string> = {
   epc: "epc_hex",
   serial: "serial",
-  printed: "printed_at",
+  status: "status",
   name: "name",
   sku: "sku",
   price: "price",
@@ -254,10 +257,9 @@ function applyEpcFilters(q: EpcQuery, filters: Record<string, string>): EpcQuery
     if (!val) continue;
     const db = colToDb(key);
     if (!db) continue;
-    if (key === "printed") {
-      const low = val.toLowerCase();
-      if ("хэвлэгдсэн".startsWith(low)) out = out.not("printed_at", "is", null);
-      else if ("хэвлээгүй".startsWith(low)) out = out.is("printed_at", null);
+    if (key === "status") {
+      // Dropdown-аас төлөвийн код (unprinted/active/...) ирнэ — яг тэнцүүгээр.
+      out = out.eq("status", val);
     } else if (db === "serial") {
       const n = val.replace(/\D/g, "");
       if (n) out = out.eq("serial", n);

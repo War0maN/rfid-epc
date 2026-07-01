@@ -2,6 +2,7 @@ import { errorMessage } from "../lib/errorMessage";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { normalizeEpc, epcHexToUri, epcHexToTagUri } from "../lib/epc";
 import { lookupEpc, type EpcRow } from "../lib/queries";
+import { badgeOf, labelOf } from "../lib/epcStatus";
 
 type State =
   | { kind: "idle" }
@@ -106,6 +107,14 @@ export default function EpcLookup() {
             <Field
               label="Tag URI"
               value={<span className="break-all font-mono text-xs">{safeTagUri(state.row.epc_hex)}</span>}
+            />
+            <Field
+              label="Төлөв"
+              value={
+                <span className={"rounded px-2 py-0.5 text-xs font-medium " + badgeOf(state.row.status)}>
+                  {labelOf(state.row.status)}
+                </span>
+              }
             />
             <Field label="Бараа" value={state.row.name || "—"} />
             <Field
