@@ -499,7 +499,8 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
             <option value="">Төлөв өөрчлөх ({outCount.toLocaleString()})…</option>
-            {EPC_STATUSES.map((s) => (
+            {/* "Шилжүүлж буй" гараар тохируулахгүй — зөвхөн Шилжүүлэг гүйлгээгээр (DB trigger ч хориглоно). */}
+            {EPC_STATUSES.filter((s) => s !== "transferring").map((s) => (
               <option key={s} value={s}>
                 → {STATUS_LABEL[s]}
               </option>

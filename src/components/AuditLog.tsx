@@ -8,6 +8,8 @@ const ACTION_META: Record<string, { label: string; cls: string }> = {
   update: { label: "Зассан", cls: "bg-amber-50 text-amber-700" },
   delete: { label: "Устгасан", cls: "bg-red-50 text-red-700" },
   generate: { label: "EPC үүсгэсэн", cls: "bg-indigo-50 text-indigo-700" },
+  print: { label: "Хэвлэсэн", cls: "bg-emerald-50 text-emerald-700" },
+  status_change: { label: "Төлөв өөрчилсөн", cls: "bg-sky-50 text-sky-700" },
   export_csv: { label: "CSV татсан", cls: "bg-slate-100 text-slate-700" },
   export_zpl: { label: "ZPL татсан", cls: "bg-slate-100 text-slate-700" },
 };
@@ -20,6 +22,9 @@ const ENTITY_LABEL: Record<string, string> = {
   category: "Ангилал",
   attribute: "Шинж чанар",
   branch: "Салбар",
+  transaction: "Гүйлгээ",
+  inventory: "Үлдэгдэл",
+  inventory_epcs: "Үлдэгдэл (EPC)",
 };
 
 /** Логийн мөрөөс хүн уншихуйц товч тайлбар гаргана. */

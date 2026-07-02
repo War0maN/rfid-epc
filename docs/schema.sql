@@ -896,3 +896,233 @@ create policy "epc read"   on epc_codes for select using (tenant_id = current_te
 create policy "epc insert" on epc_codes for insert with check (tenant_id = current_tenant_id());
 create policy "epc update" on epc_codes for update using (tenant_id = current_tenant_id()) with check (tenant_id = current_tenant_id());
 create policy "epc delete" on epc_codes for delete using (tenant_id = current_tenant_id() and is_tenant_admin());
+
+-- ============================================================
+-- Phase 5: Гүйлгээ (transactions) — борлуулалт / шилжүүлэг / бусад.
+--   Түүхэн бүртгэл: DELETE policy огт байхгүй — гүйлгээ хэзээ ч устахгүй.
+--   Бүх бичилт atomic RPC-ээр (create_transaction / receive_transfer /
+--   cancel_transfer) — статус, тенант, салбарын шалгалттай.
+-- ============================================================
+create table if not exists transactions (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenants(id) default current_tenant_id(),
+  type         text not null check (type in ('sale','transfer','other')),
+  status       text not null default 'done' check (status in ('pending','done','cancelled')),
+  from_branch  uuid references branches(id),
+  to_branch    uuid references branches(id),          -- зөвхөн transfer
+  note         text,
+  created_by   uuid references auth.users(id) default auth.uid(),
+  created_at   timestamptz not null default now(),
+  completed_at timestamptz                            -- transfer хүлээн авсан огноо
+);
+create index if not exists tx_tenant_date_idx   on transactions (tenant_id, created_at desc);
+create index if not exists tx_tenant_status_idx on transactions (tenant_id, status);
+
+create table if not exists transaction_items (
+  transaction_id uuid not null references transactions(id) on delete cascade,
+  epc_id         uuid not null references epc_codes(id),  -- RESTRICT: гүйлгээтэй EPC устахгүй
+  price          numeric,                                 -- гүйлгээний үеийн үнэ (snapshot)
+  primary key (transaction_id, epc_id)
+);
+create index if not exists tx_items_epc_idx on transaction_items (epc_id);
+
+alter table transactions      enable row level security;
+alter table transaction_items enable row level security;
+
+-- select/insert/update тенантын гишүүдэд; DELETE policy байхгүй (түүх хамгаалагдана).
+drop policy if exists "tx read"   on transactions;
+drop policy if exists "tx insert" on transactions;
+drop policy if exists "tx update" on transactions;
+create policy "tx read"   on transactions for select using (tenant_id = current_tenant_id());
+create policy "tx insert" on transactions for insert with check (tenant_id = current_tenant_id());
+create policy "tx update" on transactions for update using (tenant_id = current_tenant_id()) with check (tenant_id = current_tenant_id());
+
+drop policy if exists "tx items read"   on transaction_items;
+drop policy if exists "tx items insert" on transaction_items;
+create policy "tx items read" on transaction_items for select
+  using (exists (select 1 from transactions t where t.id = transaction_id and t.tenant_id = current_tenant_id()));
+create policy "tx items insert" on transaction_items for insert
+  with check (exists (select 1 from transactions t where t.id = transaction_id and t.tenant_id = current_tenant_id()));
+
+drop trigger if exists audit_transactions on transactions;
+create trigger audit_transactions
+  after insert or update or delete on transactions
+  for each row execute function audit_trigger('transaction');
+
+-- ---------- RPC 1: Гүйлгээ үүсгэх (атом) ----------
+-- p_type: sale|transfer|other. p_epc_ids: зөвхөн 'active' EPC, бүгд нэг салбарынх.
+-- sale->sold, other->other (шууд 'done'); transfer->transferring ('pending').
+create or replace function create_transaction(
+  p_type text, p_to_branch uuid, p_note text, p_epc_ids uuid[]
+) returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant   uuid := current_tenant_id();
+  v_total    int  := coalesce(array_length(p_epc_ids, 1), 0);
+  v_active   int;
+  v_branches int;
+  v_from     uuid;
+  v_tx       uuid;
+begin
+  if v_tenant is null then
+    raise exception 'Нэвтрээгүй байна.';
+  end if;
+  if p_type not in ('sale','transfer','other') then
+    raise exception 'Гүйлгээний төрөл буруу (%).', p_type;
+  end if;
+  if v_total < 1 then
+    raise exception 'EPC сонгоогүй байна.';
+  end if;
+  if p_type = 'transfer' and p_to_branch is null then
+    raise exception 'Шилжүүлэгт очих салбараа сонгоно уу.';
+  end if;
+
+  -- Бүх EPC: тухайн тенантынх + Идэвхтэй байх ёстой.
+  select count(*) into v_active
+    from epc_codes
+   where id = any(p_epc_ids) and tenant_id = v_tenant and status = 'active';
+  if v_active <> v_total then
+    raise exception 'Зарим EPC идэвхтэй биш эсвэл олдсонгүй (идэвхтэй %/%).', v_active, v_total;
+  end if;
+
+  -- Бүгд нэг салбарынх байх (NULL = "Салбаргүй" гэсэн нэг bucket).
+  select count(distinct coalesce(branch_id, '00000000-0000-0000-0000-000000000000'::uuid)),
+         min(branch_id::text)::uuid
+    into v_branches, v_from
+    from epc_codes
+   where id = any(p_epc_ids) and tenant_id = v_tenant;
+  if v_branches > 1 then
+    raise exception 'Нэг гүйлгээнд зөвхөн нэг салбарын EPC оруулна (% салбар байна).', v_branches;
+  end if;
+  if p_type = 'transfer' and p_to_branch is not distinct from v_from then
+    raise exception 'Очих салбар нь эх салбартай ижил байж болохгүй.';
+  end if;
+
+  -- Guard trigger (epc_guard_transferring)-ийг энэ transaction-д давах эрх.
+  perform set_config('app.tx_rpc', '1', true);
+
+  insert into transactions (tenant_id, type, status, from_branch, to_branch, note)
+  values (
+    v_tenant, p_type,
+    case when p_type = 'transfer' then 'pending' else 'done' end,
+    v_from,
+    case when p_type = 'transfer' then p_to_branch else null end,
+    nullif(btrim(coalesce(p_note, '')), '')
+  )
+  returning id into v_tx;
+
+  -- Items + үнийн snapshot (тухайн үеийн products.price).
+  insert into transaction_items (transaction_id, epc_id, price)
+  select v_tx, e.id, p.price
+    from epc_codes e
+    left join products p on p.id = e.product_id
+   where e.id = any(p_epc_ids);
+
+  update epc_codes
+     set status = case p_type when 'sale' then 'sold'
+                              when 'transfer' then 'transferring'
+                              else 'other' end
+   where id = any(p_epc_ids) and tenant_id = v_tenant and status = 'active';
+
+  return v_tx;
+end;
+$$;
+grant execute on function create_transaction(text, uuid, text, uuid[]) to authenticated;
+
+-- ---------- RPC 2: Шилжүүлэг хүлээн авах ----------
+create or replace function receive_transfer(p_tx uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid := current_tenant_id();
+  v_tx     transactions%rowtype;
+begin
+  select * into v_tx from transactions
+   where id = p_tx and tenant_id = v_tenant
+   for update;
+  if not found then
+    raise exception 'Гүйлгээ олдсонгүй.';
+  end if;
+  if v_tx.type <> 'transfer' or v_tx.status <> 'pending' then
+    raise exception 'Зөвхөн хүлээгдэж буй шилжүүлгийг хүлээн авна.';
+  end if;
+
+  perform set_config('app.tx_rpc', '1', true);
+
+  update epc_codes e
+     set branch_id = v_tx.to_branch, status = 'active'
+    from transaction_items ti
+   where ti.transaction_id = p_tx and ti.epc_id = e.id
+     and e.tenant_id = v_tenant and e.status = 'transferring';
+
+  update transactions
+     set status = 'done', completed_at = now()
+   where id = p_tx;
+end;
+$$;
+grant execute on function receive_transfer(uuid) to authenticated;
+
+-- ---------- RPC 3: Шилжүүлэг цуцлах (EPC эх салбартаа Идэвхтэй буцна) ----------
+create or replace function cancel_transfer(p_tx uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid := current_tenant_id();
+  v_tx     transactions%rowtype;
+begin
+  select * into v_tx from transactions
+   where id = p_tx and tenant_id = v_tenant
+   for update;
+  if not found then
+    raise exception 'Гүйлгээ олдсонгүй.';
+  end if;
+  if v_tx.type <> 'transfer' or v_tx.status <> 'pending' then
+    raise exception 'Зөвхөн хүлээгдэж буй шилжүүлгийг цуцална.';
+  end if;
+
+  perform set_config('app.tx_rpc', '1', true);
+
+  update epc_codes e
+     set status = 'active'
+    from transaction_items ti
+   where ti.transaction_id = p_tx and ti.epc_id = e.id
+     and e.tenant_id = v_tenant and e.status = 'transferring';
+
+  update transactions
+     set status = 'cancelled', completed_at = now()
+   where id = p_tx;
+end;
+$$;
+grant execute on function cancel_transfer(uuid) to authenticated;
+
+-- ---------- Хамгаалалт: 'transferring' төлөвийг зөвхөн гүйлгээний RPC удирдана ----------
+-- Гараар (админ ч гэсэн) шилжүүлэгт яваа EPC-ийн төлөв өөрчилвөл гүйлгээ
+-- 'pending' хэвээр үлдэж зөрчил үүснэ. RPC-ууд transaction-local тохиргоо
+-- (app.tx_rpc) тавьдаг тул зөвхөн тэдгээр нь энэ шалгалтыг давна.
+create or replace function epc_guard_transferring() returns trigger as $$
+begin
+  if new.status is distinct from old.status
+     and current_setting('app.tx_rpc', true) is distinct from '1' then
+    if old.status = 'transferring' then
+      raise exception 'Энэ EPC шилжүүлэгт явж байгаа тул төлөвийг гараар өөрчлөх боломжгүй. Шилжүүлгийг "Хүлээн авах" эсвэл "Цуцлах" ашиглана уу.';
+    end if;
+    if new.status = 'transferring' then
+      raise exception '"Шилжүүлж буй" төлөвийг гараар тохируулахгүй — Шилжүүлэг гүйлгээ ашиглана уу.';
+    end if;
+  end if;
+  return new;
+end $$ language plpgsql;
+
+drop trigger if exists epc_no_manual_transferring on epc_codes;
+create trigger epc_no_manual_transferring
+  before update of status on epc_codes
+  for each row execute function epc_guard_transferring();
