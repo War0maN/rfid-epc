@@ -262,25 +262,39 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
     }
   }
 
-  /** Сонгосон EPC-үүдийн төлөвийг гараар өөрчилнө (зөвхөн админ). */
+  /**
+   * EPC-үүдийн төлөвийг өөрчилнө (зөвхөн админ). Хэвлэх/CSV-тэй ижил:
+   * сонгосон байвал тэдгээр, эс бөгөөс шүүлтэд тохирох БҮХ мөр (олон хуудас).
+   */
   async function changeStatus(target: EpcStatus) {
-    const ids = [...selected.keys()];
-    if (ids.length === 0) return;
     setBusy(true);
     setError(null);
-    // Optimistic: харагдаж буй хуудас + сонголтод тусгана.
-    const idSet = new Set(ids);
-    const apply = (r: EpcRow): EpcRow => (idSet.has(r.id) ? { ...r, status: target } : r);
-    setPageRows((rs) => rs.map(apply));
-    setSelected((m) => {
-      const n = new Map(m);
-      for (const id of ids) {
-        const r = n.get(id);
-        if (r) n.set(id, apply(r));
-      }
-      return n;
-    });
     try {
+      const rows = await resolveRows();
+      const ids = rows.map((r) => r.id);
+      if (ids.length === 0) {
+        setError("Төлөв өөрчлөх мөр алга.");
+        return;
+      }
+      const src = selected.size > 0 ? "сонгосон" : "шүүлтэд тохирох";
+      if (
+        !window.confirm(
+          `${src} ${ids.length.toLocaleString()} EPC-ийн төлөвийг "${STATUS_LABEL[target]}" болгох уу?`
+        )
+      )
+        return;
+      // Optimistic: харагдаж буй хуудас + сонголтод тусгана.
+      const idSet = new Set(ids);
+      const apply = (r: EpcRow): EpcRow => (idSet.has(r.id) ? { ...r, status: target } : r);
+      setPageRows((rs) => rs.map(apply));
+      setSelected((m) => {
+        const n = new Map(m);
+        for (const id of ids) {
+          const r = n.get(id);
+          if (r) n.set(id, apply(r));
+        }
+        return n;
+      });
       for (let i = 0; i < ids.length; i += 500) {
         const { error: e } = await supabase
           .from("epc_codes")
@@ -472,19 +486,19 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
         >
           🖨 Хэвлэх ({outCount.toLocaleString()})
         </button>
-        {isAdmin && selected.size > 0 && (
+        {isAdmin && (
           <select
             value=""
-            disabled={busy}
+            disabled={busy || outCount === 0}
             onChange={(e) => {
               const v = e.target.value as EpcStatus;
               if (v) void changeStatus(v);
               e.target.value = "";
             }}
-            title="Сонгосон EPC-ийн төлөв өөрчлөх"
+            title="Сонгосон (эсвэл шүүлтэд тохирох бүх) EPC-ийн төлөв өөрчлөх"
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
-            <option value="">Төлөв өөрчлөх ({selected.size})…</option>
+            <option value="">Төлөв өөрчлөх ({outCount.toLocaleString()})…</option>
             {EPC_STATUSES.map((s) => (
               <option key={s} value={s}>
                 → {STATUS_LABEL[s]}

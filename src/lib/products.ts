@@ -16,7 +16,8 @@ export interface ProductRow {
   category_l2: string | null;
   category_l3: string | null;
   attributes: Record<string, string>;
-  epc_count: number;
+  epc_count: number; // нийт EPC (бүх төлөв) — устгалын хоригт
+  active_count: number; // Идэвхтэй үлдэгдэл (Phase 4)
   created_at: string;
 }
 

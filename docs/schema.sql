@@ -853,12 +853,27 @@ select
   coalesce(c3.name, c2.name, c1.name) as category_l1,
   case when c3.id is not null then c2.name when c2.id is not null then c1.name end as category_l2,
   case when c3.id is not null then c1.name end as category_l3,
-  (select count(*) from epc_codes e where e.product_id = p.id) as epc_count
+  -- epc_count = нийт EPC (устгалын хоригт); active_count = Идэвхтэй үлдэгдэл (Phase 4).
+  (select count(*) from epc_codes e where e.product_id = p.id) as epc_count,
+  (select count(*) from epc_codes e where e.product_id = p.id and e.status = 'active') as active_count
 from products p
 left join categories c1 on c1.id = p.category_id
 left join categories c2 on c2.id = c1.parent_id
 left join categories c3 on c3.id = c2.parent_id;
 grant select on products_full to authenticated;
+
+-- ============================================================
+-- Phase 4: Үлдэгдэл — Идэвхтэй (active) EPC-ийн тоо, бараа × салбараар.
+--   Матрицад JS талд pivot хийнэ. branch_id NULL = "(Салбаргүй)".
+-- ============================================================
+drop view if exists stock_by_branch;
+create view stock_by_branch
+with (security_invoker = true) as
+select tenant_id, product_id, branch_id, count(*) as qty
+from epc_codes
+where status = 'active'
+group by tenant_id, product_id, branch_id;
+grant select on stock_by_branch to authenticated;
 
 -- Админ-only УСТГАХ (products, epc_codes). select/insert/update нь тенантын гишүүдэд
 -- (импорт/генерац/markPrinted ажиллахын тулд). "for all" policy-г задлан солино.

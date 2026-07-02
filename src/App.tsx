@@ -11,16 +11,18 @@ import AuditLog from "./components/AuditLog";
 import Members from "./components/Members";
 import Catalog from "./components/Catalog";
 import ProductList from "./components/ProductList";
+import Inventory from "./components/Inventory";
 import Branches from "./components/Branches";
 import { lazy, Suspense } from "react";
 // Шошгоны дизайнер (Konva/bwip-js том) — зөвхөн нээх үед ачаална.
 const Labels = lazy(() => import("./components/Labels"));
 
-type Tab = "create" | "products" | "table" | "lookup" | "labels" | "catalog" | "branches" | "audit" | "members";
+type Tab = "create" | "products" | "inventory" | "table" | "lookup" | "labels" | "catalog" | "branches" | "audit" | "members";
 
 const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "create", label: "Шинэ ажил" },
   { id: "products", label: "Бүтээгдэхүүн" },
+  { id: "inventory", label: "Үлдэгдэл" },
   { id: "table", label: "EPC хүснэгт" },
   { id: "lookup", label: "Хайлт" },
   { id: "labels", label: "Шошго" },
@@ -144,6 +146,7 @@ function App() {
             onEpcsGenerated={() => setRefreshKey((k) => k + 1)}
           />
         )}
+        {tab === "inventory" && <Inventory refreshKey={refreshKey} />}
         {tab === "table" && (
           <EpcTable refreshKey={refreshKey} isAdmin={profile.role === "admin"} />
         )}

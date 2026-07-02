@@ -28,7 +28,7 @@ const STATIC_COLUMNS: ColDef[] = [
   { key: "sku", label: "SKU", get: (p) => p.sku ?? "", mono: true },
   { key: "gtin", label: "GTIN/баркод", get: (p) => p.gtin ?? "", mono: true },
   { key: "price", label: "Үнэ", get: (p) => (p.price != null ? String(p.price) : ""), num: true },
-  { key: "stock", label: "Үлдэгдэл", get: (p) => String(p.epc_count), num: true },
+  { key: "stock", label: "Үлдэгдэл", get: (p) => String(p.active_count), num: true },
 ];
 
 const PAGE_SIZE = 100;
