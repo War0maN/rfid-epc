@@ -232,8 +232,8 @@ export default function ProductList({ isAdmin, onEpcsGenerated }: Props) {
           <thead>
             <tr>
               {visibleColumns.map((c) => (
-                <th key={c.key} className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left align-top">
-                  <button onClick={() => toggleSort(c.key)} className="mb-1 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-indigo-600">
+                <th key={c.key} className="sticky top-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-left align-top last:border-r-0">
+                  <button onClick={() => toggleSort(c.key)} className="mb-1 flex min-h-[32px] items-start gap-1 text-left text-xs font-semibold uppercase leading-4 tracking-wide text-slate-500 hover:text-indigo-600">
                     {c.label}
                     <span className="text-[10px] text-slate-400">{sort?.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
                   </button>
@@ -245,7 +245,7 @@ export default function ProductList({ isAdmin, onEpcsGenerated }: Props) {
                   />
                 </th>
               ))}
-              <th className="sticky top-0 right-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <th className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Үйлдэл
               </th>
             </tr>
@@ -261,7 +261,7 @@ export default function ProductList({ isAdmin, onEpcsGenerated }: Props) {
                   {visibleColumns.map((c) => {
                     const v = c.get(p);
                     return (
-                      <td key={c.key} className={"whitespace-nowrap border-b border-slate-100 px-3 py-2 text-slate-700" + (c.mono ? " font-mono text-xs" : "") + (c.num ? " text-right" : "")}>
+                      <td key={c.key} className={"whitespace-nowrap border-b border-r border-slate-100 px-3 py-2 text-xs text-slate-700 last:border-r-0" + (c.mono ? " font-mono" : "") + (c.num ? " text-right" : "")}>
                         {v || <span className="text-slate-300">—</span>}
                       </td>
                     );

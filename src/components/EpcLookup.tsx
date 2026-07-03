@@ -111,7 +111,7 @@ export default function EpcLookup() {
             <Field
               label="Төлөв"
               value={
-                <span className={"rounded px-2 py-0.5 text-xs font-medium " + badgeOf(state.row.status)}>
+                <span className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + badgeOf(state.row.status)}>
                   {labelOf(state.row.status)}
                 </span>
               }

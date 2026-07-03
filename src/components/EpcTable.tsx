@@ -544,12 +544,12 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
               {visibleColumns.map((c) => (
                 <th
                   key={c.key}
-                  className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left align-top"
+                  className="sticky top-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-left align-top last:border-r-0"
                 >
                   <button
                     type="button"
                     onClick={() => toggleSort(c.key)}
-                    className="mb-1 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-indigo-600"
+                    className="mb-1 flex min-h-[32px] items-start gap-1 text-left text-xs font-semibold uppercase leading-4 tracking-wide text-slate-500 hover:text-indigo-600"
                     title="Эрэмбэлэх"
                   >
                     {c.label}
@@ -613,13 +613,13 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
                       <td
                         key={c.key}
                         className={
-                          "whitespace-nowrap border-b border-slate-100 px-3 py-2 text-slate-700" +
+                          "whitespace-nowrap border-b border-r border-slate-100 px-3 py-2 text-xs text-slate-700 last:border-r-0" +
                           (c.mono ? " font-mono text-xs" : "")
                         }
                       >
                         {c.key === "status" ? (
                           <span
-                            className={"rounded px-2 py-0.5 text-xs font-medium " + badgeOf(r.status)}
+                            className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + badgeOf(r.status)}
                             title={r.printed_at ? `Хэвлэсэн: ${new Date(r.printed_at).toLocaleString()}` : undefined}
                           >
                             {labelOf(r.status)}

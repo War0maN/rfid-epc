@@ -339,7 +339,7 @@ export default function Inventory({ refreshKey = 0 }: Props) {
                 <th
                   key={c.key}
                   className={
-                    "sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 align-top " +
+                    "sticky top-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 align-top last:border-r-0 " +
                     (c.num ? "text-right" : "text-left") +
                     (c.kind === "total" ? " bg-slate-100" : "")
                   }
@@ -347,7 +347,7 @@ export default function Inventory({ refreshKey = 0 }: Props) {
                   <button
                     onClick={() => toggleSort(c.key)}
                     className={
-                      "mb-1 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-indigo-600 " +
+                      "mb-1 flex min-h-[32px] items-start gap-1 text-left text-xs font-semibold uppercase leading-4 tracking-wide text-slate-500 hover:text-indigo-600 " +
                       (c.num ? "ml-auto" : "")
                     }
                   >
@@ -385,7 +385,7 @@ export default function Inventory({ refreshKey = 0 }: Props) {
                       <td
                         key={c.key}
                         className={
-                          "whitespace-nowrap border-b border-slate-100 px-3 py-2 text-slate-700" +
+                          "whitespace-nowrap border-b border-r border-slate-100 px-3 py-2 text-xs text-slate-700 last:border-r-0" +
                           (c.mono ? " font-mono text-xs" : "") +
                           (c.num ? " text-right tabular-nums" : "") +
                           (c.kind === "total" ? " bg-slate-50 font-semibold text-slate-900" : "")

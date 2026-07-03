@@ -131,7 +131,7 @@ export default function AuditLog() {
                       {r.actor_email ?? <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-4 py-2">
-                      <span className={"rounded px-2 py-0.5 text-xs font-medium " + am.cls}>
+                      <span className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + am.cls}>
                         {am.label}
                       </span>
                     </td>
