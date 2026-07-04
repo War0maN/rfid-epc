@@ -14,7 +14,8 @@ export const STATUS_LABEL: Record<EpcStatus, string> = {
   active: "Идэвхтэй",
   sold: "Борлуулсан",
   transferring: "Шилжүүлж буй",
-  other: "Бусад",
+  // Гүйлгээ цэсний "Бусад гүйлгээ" төрөлтэй нэг ойлголт — нэг нэршил.
+  other: "Бусад гүйлгээ",
 };
 
 /** Badge-ийн Tailwind классууд (фон + текст). */

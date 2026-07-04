@@ -17,14 +17,17 @@ import Branches from "./components/Branches";
 import { lazy, Suspense } from "react";
 // Шошгоны дизайнер (Konva/bwip-js том) — зөвхөн нээх үед ачаална.
 const Labels = lazy(() => import("./components/Labels"));
+// Тайлан (recharts том) — зөвхөн нээх үед ачаална.
+const Reports = lazy(() => import("./components/Reports"));
 
-type Tab = "create" | "products" | "inventory" | "transactions" | "table" | "labels" | "branches" | "audit" | "members";
+type Tab = "create" | "products" | "inventory" | "transactions" | "reports" | "table" | "labels" | "branches" | "audit" | "members";
 
 const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "create", label: "Шинэ ажил" },
   { id: "products", label: "Бүтээгдэхүүн" },
   { id: "inventory", label: "Үлдэгдэл" },
   { id: "transactions", label: "Гүйлгээ" },
+  { id: "reports", label: "Тайлан" },
   { id: "table", label: "Бараа (EPC)" },
   { id: "labels", label: "Шошго" },
   { id: "branches", label: "Салбар" },
@@ -180,6 +183,13 @@ function App() {
         )}
         {tab === "inventory" && <Inventory refreshKey={refreshKey} />}
         {tab === "transactions" && <Transactions refreshKey={refreshKey} />}
+        {tab === "reports" && (
+          <Suspense
+            fallback={<div className="py-10 text-center text-slate-400">Тайлан ачаалж байна…</div>}
+          >
+            <Reports />
+          </Suspense>
+        )}
         {tab === "table" && (
           <div className="space-y-4">
             <div className="flex gap-1 border-b border-slate-200">

@@ -11,7 +11,7 @@ export type TxStatus = "pending" | "done" | "cancelled";
 
 export const TX_TYPES: TxType[] = ["sale", "transfer", "other"];
 export const TX_TYPE_LABEL: Record<TxType, string> = {
-  sale: "Борлуулалт",
+  sale: "Борлуулсан",
   transfer: "Шилжүүлэг",
   other: "Бусад гүйлгээ",
 };

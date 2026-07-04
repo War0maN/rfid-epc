@@ -1203,8 +1203,11 @@ create trigger epc_events_on_update
   after update of status, branch_id on epc_codes
   for each row execute function epc_event_trigger();
 
--- ---------- Гараар төлөв өөрчлөх RPC (шалтгаантай, зөвхөн админ) ----------
--- app.reason-г transaction-local тавьдаг тул event-д шалтгаан бичигдэнэ.
+-- ---------- Гараар төлөв өөрчлөх RPC (тэмдэглэлтэй, зөвхөн админ) ----------
+-- Борлуулсан/Бусад гүйлгээ болгох нь ЖИНХЭНЭ ГҮЙЛГЭЭ болж бүртгэгдэнэ
+-- (transactions + items + үнийн snapshot; салбар тус бүрд нэг гүйлгээ) —
+-- Гүйлгээний түүхэнд гарна. Идэвхтэй/Хэвлээгүй болгох нь засварын шууд
+-- update (гүйлгээгүй). app.reason event-д тэмдэглэл болж бичигдэнэ.
 create or replace function change_epc_status(p_ids uuid[], p_status text, p_reason text)
 returns int
 language plpgsql
@@ -1213,7 +1216,12 @@ set search_path = public
 as $$
 declare
   v_tenant uuid := current_tenant_id();
-  v_cnt    int;
+  v_total  int  := coalesce(array_length(p_ids, 1), 0);
+  v_active int;
+  v_cnt    int := 0;
+  v_n      int;
+  v_rec    record;
+  v_tx     uuid;
 begin
   if not is_tenant_admin() then
     raise exception 'Зөвхөн админ төлөв өөрчилнө.';
@@ -1221,6 +1229,52 @@ begin
   if p_status not in ('unprinted','active','sold','other') then
     raise exception 'Төлөв буруу (%) — "Шилжүүлж буй"-г зөвхөн гүйлгээгээр.', p_status;
   end if;
+  if v_total < 1 then
+    return 0;
+  end if;
+
+  if p_status in ('sold','other') then
+    -- Зөвхөн Идэвхтэй EPC-г гүйлгээгээр гаргана (гүйлгээний зарчимтай ижил).
+    select count(*) into v_active
+      from epc_codes
+     where id = any(p_ids) and tenant_id = v_tenant and status = 'active';
+    if v_active <> v_total then
+      raise exception 'Зөвхөн Идэвхтэй EPC-г Борлуулсан/Бусад гүйлгээ болгоно (Идэвхтэй %/%).', v_active, v_total;
+    end if;
+
+    -- Салбар тус бүрд нэг гүйлгээ (from_branch зөв бүртгэгдэнэ).
+    for v_rec in
+      select distinct branch_id
+        from epc_codes
+       where id = any(p_ids) and tenant_id = v_tenant
+    loop
+      insert into transactions (tenant_id, type, status, from_branch, note)
+      values (v_tenant,
+              case p_status when 'sold' then 'sale' else 'other' end,
+              'done', v_rec.branch_id,
+              nullif(btrim(coalesce(p_reason, '')), ''))
+      returning id into v_tx;
+
+      perform set_config('app.tx_id', v_tx::text, true);
+      perform set_config('app.reason', coalesce(p_reason, ''), true);
+
+      insert into transaction_items (transaction_id, epc_id, price)
+      select v_tx, e.id, p.price
+        from epc_codes e
+        left join products p on p.id = e.product_id
+       where e.id = any(p_ids) and e.tenant_id = v_tenant
+         and e.branch_id is not distinct from v_rec.branch_id;
+
+      update epc_codes set status = p_status
+       where id = any(p_ids) and tenant_id = v_tenant
+         and branch_id is not distinct from v_rec.branch_id;
+      get diagnostics v_n = row_count;
+      v_cnt := v_cnt + v_n;
+    end loop;
+    return v_cnt;
+  end if;
+
+  -- Идэвхтэй/Хэвлээгүй болгох — засварын шууд update (гүйлгээгүй).
   perform set_config('app.reason', coalesce(p_reason, ''), true);
   update epc_codes set status = p_status
    where id = any(p_ids) and tenant_id = v_tenant;
@@ -1272,3 +1326,35 @@ select t.tenant_id, ti.epc_id,
      select 1 from epc_events ev
       where ev.epc_id = ti.epc_id and ev.tx_id = t.id
         and ev.event in ('transfer_in','transfer_cancel'));
+
+-- ============================================================
+-- Phase 6: Тайлан — Борлуулалтын нэгтгэл (өдөр × салбар × бараа × хэрэглэгч).
+--   epc_events-ийн 'sold' дээр суурилна: гүйлгээгээр ч, гараар (админ)
+--   Борлуулсан болгосон ч бүгд орно. Үнэ: гүйлгээний snapshot; гар
+--   өөрчлөлтөд барааны одоогийн үнэ. security invoker тул RLS хэрэгжинэ.
+--   DB талд нэгтгэдэг тул сая мөр гүйлгээтэй ч payload жижиг.
+-- ============================================================
+drop function if exists report_sales(date, date);
+create function report_sales(p_from date, p_to date)
+returns table (day date, branch_id uuid, product_id uuid, actor_id uuid, qty bigint, amount numeric)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select date(ev.created_at),
+         coalesce(ev.new_branch, ev.old_branch),
+         e.product_id,
+         ev.actor_id,
+         count(*),
+         sum(coalesce(ti.price, p.price, 0))
+    from epc_events ev
+    join epc_codes e on e.id = ev.epc_id
+    left join transaction_items ti on ti.transaction_id = ev.tx_id and ti.epc_id = ev.epc_id
+    left join products p on p.id = e.product_id
+   where ev.event = 'sold'
+     and ev.created_at >= p_from
+     and ev.created_at < p_to + 1   -- p_to өдрийг дуустал
+   group by 1, 2, 3, 4
+$$;
+grant execute on function report_sales(date, date) to authenticated;
