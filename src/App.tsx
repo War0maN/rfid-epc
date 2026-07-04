@@ -18,17 +18,15 @@ import { lazy, Suspense } from "react";
 // Шошгоны дизайнер (Konva/bwip-js том) — зөвхөн нээх үед ачаална.
 const Labels = lazy(() => import("./components/Labels"));
 
-type Tab = "create" | "products" | "inventory" | "transactions" | "table" | "lookup" | "labels" | "catalog" | "branches" | "audit" | "members";
+type Tab = "create" | "products" | "inventory" | "transactions" | "table" | "labels" | "branches" | "audit" | "members";
 
 const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "create", label: "Шинэ ажил" },
   { id: "products", label: "Бүтээгдэхүүн" },
   { id: "inventory", label: "Үлдэгдэл" },
   { id: "transactions", label: "Гүйлгээ" },
-  { id: "table", label: "EPC хүснэгт" },
-  { id: "lookup", label: "Хайлт" },
+  { id: "table", label: "Бараа (EPC)" },
   { id: "labels", label: "Шошго" },
-  { id: "catalog", label: "Ангилал" },
   { id: "branches", label: "Салбар" },
   { id: "audit", label: "Аудит" },
   { id: "members", label: "Хэрэглэгчид", adminOnly: true },
@@ -54,6 +52,11 @@ async function loadProfileOrAcceptInvite(): Promise<MyProfile | null> {
 function App() {
   const { session, loading } = useSession();
   const [tab, setTab] = useState<Tab>("create");
+  // Бүтээгдэхүүн табын дэд таб: жагсаалт | ангилал (каталог).
+  const [productsView, setProductsView] = useState<"list" | "catalog">("list");
+  // Бараа (EPC) табын дэд таб: жагсаалт | хайлт. lookupHex = жагсаалтаас дарсан EPC.
+  const [epcView, setEpcView] = useState<"list" | "lookup">("list");
+  const [lookupHex, setLookupHex] = useState<string | null>(null);
   // EpcTable-г сэргээх дохио: шинэ ажил үүсгэх бүрт нэмэгдэнэ.
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -143,17 +146,77 @@ function App() {
           />
         )}
         {tab === "products" && (
-          <ProductList
-            isAdmin={profile.role === "admin"}
-            onEpcsGenerated={() => setRefreshKey((k) => k + 1)}
-          />
+          <div className="space-y-4">
+            <div className="flex gap-1 border-b border-slate-200">
+              {(
+                [
+                  { id: "list", label: "Бүтээгдэхүүн" },
+                  { id: "catalog", label: "Ангилал" },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setProductsView(t.id)}
+                  className={
+                    "rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
+                    (productsView === t.id
+                      ? "border-indigo-600 text-indigo-700"
+                      : "border-transparent text-slate-500 hover:text-slate-700")
+                  }
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {productsView === "list" ? (
+              <ProductList
+                isAdmin={profile.role === "admin"}
+                onEpcsGenerated={() => setRefreshKey((k) => k + 1)}
+              />
+            ) : (
+              <Catalog />
+            )}
+          </div>
         )}
         {tab === "inventory" && <Inventory refreshKey={refreshKey} />}
         {tab === "transactions" && <Transactions refreshKey={refreshKey} />}
         {tab === "table" && (
-          <EpcTable refreshKey={refreshKey} isAdmin={profile.role === "admin"} />
+          <div className="space-y-4">
+            <div className="flex gap-1 border-b border-slate-200">
+              {(
+                [
+                  { id: "list", label: "Жагсаалт" },
+                  { id: "lookup", label: "Хайлт" },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setEpcView(t.id)}
+                  className={
+                    "rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
+                    (epcView === t.id
+                      ? "border-indigo-600 text-indigo-700"
+                      : "border-transparent text-slate-500 hover:text-slate-700")
+                  }
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {epcView === "list" ? (
+              <EpcTable
+                refreshKey={refreshKey}
+                isAdmin={profile.role === "admin"}
+                onLookup={(hex) => {
+                  setLookupHex(hex);
+                  setEpcView("lookup");
+                }}
+              />
+            ) : (
+              <EpcLookup key={lookupHex ?? "manual"} initialHex={lookupHex ?? undefined} />
+            )}
+          </div>
         )}
-        {tab === "lookup" && <EpcLookup />}
         {tab === "labels" && (
           <Suspense
             fallback={<div className="py-10 text-center text-slate-400">Дизайнер ачаалж байна…</div>}
@@ -161,7 +224,6 @@ function App() {
             <Labels />
           </Suspense>
         )}
-        {tab === "catalog" && <Catalog />}
         {tab === "branches" && <Branches isAdmin={profile.role === "admin"} />}
         {tab === "audit" && <AuditLog />}
         {tab === "members" && profile.role === "admin" && <Members />}

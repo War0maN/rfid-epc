@@ -26,6 +26,8 @@ const PrintDialog = lazy(() => import("./PrintDialog"));
 interface Props {
   refreshKey?: number;
   isAdmin?: boolean; // гараар төлөв солих зөвхөн админд
+  /** EPC дээр дарахад — Хайлт таб руу үсэрч түүхийг харуулна. */
+  onLookup?: (epcHex: string) => void;
 }
 
 /** Хүснэгтийн багана бүрийн тодорхойлолт (толгой + утга авах). */
@@ -84,7 +86,7 @@ function safeTagUri(hex: string): string {
   }
 }
 
-export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
+export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup }: Props) {
   const [pageRows, setPageRows] = useState<EpcRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -98,6 +100,9 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
   // Сонгосон мөрүүд (хуудас хооронд хадгалагдана; мөрийн дата-г бүхлээр нь хадгална).
   const [selected, setSelected] = useState<Map<string, EpcRow>>(new Map());
   const [printRows, setPrintRows] = useState<EpcRow[] | null>(null);
+  // Төлөв өөрчлөх баталгаажуулалт: сонгосон зорилтот төлөв + тэмдэглэл.
+  const [statusModal, setStatusModal] = useState<EpcStatus | null>(null);
+  const [statusNote, setStatusNote] = useState("");
   // Динамик шинж чанарын багана + нуух/гаргах удирдлага.
   const [attrDefs, setAttrDefs] = useState<AttributeDef[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(loadHidden);
@@ -265,8 +270,9 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
   /**
    * EPC-үүдийн төлөвийг өөрчилнө (зөвхөн админ). Хэвлэх/CSV-тэй ижил:
    * сонгосон байвал тэдгээр, эс бөгөөс шүүлтэд тохирох БҮХ мөр (олон хуудас).
+   * note = Тэмдэглэл — EPC бүрийн түүхэнд бичигдэнэ (гүйлгээний Тэмдэглэлтэй ижил ойлголт).
    */
-  async function changeStatus(target: EpcStatus) {
+  async function changeStatus(target: EpcStatus, note: string) {
     setBusy(true);
     setError(null);
     try {
@@ -276,13 +282,6 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
         setError("Төлөв өөрчлөх мөр алга.");
         return;
       }
-      const src = selected.size > 0 ? "сонгосон" : "шүүлтэд тохирох";
-      if (
-        !window.confirm(
-          `${src} ${ids.length.toLocaleString()} EPC-ийн төлөвийг "${STATUS_LABEL[target]}" болгох уу?`
-        )
-      )
-        return;
       // Optimistic: харагдаж буй хуудас + сонголтод тусгана.
       const idSet = new Set(ids);
       const apply = (r: EpcRow): EpcRow => (idSet.has(r.id) ? { ...r, status: target } : r);
@@ -295,11 +294,13 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
         }
         return n;
       });
+      // RPC: тэмдэглэлийг transaction-local тавьж түүхэнд холбоно (change_epc_status).
       for (let i = 0; i < ids.length; i += 500) {
-        const { error: e } = await supabase
-          .from("epc_codes")
-          .update({ status: target })
-          .in("id", ids.slice(i, i + 500));
+        const { error: e } = await supabase.rpc("change_epc_status", {
+          p_ids: ids.slice(i, i + 500),
+          p_status: target,
+          p_reason: note.trim() || null,
+        });
         if (e) throw e;
       }
       void logAuditEvent(supabase, "status_change", "epc", null, {
@@ -492,7 +493,10 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
             disabled={busy || outCount === 0}
             onChange={(e) => {
               const v = e.target.value as EpcStatus;
-              if (v) void changeStatus(v);
+              if (v) {
+                setStatusNote("");
+                setStatusModal(v);
+              }
               e.target.value = "";
             }}
             title="Сонгосон (эсвэл шүүлтэд тохирох бүх) EPC-ийн төлөв өөрчлөх"
@@ -624,6 +628,14 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
                           >
                             {labelOf(r.status)}
                           </span>
+                        ) : c.key === "epc" ? (
+                          <button
+                            onClick={() => onLookup?.(r.epc_hex)}
+                            className="font-mono text-xs text-indigo-600 hover:underline"
+                            title="Түүхийг харах"
+                          >
+                            {r.epc_hex}
+                          </button>
                         ) : (
                           v || <span className="text-slate-300">—</span>
                         )}
@@ -682,6 +694,57 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false }: Props) {
             onPrinted={() => markPrinted(printRows.map((r) => r.id))}
           />
         </Suspense>
+      )}
+
+      {/* Төлөв өөрчлөх баталгаажуулалт — Тэмдэглэлтэй (түүхэнд бичигдэнэ) */}
+      {statusModal && (
+        <div
+          className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4"
+          onClick={() => setStatusModal(null)}
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-slate-900">Төлөв өөрчлөх</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              {selected.size > 0 ? "Сонгосон" : "Шүүлтэд тохирох"}{" "}
+              <strong>{outCount.toLocaleString()}</strong> EPC-ийн төлөвийг{" "}
+              <span className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + badgeOf(statusModal)}>
+                {STATUS_LABEL[statusModal]}
+              </span>{" "}
+              болгоно.
+            </p>
+            <label className="mt-3 block text-sm">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Тэмдэглэл
+              </span>
+              <input
+                autoFocus
+                value={statusNote}
+                onChange={(e) => setStatusNote(e.target.value)}
+                placeholder="Жишээ: актласан, алга болсон…"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+              />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setStatusModal(null)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                Болих
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  const t = statusModal;
+                  setStatusModal(null);
+                  void changeStatus(t, statusNote);
+                }}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                Өөрчлөх
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

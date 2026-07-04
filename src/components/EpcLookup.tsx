@@ -1,8 +1,14 @@
 import { errorMessage } from "../lib/errorMessage";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { normalizeEpc, epcHexToUri, epcHexToTagUri } from "../lib/epc";
 import { lookupEpc, type EpcRow } from "../lib/queries";
 import { badgeOf, labelOf } from "../lib/epcStatus";
+import { fetchEpcHistory, EVENT_META, type EpcHistoryItem } from "../lib/epcHistory";
+
+interface Props {
+  /** Өгвөл нээгдмэгц шууд хайна (жагсаалтаас EPC дээр дарж ирэхэд). */
+  initialHex?: string;
+}
 
 type State =
   | { kind: "idle" }
@@ -29,45 +35,58 @@ function safeTagUri(hex: string): string {
   }
 }
 
-function Field({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="flex justify-between gap-4 border-b border-slate-100 py-2 last:border-0">
-      <dt className="text-sm text-slate-500">{label}</dt>
-      <dd className="text-right text-sm font-medium text-slate-900">{value}</dd>
-    </div>
-  );
-}
+/** RFID-аас уншсан EPC-ийн мэдээлэл + бүрэн түүх (timeline). */
+export default function EpcLookup({ initialHex }: Props) {
+  const [raw, setRaw] = useState(initialHex ?? "");
+  const [state, setState] = useState<State>(initialHex ? { kind: "loading" } : { kind: "idle" });
+  const [history, setHistory] = useState<EpcHistoryItem[] | null>(null);
 
-/** RFID-аас уншсан EPC hex-ийг бичээд эх ажил/бараа/serial-ийг буцааж олох. */
-export default function EpcLookup() {
-  const [raw, setRaw] = useState("");
-  const [state, setState] = useState<State>({ kind: "idle" });
+  async function runSearch(input: string): Promise<{ next: State; hist: EpcHistoryItem[] | null }> {
+    const hex = normalizeEpc(input); // алдаа шидвэл дуудагч барина
+    const row = await lookupEpc(hex);
+    if (!row) return { next: { kind: "notfound" }, hist: null };
+    const hist = await fetchEpcHistory(row.id);
+    return { next: { kind: "found", row }, hist };
+  }
+
+  // Жагсаалтаас дарж ирсэн бол шууд хайна (state нь initializer-ээр loading).
+  useEffect(() => {
+    if (!initialHex) return;
+    let active = true;
+    void (async () => {
+      try {
+        const { next, hist } = await runSearch(initialHex);
+        if (!active) return;
+        setState(next);
+        setHistory(hist);
+      } catch (err) {
+        if (active) setState({ kind: "error", message: errorMessage(err) });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [initialHex]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    let hex: string;
-    try {
-      hex = normalizeEpc(raw);
-    } catch (err) {
-      setState({ kind: "error", message: errorMessage(err) });
-      return;
-    }
-
     setState({ kind: "loading" });
+    setHistory(null);
     try {
-      const row = await lookupEpc(hex);
-      setState(row ? { kind: "found", row } : { kind: "notfound" });
+      const { next, hist } = await runSearch(raw);
+      setState(next);
+      setHistory(hist);
     } catch (err) {
       setState({ kind: "error", message: errorMessage(err) });
     }
   }
 
   return (
-    <div className="mx-auto max-w-xl space-y-4">
+    <div className="mx-auto max-w-2xl space-y-4">
       <form onSubmit={handleSubmit} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="mb-1 text-lg font-semibold text-slate-900">EPC хайлт</h2>
         <p className="mb-4 text-sm text-slate-500">
-          RFID таг уншсан 24 тэмдэгт hex-ээ бичээд хайна уу.
+          RFID таг уншсан 24 тэмдэгт hex-ээ бичээд хайна уу — барааны мэдээлэл + бүрэн түүх гарна.
         </p>
         <div className="flex gap-2">
           <input
@@ -97,50 +116,67 @@ export default function EpcLookup() {
       )}
 
       {state.kind === "found" && (
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="mb-3 break-all font-mono text-sm text-indigo-700">{state.row.epc_hex}</p>
-          <dl>
-            <Field
-              label="EPC URI"
-              value={<span className="break-all font-mono text-xs">{safeUri(state.row.epc_hex)}</span>}
-            />
-            <Field
-              label="Tag URI"
-              value={<span className="break-all font-mono text-xs">{safeTagUri(state.row.epc_hex)}</span>}
-            />
-            <Field
-              label="Төлөв"
-              value={
-                <span className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + badgeOf(state.row.status)}>
-                  {labelOf(state.row.status)}
-                </span>
-              }
-            />
-            <Field label="Бараа" value={state.row.name || "—"} />
-            <Field
-              label="Ангилал"
-              value={
-                [state.row.category_l1, state.row.category_l2, state.row.category_l3]
-                  .filter(Boolean)
-                  .join(" / ") || "—"
-              }
-            />
-            <Field label="Шинж чанар" value={state.row.attributes_text || "—"} />
-            <Field
-              label="GTIN/баркод"
-              value={<span className="font-mono">{state.row.gtin ?? "—"}</span>}
-            />
-            <Field
-              label="SKU"
-              value={<span className="font-mono">{state.row.sku ?? "—"}</span>}
-            />
-            <Field label="Хайрцаг" value={state.row.box_no ?? "—"} />
-            <Field label="Serial" value={state.row.serial} />
-            <Field label="Ажлын №" value={state.row.job_number ?? "—"} />
-            <Field label="Ирсэн огноо" value={state.row.arrival_date ?? "—"} />
-            <Field label="Нийлүүлэгч" value={state.row.supplier ?? "—"} />
-            <Field label="Үүссэн" value={new Date(state.row.created_at).toLocaleString()} />
-          </dl>
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          {/* Барааны толгой — Үлдэгдлийн модал шиг: нэр + SKU + баркод */}
+          <div className="border-b border-slate-200 px-6 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-lg font-semibold text-slate-900">
+                {state.row.name || state.row.sku || "Нэргүй бараа"}
+              </h3>
+              <span className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + badgeOf(state.row.status)}>
+                {labelOf(state.row.status)}
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {state.row.sku && (
+                <>SKU: <span className="font-mono">{state.row.sku}</span> · </>
+              )}
+              {state.row.gtin && (
+                <>Баркод: <span className="font-mono">{state.row.gtin}</span> · </>
+              )}
+              {state.row.branch_name && <>Салбар: {state.row.branch_name}</>}
+            </p>
+            <p className="mt-2 break-all font-mono text-sm text-indigo-700">{state.row.epc_hex}</p>
+            <p className="mt-1 break-all font-mono text-[11px] text-slate-400">
+              {safeUri(state.row.epc_hex)} · {safeTagUri(state.row.epc_hex)}
+            </p>
+          </div>
+
+          {/* Түүх — амьдралын дараалал (эртнээс сүүл рүү) */}
+          <div className="px-6 py-4">
+            <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Түүх {history ? `(${history.length})` : ""}
+            </h4>
+            {!history ? (
+              <p className="py-4 text-center text-sm text-slate-400">Түүх ачаалж байна…</p>
+            ) : history.length === 0 ? (
+              <p className="py-4 text-center text-sm text-slate-400">
+                Түүх алга. (Supabase дээр schema.sql-ийн epc_events хэсгийг Run хийсэн эсэхийг шалгана уу.)
+              </p>
+            ) : (
+              <ol className="relative ml-1.5 space-y-4 border-l-2 border-slate-100 pl-5">
+                {history.map((ev) => {
+                  const meta = EVENT_META[ev.event];
+                  return (
+                    <li key={ev.id} className="relative">
+                      <span className="absolute -left-[27px] top-1 h-3 w-3 rounded-full border-2 border-white bg-slate-300" />
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + meta.cls}>
+                          {meta.label}
+                        </span>
+                        <span className="text-xs tabular-nums text-slate-400">
+                          {new Date(ev.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-slate-700">{ev.detail}</p>
+                      {ev.reason && <p className="mt-0.5 text-xs text-slate-500">Тэмдэглэл: {ev.reason}</p>}
+                      {ev.actor_email && <p className="mt-0.5 text-xs text-slate-400">{ev.actor_email}</p>}
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
         </div>
       )}
     </div>

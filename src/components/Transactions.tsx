@@ -453,7 +453,12 @@ export default function Transactions({ refreshKey = 0 }: Props) {
                             <td className={td + " font-mono text-xs"}>{i.epc_hex}</td>
                             <td className={td + " text-right tabular-nums"}>{i.price != null ? i.price.toLocaleString() : <span className="text-slate-300">—</span>}</td>
                             <td className={td + " text-right"}>
-                              <button onClick={() => removeFromCart(i.id)} className="text-xs text-red-600 hover:underline">✕ Хасах</button>
+                              <button
+                                onClick={() => removeFromCart(i.id)}
+                                className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                              >
+                                − Хасах
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -506,14 +511,19 @@ export default function Transactions({ refreshKey = 0 }: Props) {
                       </thead>
                       <tbody>
                         {remaining.slice(0, AVAIL_RENDER_CAP).map((a) => (
-                          <tr key={a.id} className="cursor-pointer hover:bg-indigo-50/40" onClick={() => addItem(a)}>
+                          <tr key={a.id} className="hover:bg-slate-50">
                             <td className={td}>{a.name || <span className="text-slate-300">—</span>}</td>
                             <td className={td + " font-mono text-xs"}>{a.sku || <span className="text-slate-300">—</span>}</td>
                             <td className={td + " font-mono text-xs"}>{a.gtin || <span className="text-slate-300">—</span>}</td>
                             <td className={td + " font-mono text-xs"}>{a.epc_hex}</td>
                             <td className={td + " text-right tabular-nums"}>{a.price != null ? a.price.toLocaleString() : <span className="text-slate-300">—</span>}</td>
                             <td className={td + " text-right"}>
-                              <span className="text-xs font-medium text-indigo-600">+ Нэмэх</span>
+                              <button
+                                onClick={() => addItem(a)}
+                                className="rounded border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                              >
+                                + Нэмэх
+                              </button>
                             </td>
                           </tr>
                         ))}

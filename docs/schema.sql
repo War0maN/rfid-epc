@@ -1014,6 +1014,9 @@ begin
   )
   returning id into v_tx;
 
+  -- Event log-д энэ гүйлгээг холбох (epc_event_trigger уншина).
+  perform set_config('app.tx_id', v_tx::text, true);
+
   -- Items + үнийн snapshot (тухайн үеийн products.price).
   insert into transaction_items (transaction_id, epc_id, price)
   select v_tx, e.id, p.price
@@ -1054,6 +1057,7 @@ begin
   end if;
 
   perform set_config('app.tx_rpc', '1', true);
+  perform set_config('app.tx_id', p_tx::text, true);
 
   update epc_codes e
      set branch_id = v_tx.to_branch, status = 'active'
@@ -1090,6 +1094,7 @@ begin
   end if;
 
   perform set_config('app.tx_rpc', '1', true);
+  perform set_config('app.tx_id', p_tx::text, true);
 
   update epc_codes e
      set status = 'active'
@@ -1126,3 +1131,144 @@ drop trigger if exists epc_no_manual_transferring on epc_codes;
 create trigger epc_no_manual_transferring
   before update of status on epc_codes
   for each row execute function epc_guard_transferring();
+
+-- ============================================================
+-- EPC түүх (epc_events) — EPC бүрийн амьдралын түүх, append-only.
+--   Trigger epc_codes-ийн insert/update дээр автоматаар бичнэ — RPC,
+--   гар өөрчлөлт, хэвлэлт бүх зам нэг ч алгасалгүй бүртгэгдэнэ.
+--   (tenant_id, epc_id, created_at) индекстэй тул сая мөрд ч хурдан.
+--   Клиент зөвхөн уншина (insert policy байхгүй — зөвхөн trigger бичнэ).
+-- ============================================================
+create table if not exists epc_events (
+  id          bigint generated always as identity primary key,
+  tenant_id   uuid not null references tenants(id),
+  epc_id      uuid not null references epc_codes(id),
+  event       text not null check (event in
+    ('created','printed','status_change','transfer_out','transfer_in','transfer_cancel','sold','other')),
+  old_status  text,
+  new_status  text,
+  old_branch  uuid references branches(id),
+  new_branch  uuid references branches(id),
+  tx_id       uuid references transactions(id),
+  reason      text,                       -- гар өөрчлөлтийн шалтгаан
+  actor_id    uuid,                       -- auth.users (хэн хийсэн)
+  created_at  timestamptz not null default now()
+);
+create index if not exists epc_events_epc_idx on epc_events (tenant_id, epc_id, created_at);
+
+alter table epc_events enable row level security;
+drop policy if exists "epc events read" on epc_events;
+create policy "epc events read" on epc_events for select using (tenant_id = current_tenant_id());
+
+create or replace function epc_event_trigger()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_event  text;
+  v_tx     uuid := nullif(current_setting('app.tx_id', true), '')::uuid;
+  v_reason text := nullif(current_setting('app.reason', true), '');
+begin
+  if tg_op = 'INSERT' then
+    insert into epc_events (tenant_id, epc_id, event, new_status, new_branch, actor_id)
+    values (new.tenant_id, new.id, 'created', new.status, new.branch_id, auth.uid());
+    return new;
+  end if;
+  if new.status is distinct from old.status or new.branch_id is distinct from old.branch_id then
+    v_event := case
+      when old.status = 'unprinted' and new.status = 'active' then 'printed'
+      when new.status = 'transferring' then 'transfer_out'
+      when old.status = 'transferring' and new.branch_id is distinct from old.branch_id then 'transfer_in'
+      when old.status = 'transferring' and new.status = 'active' then 'transfer_cancel'
+      when new.status = 'sold' then 'sold'
+      when new.status = 'other' then 'other'
+      else 'status_change'
+    end;
+    insert into epc_events (tenant_id, epc_id, event, old_status, new_status,
+                            old_branch, new_branch, tx_id, reason, actor_id)
+    values (new.tenant_id, new.id, v_event, old.status, new.status,
+            old.branch_id, new.branch_id, v_tx, v_reason, auth.uid());
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists epc_events_on_insert on epc_codes;
+create trigger epc_events_on_insert
+  after insert on epc_codes
+  for each row execute function epc_event_trigger();
+drop trigger if exists epc_events_on_update on epc_codes;
+create trigger epc_events_on_update
+  after update of status, branch_id on epc_codes
+  for each row execute function epc_event_trigger();
+
+-- ---------- Гараар төлөв өөрчлөх RPC (шалтгаантай, зөвхөн админ) ----------
+-- app.reason-г transaction-local тавьдаг тул event-д шалтгаан бичигдэнэ.
+create or replace function change_epc_status(p_ids uuid[], p_status text, p_reason text)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid := current_tenant_id();
+  v_cnt    int;
+begin
+  if not is_tenant_admin() then
+    raise exception 'Зөвхөн админ төлөв өөрчилнө.';
+  end if;
+  if p_status not in ('unprinted','active','sold','other') then
+    raise exception 'Төлөв буруу (%) — "Шилжүүлж буй"-г зөвхөн гүйлгээгээр.', p_status;
+  end if;
+  perform set_config('app.reason', coalesce(p_reason, ''), true);
+  update epc_codes set status = p_status
+   where id = any(p_ids) and tenant_id = v_tenant;
+  get diagnostics v_cnt = row_count;
+  return v_cnt;
+end $$;
+grant execute on function change_epc_status(uuid[], text, text) to authenticated;
+
+-- ---------- Backfill: одоо байгаа EPC-үүдийн түүхийг сэргээх (idempotent) ----------
+insert into epc_events (tenant_id, epc_id, event, new_status, new_branch, created_at)
+select e.tenant_id, e.id, 'created', 'unprinted', e.branch_id, e.created_at
+  from epc_codes e
+ where not exists (select 1 from epc_events ev where ev.epc_id = e.id and ev.event = 'created');
+
+insert into epc_events (tenant_id, epc_id, event, old_status, new_status, new_branch, created_at)
+select e.tenant_id, e.id, 'printed', 'unprinted', 'active', e.branch_id, e.printed_at
+  from epc_codes e
+ where e.printed_at is not null
+   and not exists (select 1 from epc_events ev where ev.epc_id = e.id and ev.event = 'printed');
+
+-- Гүйлгээний түүх (гарсан үйл явдал)
+insert into epc_events (tenant_id, epc_id, event, old_status, new_status,
+                        old_branch, new_branch, tx_id, actor_id, created_at)
+select t.tenant_id, ti.epc_id,
+       case t.type when 'sale' then 'sold' when 'other' then 'other' else 'transfer_out' end,
+       'active',
+       case t.type when 'sale' then 'sold' when 'other' then 'other' else 'transferring' end,
+       t.from_branch, t.from_branch, t.id, t.created_by, t.created_at
+  from transactions t
+  join transaction_items ti on ti.transaction_id = t.id
+ where not exists (
+   select 1 from epc_events ev
+    where ev.epc_id = ti.epc_id and ev.tx_id = t.id
+      and ev.event in ('sold','other','transfer_out'));
+
+-- Шилжүүлгийн төгсгөл (хүлээн авсан / цуцлагдсан)
+insert into epc_events (tenant_id, epc_id, event, old_status, new_status,
+                        old_branch, new_branch, tx_id, actor_id, created_at)
+select t.tenant_id, ti.epc_id,
+       case t.status when 'done' then 'transfer_in' else 'transfer_cancel' end,
+       'transferring', 'active',
+       t.from_branch,
+       case when t.status = 'done' then t.to_branch else t.from_branch end,
+       t.id, t.created_by, coalesce(t.completed_at, t.created_at)
+  from transactions t
+  join transaction_items ti on ti.transaction_id = t.id
+ where t.type = 'transfer' and t.status in ('done','cancelled')
+   and not exists (
+     select 1 from epc_events ev
+      where ev.epc_id = ti.epc_id and ev.tx_id = t.id
+        and ev.event in ('transfer_in','transfer_cancel'));
