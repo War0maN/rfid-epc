@@ -10,6 +10,8 @@ import ProductForm from "./ProductForm";
 interface Props {
   isAdmin: boolean;
   onEpcsGenerated?: () => void;
+  /** Хуваарилагдсан салбарууд (null = хязгааргүй). EPC үүсгэх сонголтыг шүүнэ. */
+  allowedBranches?: string[] | null;
 }
 
 interface ColDef {
@@ -42,7 +44,7 @@ function loadHidden(): Set<string> {
 }
 
 /** Бүтээгдэхүүн (master) таб — бүрэн боломжит хүснэгт (шүүлт/sort/хуудас/багана). */
-export default function ProductList({ isAdmin, onEpcsGenerated }: Props) {
+export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches = null }: Props) {
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [attrDefs, setAttrDefs] = useState<AttributeDef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,10 +79,12 @@ export default function ProductList({ isAdmin, onEpcsGenerated }: Props) {
   useEffect(() => {
     let active = true;
     Promise.all([listProducts(), listAttributeDefs(), listBranches()])
-      .then(([p, d, b]) => {
+      .then(([p, d, all]) => {
         if (!active) return;
         setRows(p);
         setAttrDefs(d);
+        // Хуваарилагдсан салбарууд байвал EPC үүсгэх сонголтыг шүүнэ.
+        const b = allowedBranches ? all.filter((x) => allowedBranches.includes(x.id)) : all;
         setBranches(b);
         setGenBranch(b[0]?.id ?? "");
       })
@@ -89,7 +93,7 @@ export default function ProductList({ isAdmin, onEpcsGenerated }: Props) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [allowedBranches]);
 
   const columns = useMemo<ColDef[]>(() => {
     const attrCols: ColDef[] = dedupAttrs(attrDefs).map((d) => ({

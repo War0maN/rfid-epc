@@ -23,6 +23,7 @@ export interface Member {
   email: string | null;
   role: Role;
   created_at: string;
+  branch_ids: string[]; // хуваарилагдсан салбарууд (хоосон = бүгд/хязгааргүй)
 }
 
 export interface Invite {
@@ -85,14 +86,45 @@ export async function fetchMyProfile(): Promise<MyProfile | null> {
 
 // ---------- Admin: гишүүд ба урилга ----------
 
-/** Тенантын бүх гишүүн (profiles RLS-ийн ачаар зөвхөн өөрийн тенант). */
+/** Тенантын бүх гишүүн + салбарын хуваарилалт (RLS-ээр зөвхөн өөрийн тенант). */
 export async function listMembers(): Promise<Member[]> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, email, role, created_at")
-    .order("created_at", { ascending: true });
+  const [{ data, error }, { data: ub, error: ubErr }] = await Promise.all([
+    supabase.from("profiles").select("id, email, role, created_at").order("created_at", { ascending: true }),
+    supabase.from("user_branches").select("user_id, branch_id"),
+  ]);
   if (error) throw error;
-  return (data ?? []) as Member[];
+  if (ubErr) throw ubErr;
+  const byUser = new Map<string, string[]>();
+  for (const r of (ub ?? []) as { user_id: string; branch_id: string }[]) {
+    const list = byUser.get(r.user_id) ?? [];
+    list.push(r.branch_id);
+    byUser.set(r.user_id, list);
+  }
+  return ((data ?? []) as Omit<Member, "branch_ids">[]).map((m) => ({
+    ...m,
+    branch_ids: byUser.get(m.id) ?? [],
+  }));
+}
+
+/** Гишүүний салбаруудыг тохируулна (админ; атом replace, хоосон = хязгааргүй). */
+export async function setMemberBranches(userId: string, branchIds: string[]): Promise<void> {
+  const { error } = await supabase.rpc("set_member_branches", {
+    p_user: userId,
+    p_branch_ids: branchIds,
+  });
+  if (error) throw error;
+}
+
+/** Өөрийн хуваарилагдсан салбарууд (хоосон = хязгааргүй). */
+export async function fetchMyBranchIds(): Promise<string[]> {
+  const uid = (await supabase.auth.getUser()).data.user?.id;
+  if (!uid) return [];
+  const { data, error } = await supabase
+    .from("user_branches")
+    .select("branch_id")
+    .eq("user_id", uid);
+  if (error) throw error;
+  return ((data ?? []) as { branch_id: string }[]).map((r) => r.branch_id);
 }
 
 /** Хүлээгдэж буй урилгууд. */

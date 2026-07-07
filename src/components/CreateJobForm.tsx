@@ -7,6 +7,8 @@ import { listBranches, type Branch } from "../lib/branches";
 interface Props {
   /** Амжилттай үүсгэсний дараа эцэг компонентод мэдэгдэх (жагсаалт сэргээх). */
   onCreated?: (jobId: string) => void;
+  /** Хуваарилагдсан салбарууд (null = хязгааргүй). Сонголтыг үүгээр шүүнэ. */
+  allowedBranches?: string[] | null;
 }
 
 interface Result {
@@ -20,7 +22,7 @@ interface Result {
 }
 
 /** Ажил (Job) үүсгэх форм + packing list CSV upload -> EPC генерац. */
-export default function CreateJobForm({ onCreated }: Props) {
+export default function CreateJobForm({ onCreated, allowedBranches = null }: Props) {
   const [jobNumber, setJobNumber] = useState("");
   const [arrivalDate, setArrivalDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [supplier, setSupplier] = useState("");
@@ -37,8 +39,10 @@ export default function CreateJobForm({ onCreated }: Props) {
   useEffect(() => {
     let active = true;
     listBranches()
-      .then((b) => {
+      .then((all) => {
         if (!active) return;
+        // Хуваарилагдсан салбарууд байвал зөвхөн тэдгээрийг санал болгоно.
+        const b = allowedBranches ? all.filter((x) => allowedBranches.includes(x.id)) : all;
         setBranches(b);
         setBranchId(b[0]?.id ?? "");
       })
@@ -46,7 +50,7 @@ export default function CreateJobForm({ onCreated }: Props) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [allowedBranches]);
 
   function reset() {
     setJobNumber("");

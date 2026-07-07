@@ -23,6 +23,8 @@ import { errorMessage } from "../lib/errorMessage";
 
 interface Props {
   refreshKey?: number;
+  /** Хуваарилагдсан салбарууд (null = хязгааргүй). Эх салбарын сонголтыг шүүнэ. */
+  allowedBranches?: string[] | null;
 }
 
 // Дээд мөрийн бүх удирдлага нэг өндөртэй (h-9) — жигд харагдана.
@@ -37,7 +39,10 @@ const AVAIL_RENDER_CAP = 300; // жагсаалтад нэг дор харуул
  * Урсгал: салбар сонгох → идэвхтэй EPC жагсаалт (доод) → скан/шивэлт/дарж
  * сагсанд (дээд) нэмэх → нийт дүнтэй баталгаажуулах.
  */
-export default function Transactions({ refreshKey = 0 }: Props) {
+export default function Transactions({ refreshKey = 0, allowedBranches = null }: Props) {
+  // Эх салбарын сонголт: хуваарилагдсан салбараар шүүнэ (очих салбар бүрэн үлдэнэ).
+  const filterMine = (list: Branch[]) =>
+    allowedBranches ? list.filter((b) => allowedBranches.includes(b.id)) : list;
   const [view, setView] = useState<"new" | "history">("new");
 
   const [rows, setRows] = useState<TxRow[]>([]);
@@ -359,7 +364,7 @@ export default function Transactions({ refreshKey = 0 }: Props) {
               <span className={lbl}>Салбар (эх)</span>
               <select value={fromBranch} onChange={(e) => selectBranch(e.target.value)} className={ctl}>
                 <option value="">— Сонгох —</option>
-                {branches.map((b) => (
+                {filterMine(branches).map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>

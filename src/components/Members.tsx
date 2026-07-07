@@ -1,29 +1,39 @@
 import { errorMessage } from "../lib/errorMessage";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   addInvite,
   cancelInvite,
   listInvites,
   listMembers,
+  setMemberBranches,
   type Invite,
   type Member,
   type Role,
 } from "../lib/tenantAuth";
+import { listBranches, type Branch } from "../lib/branches";
 
 const inputCls =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
 
 const ROLE_LABEL: Record<Role, string> = { admin: "Админ", operator: "Оператор" };
 
-/** Admin: тенантын гишүүд + урилга удирдах. */
+/** Admin: тенантын гишүүд (+ салбарын хуваарилалт) + урилга удирдах. */
 export default function Members() {
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("operator");
   const [saving, setSaving] = useState(false);
+
+  // Салбар хуваарилах модал: гишүүн + түр сонголт.
+  const [branchModal, setBranchModal] = useState<Member | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [branchSaving, setBranchSaving] = useState(false);
+
+  const branchName = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
 
   function reload() {
     listMembers().then(setMembers).catch((e) => setError(errorMessage(e)));
@@ -34,6 +44,7 @@ export default function Members() {
     let active = true;
     listMembers().then((m) => active && setMembers(m)).catch((e) => active && setError(errorMessage(e)));
     listInvites().then((i) => active && setInvites(i)).catch((e) => active && setError(errorMessage(e)));
+    listBranches().then((b) => active && setBranches(b)).catch((e) => active && setError(errorMessage(e)));
     return () => {
       active = false;
     };
@@ -63,6 +74,47 @@ export default function Members() {
     } catch (err) {
       setError(errorMessage(err));
     }
+  }
+
+  function openBranchModal(m: Member) {
+    setPicked(new Set(m.branch_ids));
+    setBranchModal(m);
+  }
+
+  function togglePicked(id: string) {
+    setPicked((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+
+  async function handleSaveBranches() {
+    if (!branchModal) return;
+    setBranchSaving(true);
+    setError(null);
+    try {
+      await setMemberBranches(branchModal.id, [...picked]);
+      setBranchModal(null);
+      reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBranchSaving(false);
+    }
+  }
+
+  /** Гишүүний хуваарилалтыг chip-үүдээр (хоосон = Бүгд). */
+  function branchChips(m: Member) {
+    if (m.branch_ids.length === 0) {
+      return <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">Бүх салбар</span>;
+    }
+    return m.branch_ids.map((id) => (
+      <span key={id} className="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
+        {branchName.get(id) ?? "?"}
+      </span>
+    ));
   }
 
   return (
@@ -106,7 +158,7 @@ export default function Members() {
         </div>
         <p className="mt-2 text-xs text-slate-500">
           Уригдсан хүн энэ имэйлээрээ <strong>Бүртгүүлэх</strong> хийхэд автоматаар таны
-          байгууллагад нэгдэнэ.
+          байгууллагад нэгдэнэ. Нэгдсэний дараа доороос салбар хуваарилна.
         </p>
       </form>
 
@@ -117,10 +169,25 @@ export default function Members() {
         </div>
         <ul className="divide-y divide-slate-100">
           {members.map((m) => (
-            <li key={m.id} className="flex items-center justify-between px-4 py-2 text-sm">
+            <li key={m.id} className="flex flex-wrap items-center gap-2 px-4 py-2 text-sm">
               <span className="text-slate-800">{m.email ?? "—"}</span>
               <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
                 {ROLE_LABEL[m.role]}
+              </span>
+              <span className="flex flex-1 flex-wrap items-center justify-end gap-1.5">
+                {m.role === "operator" ? (
+                  <>
+                    {branchChips(m)}
+                    <button
+                      onClick={() => openBranchModal(m)}
+                      className="ml-1 text-xs font-medium text-indigo-600 hover:underline"
+                    >
+                      Салбар
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-xs text-slate-400">Бүх салбар (админ)</span>
+                )}
               </span>
             </li>
           ))}
@@ -151,6 +218,54 @@ export default function Members() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Салбар хуваарилах модал */}
+      {branchModal && (
+        <div
+          className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4"
+          onClick={() => setBranchModal(null)}
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-slate-900">Салбар хуваарилах</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              {branchModal.email} — сонгосон салбарын өгөгдлийг л харж, гүйлгээ хийнэ.
+              Юу ч сонгохгүй бол <strong>бүх салбар</strong> нээлттэй.
+            </p>
+            <div className="mt-3 max-h-64 space-y-1 overflow-auto">
+              {branches.map((b) => (
+                <label
+                  key={b.id}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  <input type="checkbox" checked={picked.has(b.id)} onChange={() => togglePicked(b.id)} />
+                  {b.name}
+                  {b.code && <span className="font-mono text-xs text-slate-400">{b.code}</span>}
+                </label>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-2">
+              <span className="text-xs text-slate-500">
+                {picked.size === 0 ? "Бүх салбар" : `${picked.size} салбар`}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setBranchModal(null)}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Болих
+                </button>
+                <button
+                  disabled={branchSaving}
+                  onClick={handleSaveBranches}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {branchSaving ? "Хадгалж байна…" : "Хадгалах"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

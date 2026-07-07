@@ -1000,6 +1000,11 @@ begin
   if p_type = 'transfer' and p_to_branch is not distinct from v_from then
     raise exception 'Очих салбар нь эх салбартай ижил байж болохгүй.';
   end if;
+  -- Phase 2b: оператор зөвхөн өөрийн салбарт гүйлгээ хийнэ (RPC security
+  -- definer тул RLS-ийг тойрдог — энд заавал шалгана).
+  if not has_branch_access(v_from) then
+    raise exception 'Энэ салбарт гүйлгээ хийх эрхгүй.';
+  end if;
 
   -- Guard trigger (epc_guard_transferring)-ийг энэ transaction-д давах эрх.
   perform set_config('app.tx_rpc', '1', true);
@@ -1055,6 +1060,10 @@ begin
   if v_tx.type <> 'transfer' or v_tx.status <> 'pending' then
     raise exception 'Зөвхөн хүлээгдэж буй шилжүүлгийг хүлээн авна.';
   end if;
+  -- Phase 2b: хүлээн авагч очих салбарт эрхтэй байх ёстой.
+  if not has_branch_access(v_tx.to_branch) then
+    raise exception 'Очих салбарт эрхгүй тул хүлээн авах боломжгүй.';
+  end if;
 
   perform set_config('app.tx_rpc', '1', true);
   perform set_config('app.tx_id', p_tx::text, true);
@@ -1091,6 +1100,10 @@ begin
   end if;
   if v_tx.type <> 'transfer' or v_tx.status <> 'pending' then
     raise exception 'Зөвхөн хүлээгдэж буй шилжүүлгийг цуцална.';
+  end if;
+  -- Phase 2b: эх салбарт эрхтэй хүн л цуцална (буцаан авч байгаа тул).
+  if not has_branch_access(v_tx.from_branch) then
+    raise exception 'Эх салбарт эрхгүй тул цуцлах боломжгүй.';
   end if;
 
   perform set_config('app.tx_rpc', '1', true);
@@ -1358,3 +1371,123 @@ as $$
    group by 1, 2, 3, 4
 $$;
 grant execute on function report_sales(date, date) to authenticated;
+
+-- ============================================================
+-- Phase 2b: Хэрэглэгч↔салбар хуваарилалт + салбараар scoping.
+--   Оператор зөвхөн хуваарилагдсан салбарын EPC/гүйлгээ/түүхийг харж,
+--   үйлдэл хийнэ (RLS — UI тойрч гарах боломжгүй). Хуваарилалтгүй
+--   гишүүн болон админ хязгааргүй. Салбарын НЭРС бүгдэд нээлттэй
+--   (шилжүүлгийн очих салбар сонгох, түүхэнд нэр харуулахад).
+-- ============================================================
+create table if not exists user_branches (
+  tenant_id  uuid not null references tenants(id),
+  user_id    uuid not null references profiles(id) on delete cascade,
+  branch_id  uuid not null references branches(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, branch_id)
+);
+create index if not exists user_branches_tenant_idx on user_branches (tenant_id, user_id);
+
+alter table user_branches enable row level security;
+drop policy if exists "user branches read" on user_branches;
+create policy "user branches read" on user_branches
+  for select using (tenant_id = current_tenant_id());
+-- write policy байхгүй — зөвхөн set_member_branches RPC (security definer) бичнэ.
+
+-- Хандалтын шалгагч: админ / хуваарилалтгүй / NULL салбар → нээлттэй.
+create or replace function has_branch_access(p_branch uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select is_tenant_admin()
+      or not exists (select 1 from user_branches where user_id = auth.uid())
+      or p_branch is null
+      or exists (select 1 from user_branches where user_id = auth.uid() and branch_id = p_branch)
+$$;
+grant execute on function has_branch_access(uuid) to authenticated;
+
+-- Админ гишүүний салбаруудыг тохируулна (атом replace; хоосон = хязгааргүй).
+create or replace function set_member_branches(p_user uuid, p_branch_ids uuid[])
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid := current_tenant_id();
+begin
+  if not is_tenant_admin() then
+    raise exception 'Зөвхөн админ салбар хуваарилна.';
+  end if;
+  if not exists (select 1 from profiles where id = p_user and tenant_id = v_tenant) then
+    raise exception 'Гишүүн олдсонгүй.';
+  end if;
+  delete from user_branches where user_id = p_user and tenant_id = v_tenant;
+  insert into user_branches (tenant_id, user_id, branch_id)
+  select v_tenant, p_user, b.id
+    from unnest(coalesce(p_branch_ids, '{}'::uuid[])) as x(id)
+    join branches b on b.id = x.id and b.tenant_id = v_tenant;
+end $$;
+grant execute on function set_member_branches(uuid, uuid[]) to authenticated;
+
+-- ---------- RLS: салбарын scoping (policy-уудыг дахин тодорхойлно) ----------
+-- ГҮЙЦЭТГЭЛ: has_branch_access() функцийг мөр бүрд дуудвал (security definer
+-- тул inline хийгддэггүй) олон мянган мөрөнд statement timeout болно.
+-- Тиймээс policy дотор НЭГ УДАА тооцогддог scalar subquery (InitPlan) +
+-- hashed IN-subquery хэлбэрээр бичив — мөр бүрд зөвхөн hash lookup.
+drop policy if exists "epc read" on epc_codes;
+create policy "epc read" on epc_codes for select
+  using (tenant_id = current_tenant_id() and (
+    branch_id is null
+    or (select is_tenant_admin())
+    or (select not exists (select 1 from user_branches where user_id = auth.uid()))
+    or branch_id in (select branch_id from user_branches where user_id = auth.uid())
+  ));
+drop policy if exists "epc insert" on epc_codes;
+create policy "epc insert" on epc_codes for insert
+  with check (tenant_id = current_tenant_id() and (
+    branch_id is null
+    or (select is_tenant_admin())
+    or (select not exists (select 1 from user_branches where user_id = auth.uid()))
+    or branch_id in (select branch_id from user_branches where user_id = auth.uid())
+  ));
+drop policy if exists "epc update" on epc_codes;
+create policy "epc update" on epc_codes for update
+  using (tenant_id = current_tenant_id() and (
+    branch_id is null
+    or (select is_tenant_admin())
+    or (select not exists (select 1 from user_branches where user_id = auth.uid()))
+    or branch_id in (select branch_id from user_branches where user_id = auth.uid())
+  ))
+  with check (tenant_id = current_tenant_id() and (
+    branch_id is null
+    or (select is_tenant_admin())
+    or (select not exists (select 1 from user_branches where user_id = auth.uid()))
+    or branch_id in (select branch_id from user_branches where user_id = auth.uid())
+  ));
+-- "epc delete" хэвээр (админ-only).
+
+-- Гүйлгээ: эх ЭСВЭЛ очих салбарт эрхтэй бол харна (ирж буй шилжүүлгээ
+-- хүлээн авагч харна). to_branch NULL (борлуулалт г.м.) нээлт өгөхгүй.
+drop policy if exists "tx read" on transactions;
+create policy "tx read" on transactions for select
+  using (tenant_id = current_tenant_id() and (
+    from_branch is null
+    or (select is_tenant_admin())
+    or (select not exists (select 1 from user_branches where user_id = auth.uid()))
+    or from_branch in (select branch_id from user_branches where user_id = auth.uid())
+    or (to_branch is not null
+        and to_branch in (select branch_id from user_branches where user_id = auth.uid()))
+  ));
+
+drop policy if exists "epc events read" on epc_events;
+create policy "epc events read" on epc_events for select
+  using (tenant_id = current_tenant_id() and (
+    coalesce(new_branch, old_branch) is null
+    or (select is_tenant_admin())
+    or (select not exists (select 1 from user_branches where user_id = auth.uid()))
+    or coalesce(new_branch, old_branch) in (select branch_id from user_branches where user_id = auth.uid())
+  ));

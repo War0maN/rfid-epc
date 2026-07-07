@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./hooks/useSession";
-import { acceptInvite, fetchMyProfile, type MyProfile } from "./lib/tenantAuth";
+import { acceptInvite, fetchMyProfile, fetchMyBranchIds, type MyProfile } from "./lib/tenantAuth";
 import Login from "./components/Login";
 import Onboarding from "./components/Onboarding";
 import CreateJobForm from "./components/CreateJobForm";
@@ -66,6 +66,24 @@ function App() {
   // Нэвтэрсэн хэрэглэгчийн профайл (тенанттай эсэхийг шалгах).
   const [profile, setProfile] = useState<MyProfile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
+  // Хуваарилагдсан салбарууд: null = хязгааргүй (админ эсвэл хуваарилалтгүй).
+  const [allowedBranches, setAllowedBranches] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (!profile) return;
+    let active = true;
+    void (async () => {
+      try {
+        const ids = profile.role === "admin" ? [] : await fetchMyBranchIds();
+        if (active) setAllowedBranches(ids.length > 0 ? ids : null);
+      } catch {
+        if (active) setAllowedBranches(null);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [profile]);
 
   // Онбординг дууссаны дараа дахин татах (event — синхрон setState зүгээр).
   const loadProfile = useCallback(() => {
@@ -142,6 +160,7 @@ function App() {
       <main className="mx-auto max-w-6xl px-4 py-6">
         {tab === "create" && (
           <CreateJobForm
+            allowedBranches={allowedBranches}
             onCreated={() => {
               setRefreshKey((k) => k + 1);
               setTab("table");
@@ -174,6 +193,7 @@ function App() {
             {productsView === "list" ? (
               <ProductList
                 isAdmin={profile.role === "admin"}
+                allowedBranches={allowedBranches}
                 onEpcsGenerated={() => setRefreshKey((k) => k + 1)}
               />
             ) : (
@@ -181,8 +201,8 @@ function App() {
             )}
           </div>
         )}
-        {tab === "inventory" && <Inventory refreshKey={refreshKey} />}
-        {tab === "transactions" && <Transactions refreshKey={refreshKey} />}
+        {tab === "inventory" && <Inventory refreshKey={refreshKey} allowedBranches={allowedBranches} />}
+        {tab === "transactions" && <Transactions refreshKey={refreshKey} allowedBranches={allowedBranches} />}
         {tab === "reports" && (
           <Suspense
             fallback={<div className="py-10 text-center text-slate-400">Тайлан ачаалж байна…</div>}

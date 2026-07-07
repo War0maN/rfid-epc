@@ -16,6 +16,8 @@ import { errorMessage } from "../lib/errorMessage";
 
 interface Props {
   refreshKey?: number;
+  /** Хуваарилагдсан салбарууд (null = хязгааргүй). Салбарын багануудыг шүүнэ. */
+  allowedBranches?: string[] | null;
 }
 
 // Матрицын багана: info (барааны мэдээлэл), branch (салбар), total (Нийт/Нийт үнэ).
@@ -40,7 +42,7 @@ function loadHidden(): Set<string> {
 }
 
 /** Үлдэгдэл (Phase 4) — Идэвхтэй EPC-ийн тоо, бараа × салбар матрицаар. Зөвхөн унших. */
-export default function Inventory({ refreshKey = 0 }: Props) {
+export default function Inventory({ refreshKey = 0, allowedBranches = null }: Props) {
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [attrDefs, setAttrDefs] = useState<AttributeDef[]>([]);
@@ -119,11 +121,14 @@ export default function Inventory({ refreshKey = 0 }: Props) {
   );
 
   // Салбарын баганууд (жагсаалт дараалалаар + Салбаргүй).
+  // Хуваарилагдсан салбарууд байвал зөвхөн тэдгээрийг багана болгоно
+  // (RLS аль хэдийн бусдыг 0 болгодог ч хоосон багана илүүдэхгүй).
   const branchDefs = useMemo(() => {
-    const list = branches.map((b) => ({ key: b.id, label: b.name }));
+    const mine = allowedBranches ? branches.filter((b) => allowedBranches.includes(b.id)) : branches;
+    const list = mine.map((b) => ({ key: b.id, label: b.name }));
     if (hasNoBranch) list.push({ key: NO_BRANCH_KEY, label: "(Салбаргүй)" });
     return list;
-  }, [branches, hasNoBranch]);
+  }, [branches, hasNoBranch, allowedBranches]);
 
   // Зөвхөн ХАРАГДАЖ буй салбарын түлхүүрүүд (Нийт/үнэ эдгээрээр л тооцно).
   const visibleBranchKeys = useMemo(
