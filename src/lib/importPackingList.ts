@@ -19,6 +19,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateEpcsForJob, type JobLine } from "./generateEpcs";
 import { normalizeGtin } from "./epc";
 import { ensureCategoriesByPaths, ensureAttributeDefs } from "./catalog";
+import i18n from "../i18n";
 
 /**
  * Баркодгүй барааны давтагдалгүй түлхүүр. SKU байвал түүгээр; эс бөгөөс
@@ -112,14 +113,14 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
   } else if (Array.isArray(raw) && raw[0] && typeof raw[0] === "object" && "data" in raw[0]) {
     rows = (raw[0] as { data: unknown[][] }).data;
   } else {
-    throw new Error("Excel-ийг уншиж чадсангүй (хүснэгтийн формат таниагдсангүй).");
+    throw new Error(i18n.t("importer.readFailed"));
   }
-  if (rows.length < 2) throw new Error("Файлд толгой + дор хаяж нэг мөр байх ёстой.");
+  if (rows.length < 2) throw new Error(i18n.t("importer.needHeaderAndRow"));
 
   const col = parseHeader(rows[0]);
-  if (col.piece < 0) throw new Error("'piece' (тоо ширхэг) багана олдсонгүй.");
+  if (col.piece < 0) throw new Error(i18n.t("importer.pieceColumnMissing"));
   if (col.barcode < 0 && col.sku < 0 && col.name < 0) {
-    throw new Error("Барааг таних багана (barcode, sku эсвэл name) олдсонгүй.");
+    throw new Error(i18n.t("importer.identifyColumnMissing"));
   }
 
   const out: CleanRow[] = [];
@@ -147,7 +148,12 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
       try {
         gtin = normalizeGtin(rawBarcode);
       } catch (e) {
-        skipped.push(`Мөр ${i + 1}: ${e instanceof Error ? e.message : String(e)}`);
+        skipped.push(
+          i18n.t("importer.rowError", {
+            row: i + 1,
+            message: e instanceof Error ? e.message : String(e),
+          })
+        );
         continue;
       }
     } else {
@@ -157,7 +163,7 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
 
     const piece = parseInt(cell(row, col.piece).replace(/\D/g, ""), 10);
     if (!Number.isFinite(piece) || piece < 1) {
-      skipped.push(`Мөр ${i + 1}: piece буруу (${cell(row, col.piece)})`);
+      skipped.push(i18n.t("importer.rowPieceInvalid", { row: i + 1, value: cell(row, col.piece) }));
       continue;
     }
 
@@ -179,7 +185,7 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
   }
   if (out.length === 0) {
     throw new Error(
-      "Импортлох хүчинтэй мөр олдсонгүй." + (skipped.length ? ` (${skipped[0]})` : "")
+      i18n.t("importer.noValidRows") + (skipped.length ? ` (${skipped[0]})` : "")
     );
   }
   return { rows: out, skipped };
@@ -272,7 +278,9 @@ export async function importPackingListXlsx(
   const lineMap = new Map<string, JobLine>();
   for (const r of rows) {
     const productId = r.gtin ? idByGtin.get(r.gtin) : r.extKey ? idByExtKey.get(r.extKey) : undefined;
-    if (!productId) throw new Error(`бараа олдсонгүй (${r.gtin ?? r.extKey ?? "?"})`);
+    if (!productId) {
+      throw new Error(i18n.t("importer.productMissing", { key: r.gtin ?? r.extKey ?? "?" }));
+    }
     const brId = resolveBranch(r);
     const key = `${productId}|${r.boxNo ?? ""}|${brId ?? ""}`;
     const existing = lineMap.get(key);

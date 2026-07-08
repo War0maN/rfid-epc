@@ -1,0 +1,30 @@
+export default {
+  title: "Members",
+  inviteTitle: "Invite member",
+  email: "Email",
+  emailPlaceholder: "user@company.com",
+  role: "Role",
+  roleAdmin: "Admin",
+  roleOperator: "Operator",
+  invite: "Invite",
+  inviting: "Inviting…",
+  inviteHint:
+    "When the invited person uses this email to <strong>Sign up</strong>, they automatically join your organization. After joining, assign branches below.",
+  membersHeader: "Members ({{n}})",
+  allBranches: "All branches",
+  fullPerms: "Full permissions",
+  permCount: "{{n}} permissions",
+  permsBtn: "Permissions",
+  fullPermsAdmin: "Full permissions (admin)",
+  pendingInvites: "Pending invites ({{n}})",
+  permModalTitle: "Configure permissions",
+  permModalHint:
+    "{{email}} — only the selected menus/actions are allowed (in both UI and DB).<strong> Checking everything grants full permissions</strong> (default).",
+  permCountOf: "{{picked}}/{{total}} permissions",
+  branchModalTitle: "Assign branches",
+  branchModalHint:
+    "{{email}} — can only view data and make transactions for the selected branches. If none are selected, <strong>all branches</strong> are open.",
+  branchCount: "{{n}} branches",
+  dismiss: "Cancel",
+  saving: "Saving…",
+};

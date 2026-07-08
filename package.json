@@ -12,9 +12,11 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
     "bwip-js": "^4.11.1",
+    "i18next": "^26.3.4",
     "konva": "^10.3.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-i18next": "^17.0.8",
     "react-konva": "^19.2.5",
     "read-excel-file": "^9.1.1",
     "recharts": "^3.9.2"

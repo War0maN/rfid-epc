@@ -1,0 +1,17 @@
+export default {
+  login: "登录",
+  signup: "注册",
+  signupHint: "注册后即可创建您的组织。如果您收到了邀请，将自动加入该组织。",
+  signupEmailConfirm: "注册成功。请先验证邮箱后登录——登录后可创建组织或通过邀请加入。",
+  email: "邮箱",
+  password: "密码",
+  loggingIn: "登录中…",
+  creating: "创建中…",
+  signupAndCreateOrg: "注册并创建组织",
+  createOrgTitle: "创建组织",
+  createOrgSubtitle: "首次使用，请填写您的组织信息。",
+  orgName: "组织名称",
+  orgNamePlaceholder: "我的商店",
+  create: "创建",
+  signOut: "退出",
+};

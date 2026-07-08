@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   listTemplates,
   createTemplate,
@@ -14,6 +15,7 @@ const inp =
 
 /** Шошгоны загвар — жагсаалт, шинээр үүсгэх, дизайнераар засах. */
 export default function Labels() {
+  const { t } = useTranslation();
   const [templates, setTemplates] = useState<LabelTemplate[]>([]);
   const [editing, setEditing] = useState<LabelTemplate | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -35,7 +37,7 @@ export default function Labels() {
   useEffect(() => {
     let active = true;
     listTemplates()
-      .then((t) => active && setTemplates(t))
+      .then((ts) => active && setTemplates(ts))
       .catch((e) => active && setError(errorMessage(e)));
     return () => {
       active = false;
@@ -45,10 +47,10 @@ export default function Labels() {
   async function handleCreate() {
     setError(null);
     try {
-      const t = await createTemplate(name.trim() || "Шошго", w, h, dpi);
+      const created = await createTemplate(name.trim() || t("labels.defaultName"), w, h, dpi);
       setName("");
       reload();
-      setEditing(t);
+      setEditing(created);
       setDirty(false);
     } catch (e) {
       setError(errorMessage(e));
@@ -90,7 +92,7 @@ export default function Labels() {
             onClick={() => setEditing(null)}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
           >
-            ← Жагсаалт
+            {t("labels.backToList")}
           </button>
           <input
             value={editing.name}
@@ -101,11 +103,11 @@ export default function Labels() {
             className={inp + " max-w-xs"}
           />
           <span className="text-sm text-slate-500">
-            {editing.width_mm}×{editing.height_mm}мм · {editing.dpi} DPI
+            {t("labels.sizeShort", { w: editing.width_mm, h: editing.height_mm, dpi: editing.dpi })}
           </span>
           <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-1">
-            <span className="text-xs text-slate-500" title="Цаасны байрлал тааруулга (хэвлэлтэд хэрэглэнэ)">
-              Offset мм
+            <span className="text-xs text-slate-500" title={t("labels.offsetTitle")}>
+              {t("labels.offsetMm")}
             </span>
             <span className="text-xs text-slate-400">X</span>
             <input
@@ -131,13 +133,13 @@ export default function Labels() {
             />
           </div>
           <div className="flex-1" />
-          {dirty && <span className="text-xs text-amber-600">Хадгалаагүй өөрчлөлт</span>}
+          {dirty && <span className="text-xs text-amber-600">{t("labels.unsavedChanges")}</span>}
           <button
             onClick={handleSave}
             disabled={saving || !dirty}
             className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            {saving ? "Хадгалж байна…" : "Хадгалах"}
+            {saving ? t("labels.saving") : t("common.save")}
           </button>
         </div>
 
@@ -145,8 +147,8 @@ export default function Labels() {
 
         <LabelDesigner
           template={editing}
-          onChange={(t) => {
-            setEditing(t);
+          onChange={(tpl) => {
+            setEditing(tpl);
             setDirty(true);
           }}
         />
@@ -161,18 +163,23 @@ export default function Labels() {
 
       {/* Шинээр үүсгэх */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="mb-3 text-sm font-semibold text-slate-700">Шинэ шошгоны загвар</h3>
+        <h3 className="mb-3 text-sm font-semibold text-slate-700">{t("labels.newTemplateTitle")}</h3>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[160px]">
-            <label className="block text-xs font-medium text-slate-600">Нэр</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Хувцасны шошго" className={inp} />
+            <label className="block text-xs font-medium text-slate-600">{t("common.name")}</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("labels.namePlaceholder")}
+              className={inp}
+            />
           </div>
           <div className="w-20">
-            <label className="block text-xs font-medium text-slate-600">Өргөн мм</label>
+            <label className="block text-xs font-medium text-slate-600">{t("labels.widthMm")}</label>
             <input type="number" value={w} onChange={(e) => setW(Number(e.target.value))} className={inp} />
           </div>
           <div className="w-20">
-            <label className="block text-xs font-medium text-slate-600">Өндөр мм</label>
+            <label className="block text-xs font-medium text-slate-600">{t("labels.heightMm")}</label>
             <input type="number" value={h} onChange={(e) => setH(Number(e.target.value))} className={inp} />
           </div>
           <div className="w-24">
@@ -186,7 +193,7 @@ export default function Labels() {
             onClick={handleCreate}
             className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
           >
-            Үүсгэх
+            {t("labels.create")}
           </button>
         </div>
       </div>
@@ -194,26 +201,31 @@ export default function Labels() {
       {/* Жагсаалт */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Загварууд ({templates.length})
+          {t("labels.templatesCount", { n: templates.length })}
         </div>
         {templates.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-400">Загвар алга. Дээрээс үүсгэнэ үү.</p>
+          <p className="px-4 py-8 text-center text-sm text-slate-400">{t("labels.emptyList")}</p>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {templates.map((t) => (
-              <li key={t.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                <button onClick={() => { setEditing(t); setDirty(false); }} className="text-left hover:text-indigo-700">
-                  <span className="font-medium text-slate-800">{t.name}</span>
+            {templates.map((tpl) => (
+              <li key={tpl.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                <button onClick={() => { setEditing(tpl); setDirty(false); }} className="text-left hover:text-indigo-700">
+                  <span className="font-medium text-slate-800">{tpl.name}</span>
                   <span className="ml-2 text-xs text-slate-500">
-                    {t.width_mm}×{t.height_mm}мм · {t.dpi} DPI · {t.objects.length} объект
+                    {t("labels.sizeSummary", {
+                      w: tpl.width_mm,
+                      h: tpl.height_mm,
+                      dpi: tpl.dpi,
+                      n: tpl.objects.length,
+                    })}
                   </span>
                 </button>
                 <span className="flex items-center gap-3">
-                  <button onClick={() => { setEditing(t); setDirty(false); }} className="text-xs text-indigo-600 hover:underline">
-                    Засах
+                  <button onClick={() => { setEditing(tpl); setDirty(false); }} className="text-xs text-indigo-600 hover:underline">
+                    {t("common.edit")}
                   </button>
-                  <button onClick={() => handleDelete(t.id)} className="text-xs text-red-600 hover:underline">
-                    Устгах
+                  <button onClick={() => handleDelete(tpl.id)} className="text-xs text-red-600 hover:underline">
+                    {t("common.delete")}
                   </button>
                 </span>
               </li>

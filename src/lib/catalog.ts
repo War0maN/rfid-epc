@@ -5,6 +5,7 @@
 //   RLS-ийн ачаар бүгд зөвхөн өөрийн тенантад хязгаарлагдана.
 // ============================================================
 import { supabase } from "./supabaseClient";
+import i18n from "../i18n";
 
 export interface Category {
   id: string;
@@ -31,8 +32,14 @@ export interface CategoryNode extends Category {
 }
 
 /** Ангиллын 3 түвшний нэр (дээдээс доош). Заавал бүгдийг бөглөх албагүй. */
-export const CATEGORY_LEVELS = ["Үндсэн ангилал", "Дэд ангилал", "Барааны ангилал"];
-export const MAX_CATEGORY_DEPTH = CATEGORY_LEVELS.length;
+// Индекс бүр getter — уншилт бүрд идэвхтэй хэлээр орчуулагдана (API хэвээр:
+// CATEGORY_LEVELS[0], .join(...), .length бүгд ажиллана).
+const CATEGORY_LEVEL_KEYS = ["catalog.levelMain", "catalog.levelSub", "catalog.levelItem"] as const;
+export const CATEGORY_LEVELS: string[] = CATEGORY_LEVEL_KEYS.reduce((arr, key, i) => {
+  Object.defineProperty(arr, i, { get: () => i18n.t(key), enumerable: true });
+  return arr;
+}, new Array<string>(CATEGORY_LEVEL_KEYS.length));
+export const MAX_CATEGORY_DEPTH = CATEGORY_LEVEL_KEYS.length;
 
 /** Ангиллын зангилааны гүн (1 = дээд түвшин). */
 export function nodeDepth(id: string, cats: Category[]): number {
@@ -101,10 +108,7 @@ export async function deleteCategory(id: string): Promise<void> {
   if (error) {
     // 23503 = foreign_key_violation — энэ ангилал (эсвэл доорх дэд ангилал)-д бараа бий.
     if ((error as { code?: string }).code === "23503") {
-      throw new Error(
-        "Энэ ангилалд (эсвэл доорх дэд ангилалд) бараа бүртгэлтэй тул устгах боломжгүй. " +
-          "Эхлээд барааг өөр ангилалд зөөх эсвэл устгана уу."
-      );
+      throw new Error(i18n.t("catalog.deleteCategoryBlocked"));
     }
     throw error;
   }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabaseClient";
 import { listProducts, deleteProduct, type ProductRow } from "../lib/products";
 import { generateEpcsForProduct } from "../lib/createProduct";
@@ -27,15 +28,16 @@ interface ColDef {
   money?: boolean; // харуулахдаа мянгатын таслалтай
 }
 
+// label = орчуулгын ТҮЛХҮҮР — render үед (columns useMemo дотор) t()-ээр тайлагдана.
 const STATIC_COLUMNS: ColDef[] = [
-  { key: "name", label: "Бараа", get: (p) => p.name ?? "" },
-  { key: "cat1", label: "Үндсэн ангилал", get: (p) => p.category_l1 ?? "" },
-  { key: "cat2", label: "Дэд ангилал", get: (p) => p.category_l2 ?? "" },
-  { key: "cat3", label: "Барааны ангилал", get: (p) => p.category_l3 ?? "" },
-  { key: "sku", label: "SKU", get: (p) => p.sku ?? "", mono: true },
-  { key: "gtin", label: "GTIN/баркод", get: (p) => p.gtin ?? "", mono: true },
-  { key: "price", label: "Үнэ", get: (p) => (p.price != null ? String(p.price) : ""), num: true, money: true },
-  { key: "stock", label: "Үлдэгдэл", get: (p) => String(p.active_count), num: true },
+  { key: "name", label: "common.product", get: (p) => p.name ?? "" },
+  { key: "cat1", label: "products.colCat1", get: (p) => p.category_l1 ?? "" },
+  { key: "cat2", label: "products.colCat2", get: (p) => p.category_l2 ?? "" },
+  { key: "cat3", label: "products.colCat3", get: (p) => p.category_l3 ?? "" },
+  { key: "sku", label: "common.sku", get: (p) => p.sku ?? "", mono: true },
+  { key: "gtin", label: "products.colGtin", get: (p) => p.gtin ?? "", mono: true },
+  { key: "price", label: "common.price", get: (p) => (p.price != null ? String(p.price) : ""), num: true, money: true },
+  { key: "stock", label: "products.colStock", get: (p) => String(p.active_count), num: true },
 ];
 
 const PAGE_SIZE = 100;
@@ -50,6 +52,7 @@ function loadHidden(): Set<string> {
 
 /** Бүтээгдэхүүн (master) таб — бүрэн боломжит хүснэгт (шүүлт/sort/хуудас/багана). */
 export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches = null, perms = null }: Props) {
+  const { t } = useTranslation();
   const can = makeCan(perms);
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [attrDefs, setAttrDefs] = useState<AttributeDef[]>([]);
@@ -107,8 +110,9 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
       label: d.label,
       get: (p: ProductRow) => p.attributes?.[d.label] ?? "",
     }));
-    return [...STATIC_COLUMNS, ...attrCols];
-  }, [attrDefs]);
+    // Статик баганын label = орчуулгын түлхүүр; шинж чанарын label = түүхий нэр.
+    return [...STATIC_COLUMNS.map((c) => ({ ...c, label: t(c.label) })), ...attrCols];
+  }, [attrDefs, t]);
   const visibleColumns = useMemo(() => columns.filter((c) => !hidden.has(c.key)), [columns, hidden]);
 
   function toggleColumn(key: string) {
@@ -161,13 +165,10 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
   function handleDelete(p: ProductRow) {
     // EPC бол түүхэн дата — бүртгэлтэй бол устгахыг урьдчилан хориглоно.
     if (p.epc_count > 0) {
-      setError(
-        `"${p.name}" бараанд ${p.epc_count} ширхэг EPC бүртгэлтэй тул устгах боломжгүй. ` +
-          "Эхлээд холбогдох Ажлыг устгаж EPC-г цэвэрлэнэ үү."
-      );
+      setError(t("products.deleteBlocked", { name: p.name, epcCount: p.epc_count }));
       return;
     }
-    if (!window.confirm(`"${p.name}" барааг устгах уу?`)) return;
+    if (!window.confirm(t("products.confirmDelete", { name: p.name }))) return;
     deleteProduct(p.id)
       .then(reload)
       .catch((e) => setError(errorMessage(e)));
@@ -177,14 +178,14 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
     if (!genFor) return;
     const qty = Math.max(1, parseInt(genQty || "0", 10) || 0);
     if (qty < 1) {
-      setError("Тоо ширхэг оруулна уу.");
+      setError(t("products.qtyRequired"));
       return;
     }
     setGenBusy(true);
     setError(null);
     try {
       const count = await generateEpcsForProduct(supabase, genFor.id, qty, genBranch || null);
-      setInfo(`"${genFor.name}" бараанд ${count} EPC үүслээ.`);
+      setInfo(t("products.generatedInfo", { name: genFor.name, epcCount: count }));
       setGenFor(null);
       setGenQty("1");
       reload();
@@ -200,25 +201,23 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Бүтээгдэхүүн</h2>
-          <p className="text-sm text-slate-500">
-            Бараагаа энд бүртгэнэ. EPC-г дараа нь "EPC үүсгэх"-ээр тоо ширхгээр нь үүсгэнэ.
-          </p>
+          <h2 className="text-lg font-semibold text-slate-900">{t("common.products")}</h2>
+          <p className="text-sm text-slate-500">{t("products.subtitle")}</p>
         </div>
         <div className="flex-1" />
         <span className="text-sm text-slate-600">
-          {activeFilters.length > 0 ? "Шүүсэн" : "Нийт"} <strong>{sorted.length.toLocaleString()}</strong>
+          {activeFilters.length > 0 ? t("products.filtered") : t("common.total")} <strong>{sorted.length.toLocaleString()}</strong>
         </span>
         {/* Багана сонгогч */}
         <div className="relative">
           <button onClick={() => setShowColPicker((s) => !s)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-            ⚙ Багана
+            ⚙ {t("products.columnsBtn")}
           </button>
           {showColPicker && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowColPicker(false)} />
               <div className="absolute right-0 z-20 mt-1 max-h-80 w-60 overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                <div className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Харагдах багана</div>
+                <div className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{t("products.visibleColumns")}</div>
                 {columns.map((c) => (
                   <label key={c.key} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm text-slate-700 hover:bg-slate-50">
                     <input type="checkbox" checked={!hidden.has(c.key)} onChange={() => toggleColumn(c.key)} />
@@ -231,7 +230,7 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
         </div>
         {can("act_product_edit") && (
           <button onClick={() => setForm("new")} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
-            + Бараа нэмэх
+            {t("products.addProduct")}
           </button>
         )}
       </div>
@@ -252,21 +251,21 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
                   <input
                     value={filters[c.key] ?? ""}
                     onChange={(e) => setFilter(c.key, e.target.value)}
-                    placeholder="Шүүх…"
+                    placeholder={t("products.filterPlaceholder")}
                     className="w-full min-w-[90px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
                   />
                 </th>
               ))}
               <th className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Үйлдэл
+                {t("common.actions")}
               </th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={visibleColumns.length + 1} className="px-4 py-10 text-center text-slate-400">Ачаалж байна…</td></tr>
+              <tr><td colSpan={visibleColumns.length + 1} className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={visibleColumns.length + 1} className="px-4 py-10 text-center text-slate-400">{rows.length === 0 ? 'Бараа алга. "+ Бараа нэмэх" дарж эхэл.' : "Тохирох бараа алга."}</td></tr>
+              <tr><td colSpan={visibleColumns.length + 1} className="px-4 py-10 text-center text-slate-400">{rows.length === 0 ? t("products.emptyNoProducts") : t("products.emptyNoMatch")}</td></tr>
             ) : (
               visible.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50">
@@ -281,12 +280,12 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
                   <td className="whitespace-nowrap border-b border-slate-100 bg-white px-3 py-2 text-right">
                     <div className="flex justify-end gap-2">
                       {can("act_import") && (
-                        <button onClick={() => { setGenFor(p); setGenQty("1"); }} className="text-xs font-medium text-indigo-600 hover:underline">EPC үүсгэх</button>
+                        <button onClick={() => { setGenFor(p); setGenQty("1"); }} className="text-xs font-medium text-indigo-600 hover:underline">{t("products.generateEpc")}</button>
                       )}
                       {isAdmin && (
                         <>
-                          <button onClick={() => setForm(p)} className="text-xs text-slate-500 hover:underline">Засах</button>
-                          <button onClick={() => handleDelete(p)} className="text-xs text-red-600 hover:underline">Устгах</button>
+                          <button onClick={() => setForm(p)} className="text-xs text-slate-500 hover:underline">{t("common.edit")}</button>
+                          <button onClick={() => handleDelete(p)} className="text-xs text-red-600 hover:underline">{t("common.delete")}</button>
                         </>
                       )}
                     </div>
@@ -301,9 +300,9 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
       {pageCount > 1 && (
         <div className="flex items-center justify-center gap-2 text-sm">
           <button onClick={() => setPage(0)} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">«</button>
-          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">Өмнөх</button>
-          <span className="px-2 text-slate-600">Хуудас <strong>{safePage + 1}</strong> / {pageCount}</span>
-          <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">Дараах</button>
+          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">{t("common.prev")}</button>
+          <span className="px-2 text-slate-600">{t("products.page")} <strong>{safePage + 1}</strong> / {pageCount}</span>
+          <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">{t("common.next")}</button>
           <button onClick={() => setPage(pageCount - 1)} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">»</button>
         </div>
       )}
@@ -313,7 +312,7 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/40 p-4">
           <div className="my-8 w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">{form === "new" ? "Бараа нэмэх" : "Бараа засах"}</h3>
+              <h3 className="text-lg font-semibold text-slate-900">{form === "new" ? t("products.addProductTitle") : t("products.editProductTitle")}</h3>
               <button onClick={() => setForm(null)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
             <ProductForm initial={form === "new" ? null : form} onSaved={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />
@@ -325,17 +324,17 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
       {genFor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
-            <h3 className="mb-1 text-lg font-semibold text-slate-900">EPC үүсгэх</h3>
-            <p className="mb-4 text-sm text-slate-500"><strong>{genFor.name}</strong> — хэдэн ширхэг EPC үүсгэх вэ? (одоо {genFor.epc_count}ш)</p>
+            <h3 className="mb-1 text-lg font-semibold text-slate-900">{t("products.generateEpc")}</h3>
+            <p className="mb-4 text-sm text-slate-500"><strong>{genFor.name}</strong> — {t("products.genQuestion")} ({t("products.genCurrent", { epcCount: genFor.epc_count })})</p>
             {branches.length > 0 && (
               <div className="mb-3">
-                <label className="mb-1 block text-xs font-medium text-slate-600">Салбар</label>
+                <label className="mb-1 block text-xs font-medium text-slate-600">{t("common.branch")}</label>
                 <select value={genBranch} onChange={(e) => setGenBranch(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
                   {branches.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
                 </select>
               </div>
             )}
-            <label className="mb-1 block text-xs font-medium text-slate-600">Тоо ширхэг</label>
+            <label className="mb-1 block text-xs font-medium text-slate-600">{t("products.quantity")}</label>
             <input
               type="number"
               min={1}
@@ -346,9 +345,9 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
               className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
             <div className="flex justify-end gap-2">
-              <button onClick={() => setGenFor(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Болих</button>
+              <button onClick={() => setGenFor(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t("products.dismiss")}</button>
               <button onClick={handleGenerate} disabled={genBusy} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-                {genBusy ? "Үүсгэж байна…" : "Үүсгэх"}
+                {genBusy ? t("products.generating") : t("products.generate")}
               </button>
             </div>
           </div>

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { LANGS, setLang, type Lang } from "./i18n";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./hooks/useSession";
 import { acceptInvite, fetchMyProfile, fetchMyBranchIds, fetchMyPerms, type MyProfile } from "./lib/tenantAuth";
@@ -23,17 +25,18 @@ const Reports = lazy(() => import("./components/Reports"));
 
 type Tab = "create" | "products" | "inventory" | "transactions" | "reports" | "table" | "labels" | "branches" | "audit" | "members";
 
+// label = орчуулгын түлхүүр (render дээр t()-ээр уншина).
 const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
-  { id: "create", label: "Шинэ ажил" },
-  { id: "products", label: "Бүтээгдэхүүн" },
-  { id: "inventory", label: "Үлдэгдэл" },
-  { id: "transactions", label: "Гүйлгээ" },
-  { id: "reports", label: "Тайлан" },
-  { id: "table", label: "Бараа (EPC)" },
-  { id: "labels", label: "Шошго" },
-  { id: "branches", label: "Салбар" },
-  { id: "audit", label: "Аудит" },
-  { id: "members", label: "Хэрэглэгчид", adminOnly: true },
+  { id: "create", label: "app.tabCreate" },
+  { id: "products", label: "app.tabProducts" },
+  { id: "inventory", label: "app.tabInventory" },
+  { id: "transactions", label: "app.tabTransactions" },
+  { id: "reports", label: "app.tabReports" },
+  { id: "table", label: "app.tabEpc" },
+  { id: "labels", label: "app.tabLabels" },
+  { id: "branches", label: "app.tabBranches" },
+  { id: "audit", label: "app.tabAudit" },
+  { id: "members", label: "app.tabMembers", adminOnly: true },
 ];
 
 /**
@@ -54,6 +57,7 @@ async function loadProfileOrAcceptInvite(): Promise<MyProfile | null> {
 }
 
 function App() {
+  const { t, i18n } = useTranslation();
   const { session, loading } = useSession();
   const [tab, setTab] = useState<Tab>("create");
   // Бүтээгдэхүүн табын дэд таб: жагсаалт | ангилал (каталог).
@@ -128,7 +132,7 @@ function App() {
   if (loading || (session && !profileChecked)) {
     return (
       <div className="flex min-h-screen items-center justify-center text-slate-400">
-        Ачаалж байна…
+        {t("app.loading")}
       </div>
     );
   }
@@ -154,29 +158,41 @@ function App() {
             <span className="text-lg font-semibold text-slate-900">RFID EPC Generator</span>
           </div>
           <div className="flex items-center gap-3">
+            <select
+              value={i18n.language}
+              onChange={(e) => setLang(e.target.value as Lang)}
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700"
+              aria-label="Language"
+            >
+              {LANGS.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
             <span className="hidden text-sm text-slate-500 sm:inline">{session.user.email}</span>
             <button
               onClick={() => supabase.auth.signOut()}
               className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
             >
-              Гарах
+              {t("app.signOut")}
             </button>
           </div>
         </div>
 
         <nav className="mx-auto flex max-w-6xl gap-1 px-4">
-          {visibleTabs.map((t) => (
+          {visibleTabs.map((tb) => (
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
+              key={tb.id}
+              onClick={() => setTab(tb.id)}
               className={
                 "border-b-2 px-4 py-2 text-sm font-medium transition " +
-                (activeTab === t.id
+                (activeTab === tb.id
                   ? "border-indigo-600 text-indigo-700"
                   : "border-transparent text-slate-500 hover:text-slate-700")
               }
             >
-              {t.label}
+              {t(tb.label)}
             </button>
           ))}
         </nav>
@@ -197,21 +213,21 @@ function App() {
             <div className="flex gap-1 border-b border-slate-200">
               {(
                 [
-                  { id: "list", label: "Бүтээгдэхүүн" },
-                  { id: "catalog", label: "Ангилал" },
+                  { id: "list", label: "app.subProducts" },
+                  { id: "catalog", label: "app.subCatalog" },
                 ] as const
-              ).map((t) => (
+              ).map((tb) => (
                 <button
-                  key={t.id}
-                  onClick={() => setProductsView(t.id)}
+                  key={tb.id}
+                  onClick={() => setProductsView(tb.id)}
                   className={
                     "rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
-                    (productsView === t.id
+                    (productsView === tb.id
                       ? "border-indigo-600 text-indigo-700"
                       : "border-transparent text-slate-500 hover:text-slate-700")
                   }
                 >
-                  {t.label}
+                  {t(tb.label)}
                 </button>
               ))}
             </div>
@@ -233,7 +249,7 @@ function App() {
         )}
         {activeTab === "reports" && (
           <Suspense
-            fallback={<div className="py-10 text-center text-slate-400">Тайлан ачаалж байна…</div>}
+            fallback={<div className="py-10 text-center text-slate-400">{t("app.reportsLoading")}</div>}
           >
             <Reports />
           </Suspense>
@@ -243,21 +259,21 @@ function App() {
             <div className="flex gap-1 border-b border-slate-200">
               {(
                 [
-                  { id: "list", label: "Жагсаалт" },
-                  { id: "lookup", label: "Хайлт" },
+                  { id: "list", label: "app.subList" },
+                  { id: "lookup", label: "app.subLookup" },
                 ] as const
-              ).map((t) => (
+              ).map((tb) => (
                 <button
-                  key={t.id}
-                  onClick={() => setEpcView(t.id)}
+                  key={tb.id}
+                  onClick={() => setEpcView(tb.id)}
                   className={
                     "rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
-                    (epcView === t.id
+                    (epcView === tb.id
                       ? "border-indigo-600 text-indigo-700"
                       : "border-transparent text-slate-500 hover:text-slate-700")
                   }
                 >
-                  {t.label}
+                  {t(tb.label)}
                 </button>
               ))}
             </div>
@@ -278,7 +294,7 @@ function App() {
         )}
         {activeTab === "labels" && (
           <Suspense
-            fallback={<div className="py-10 text-center text-slate-400">Дизайнер ачаалж байна…</div>}
+            fallback={<div className="py-10 text-center text-slate-400">{t("app.designerLoading")}</div>}
           >
             <Labels />
           </Suspense>

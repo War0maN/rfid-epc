@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { listBranches, type Branch } from "../lib/branches";
 import { normalizeEpc } from "../lib/epc";
 import {
@@ -53,6 +54,7 @@ const AVAIL_RENDER_CAP = 300; // жагсаалтад нэг дор харуул
  * сагсанд (дээд) нэмэх → нийт дүнтэй баталгаажуулах.
  */
 export default function Transactions({ refreshKey = 0, allowedBranches = null, perms = null }: Props) {
+  const { t } = useTranslation();
   // Эх салбарын сонголт: хуваарилагдсан салбараар шүүнэ (очих салбар бүрэн үлдэнэ).
   const filterMine = (list: Branch[]) =>
     allowedBranches ? list.filter((b) => allowedBranches.includes(b.id)) : list;
@@ -171,7 +173,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
   /** Нэг EPC-г сагсанд нэмнэ (скан/шивэлт/жагсаалтаас). */
   function addItem(item: ActiveEpcItem) {
     if (cart.has(item.id)) {
-      setScanMsg({ kind: "warn", text: `${item.epc_hex} — сагсанд аль хэдийн байна.` });
+      setScanMsg({ kind: "warn", text: t("transactions.scanAlreadyInCart", { hex: item.epc_hex }) });
       return;
     }
     setCart((c) => new Map(c).set(item.id, item));
@@ -180,25 +182,25 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
 
   /** Скан/шивсэн текстийг боловсруулна (Enter эсвэл paste — олон EPC байж болно). */
   function processScan(text: string) {
-    const tokens = text.split(/[\s,;]+/).map((t) => t.trim()).filter(Boolean);
+    const tokens = text.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
     if (tokens.length === 0) return;
     let added = 0;
     let lastWarn: string | null = null;
-    for (const t of tokens) {
+    for (const tok of tokens) {
       let hex: string;
       try {
-        hex = normalizeEpc(t);
+        hex = normalizeEpc(tok);
       } catch {
-        lastWarn = `${t} — EPC формат буруу.`;
+        lastWarn = t("transactions.scanInvalidFormat", { token: tok });
         continue;
       }
       const item = availByHex.get(hex);
       if (!item) {
-        lastWarn = `${hex} — энэ салбарын жагсаалтаас олдсонгүй.`;
+        lastWarn = t("transactions.scanNotFound", { hex });
         continue;
       }
       if (cart.has(item.id)) {
-        lastWarn = `${hex} — сагсанд аль хэдийн байна.`;
+        lastWarn = t("transactions.scanAlreadyInCart", { hex });
         continue;
       }
       setCart((c) => new Map(c).set(item.id, item));
@@ -208,7 +210,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
     else if (added > 0)
       setScanMsg({
         kind: lastWarn ? "warn" : "ok",
-        text: `+ ${added} нэмэгдлээ` + (lastWarn ? ` · ${lastWarn}` : ""),
+        text: t("transactions.scanAdded", { n: added }) + (lastWarn ? ` · ${lastWarn}` : ""),
       });
     setScan("");
   }
@@ -250,8 +252,12 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
         cartItems.map((i) => i.id)
       );
       setInfo(
-        `${TX_TYPE_LABEL[txType]} амжилттай: ${cartItems.length} EPC · ${cartTotal.toLocaleString()}₮` +
-          (txType === "transfer" ? " (хүлээн авахаар хүлээгдэж байна)" : "") +
+        t("transactions.successInfo", {
+          type: TX_TYPE_LABEL[txType],
+          n: cartItems.length,
+          total: cartTotal.toLocaleString(),
+        }) +
+          (txType === "transfer" ? " " + t("transactions.pendingSuffix") : "") +
           "."
       );
       // Сагс цэвэрлээд салбарын жагсаалтыг шинэчилнэ (гүйлгээнд орсон EPC идэвхтэй биш болсон).
@@ -268,12 +274,12 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
   }
 
   async function handleReceive(tx: TxRow) {
-    if (!window.confirm(`${tx.item_count} EPC-г "${tx.to_branch_name ?? "?"}" салбарт хүлээн авах уу?`)) return;
+    if (!window.confirm(t("transactions.receiveConfirm", { n: tx.item_count, branch: tx.to_branch_name ?? "?" }))) return;
     setBusy(true);
     setError(null);
     try {
       await receiveTransfer(tx.id);
-      setInfo("Шилжүүлэг хүлээн авлаа — EPC-үүд очих салбартаа Идэвхтэй боллоо.");
+      setInfo(t("transactions.receiveSuccess"));
       reload();
     } catch (e) {
       setError(errorMessage(e));
@@ -283,12 +289,12 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
   }
 
   async function handleCancel(tx: TxRow) {
-    if (!window.confirm(`Шилжүүлгийг цуцлах уу? ${tx.item_count} EPC эх салбартаа Идэвхтэй буцна.`)) return;
+    if (!window.confirm(t("transactions.cancelConfirm", { n: tx.item_count }))) return;
     setBusy(true);
     setError(null);
     try {
       await cancelTransfer(tx.id);
-      setInfo("Шилжүүлэг цуцлагдлаа — EPC-үүд эх салбартаа буцлаа.");
+      setInfo(t("transactions.cancelSuccess"));
       reload();
     } catch (e) {
       setError(errorMessage(e));
@@ -301,10 +307,10 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
     if (!detail || !detailItems || detailItems.length === 0) return;
     const esc = (s: string) => '"' + s.replace(/"/g, '""') + '"';
     const head = [
-      ["Гүйлгээ", TX_TYPE_LABEL[detail.type]],
-      ["Огноо", new Date(detail.created_at).toLocaleString()],
-      ["Салбар", txBranchText(detail)],
-      ["Тоо", String(detailItems.length)],
+      [t("transactions.title"), TX_TYPE_LABEL[detail.type]],
+      [t("common.date"), new Date(detail.created_at).toLocaleString()],
+      [t("common.branch"), txBranchText(detail)],
+      [t("common.qty"), String(detailItems.length)],
     ]
       .map(([k, v]) => `${esc(k)},${esc(v)}`)
       .join("\r\n");
@@ -317,19 +323,19 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
         price: it.price ?? "",
       })),
       [
-        { key: "name", label: "Бараа" },
+        { key: "name", label: t("common.product") },
         { key: "sku", label: "SKU" },
         { key: "epc", label: "EPC (hex)" },
         { key: "serial", label: "Serial" },
-        { key: "price", label: "Үнэ" },
+        { key: "price", label: t("common.price") },
       ]
     );
     downloadCsv(`tx-${detail.type}-${new Date(detail.created_at).toISOString().slice(0, 10)}.csv`, head + "\r\n\r\n" + table);
   }
 
   function txBranchText(tx: TxRow): string {
-    if (tx.type === "transfer") return `${tx.from_branch_name ?? "(Салбаргүй)"} → ${tx.to_branch_name ?? "?"}`;
-    return tx.from_branch_name ?? "(Салбаргүй)";
+    if (tx.type === "transfer") return `${tx.from_branch_name ?? t("transactions.noBranch")} → ${tx.to_branch_name ?? "?"}`;
+    return tx.from_branch_name ?? t("transactions.noBranch");
   }
 
   const th =
@@ -345,24 +351,24 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Гүйлгээ</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{t("transactions.title")}</h2>
           <p className="text-sm text-slate-500">
-            Борлуулалт, шилжүүлэг, бусад — салбараа сонгоод EPC-г уншуулж/шивж сагсанд нэмнэ. Гүйлгээ устгагдахгүй (түүх).
+            {t("transactions.subtitle")}
           </p>
         </div>
         <div className="flex-1" />
         <button onClick={reload} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-          ↻ Сэргээх
+          ↻ {t("transactions.refresh")}
         </button>
       </div>
 
       {/* Дэд табууд */}
       <div className="flex gap-1 border-b border-slate-200">
         <button onClick={() => setView("new")} className={subTab(view === "new")}>
-          Гүйлгээ
+          {t("transactions.title")}
         </button>
         <button onClick={() => setView("history")} className={subTab(view === "history")}>
-          Гүйлгээний түүх
+          {t("transactions.tabHistory")}
           {pendingCount > 0 && (
             <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700">
               {pendingCount}
@@ -376,7 +382,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
 
       {view === "new" && allowedTypes.length === 0 && (
         <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-10 text-center text-sm text-slate-400">
-          Танд гүйлгээ хийх эрх байхгүй. Түүхийг "Гүйлгээний түүх" таб-аас харна уу.
+          {t("transactions.noPermission")}
         </p>
       )}
       {view === "new" && allowedTypes.length > 0 && (
@@ -384,7 +390,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
           {/* Тохиргооны мөр — бүх удирдлага нэг өндөртэй */}
           <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <label className="w-44 text-sm">
-              <span className={lbl}>Төрөл</span>
+              <span className={lbl}>{t("transactions.typeLabel")}</span>
               <select value={txType} onChange={(e) => selectType(e.target.value as TxType)} className={ctl}>
                 {allowedTypes.map((t) => (
                   <option key={t} value={t}>{TX_TYPE_LABEL[t]}</option>
@@ -392,9 +398,9 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
               </select>
             </label>
             <label className="w-52 text-sm">
-              <span className={lbl}>Салбар (эх)</span>
+              <span className={lbl}>{t("transactions.fromBranch")}</span>
               <select value={fromBranch} onChange={(e) => selectBranch(e.target.value)} className={ctl}>
-                <option value="">— Сонгох —</option>
+                <option value="">{t("transactions.selectOption")}</option>
                 {filterMine(branches).map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
@@ -402,9 +408,9 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
             </label>
             {txType === "transfer" && (
               <label className="w-52 text-sm">
-                <span className={lbl}>Очих салбар</span>
+                <span className={lbl}>{t("transactions.toBranch")}</span>
                 <select value={toBranch} onChange={(e) => setToBranch(e.target.value)} className={ctl}>
-                  <option value="">— Сонгох —</option>
+                  <option value="">{t("transactions.selectOption")}</option>
                   {branches.filter((b) => b.id !== fromBranch).map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
@@ -412,14 +418,14 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
               </label>
             )}
             <label className="min-w-[220px] flex-1 text-sm">
-              <span className={lbl}>Тэмдэглэл</span>
-              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Сонголт…" className={ctl} />
+              <span className={lbl}>{t("common.note")}</span>
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("transactions.notePlaceholder")} className={ctl} />
             </label>
           </div>
 
           {!fromBranch ? (
             <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-10 text-center text-sm text-slate-400">
-              Эхлээд салбараа сонгоно уу — тухайн салбарын идэвхтэй EPC-ийн жагсаалт гарч ирнэ.
+              {t("transactions.selectBranchFirst")}
             </p>
           ) : (
             <>
@@ -442,7 +448,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                       processScan(text);
                     }
                   }}
-                  placeholder="📶 EPC уншуулах / шивэх (Enter) — RFID уншигч шууд энд бичнэ"
+                  placeholder={t("transactions.scanPlaceholder")}
                   className="h-11 w-full rounded-lg border border-slate-300 px-3 font-mono text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
                   autoFocus
                 />
@@ -457,7 +463,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
               <div className="rounded-xl border-2 border-indigo-200 bg-white shadow-sm">
                 <div className="flex items-center gap-2 border-b border-indigo-100 bg-indigo-50/60 px-3 py-2">
                   <span className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
-                    🛒 Сагс ({cartItems.length.toLocaleString()})
+                    🛒 {t("transactions.cart")} ({cartItems.length.toLocaleString()})
                   </span>
                   <span className="ml-auto text-sm font-semibold text-indigo-900">
                     {cartTotal.toLocaleString()}₮
@@ -466,17 +472,17 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                 <div className="max-h-[40vh] overflow-auto">
                   {cartItems.length === 0 ? (
                     <p className="px-3 py-8 text-center text-sm text-slate-400">
-                      Хоосон — EPC уншуулах эсвэл доорх жагсаалтаас дарж нэмнэ.
+                      {t("transactions.cartEmpty")}
                     </p>
                   ) : (
                     <table className="min-w-full text-sm">
                       <thead>
                         <tr>
-                          <th className={th}>Барааны нэр</th>
+                          <th className={th}>{t("transactions.colItemName")}</th>
                           <th className={th}>SKU</th>
-                          <th className={th}>Баркод</th>
-                          <th className={th}>EPC код</th>
-                          <th className={th + " text-right"}>Барааны үнэ</th>
+                          <th className={th}>{t("common.barcode")}</th>
+                          <th className={th}>{t("transactions.colEpcCode")}</th>
+                          <th className={th + " text-right"}>{t("transactions.colItemPrice")}</th>
                           <th className={th} />
                         </tr>
                       </thead>
@@ -493,7 +499,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                                 onClick={() => removeFromCart(i.id)}
                                 className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
                               >
-                                − Хасах
+                                − {t("transactions.remove")}
                               </button>
                             </td>
                           </tr>
@@ -508,7 +514,11 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                     disabled={busy || cartItems.length === 0 || (txType === "transfer" && !toBranch)}
                     className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
                   >
-                    {TX_TYPE_LABEL[txType]} баталгаажуулах ({cartItems.length.toLocaleString()}ш · {cartTotal.toLocaleString()}₮)
+                    {t("transactions.confirmButton", {
+                      type: TX_TYPE_LABEL[txType],
+                      n: cartItems.length.toLocaleString(),
+                      total: cartTotal.toLocaleString(),
+                    })}
                   </button>
                 </div>
               </div>
@@ -517,36 +527,36 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
               <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
                 <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
                   <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {txType === "return" ? "Буцаах боломжтой EPC" : "Идэвхтэй EPC"} (
+                    {txType === "return" ? t("transactions.availReturnable") : t("transactions.availActive")} (
                     {availLoading ? "…" : remaining.length.toLocaleString()})
                   </span>
                   <input
                     value={availFilter}
                     onChange={(e) => setAvailFilter(e.target.value)}
-                    placeholder="Хайх (нэр/SKU/баркод/EPC)…"
+                    placeholder={t("transactions.availSearchPlaceholder")}
                     className="ml-auto h-8 w-64 rounded border border-slate-200 px-2 text-xs outline-none focus:border-indigo-400"
                   />
                 </div>
                 <div className="max-h-[45vh] overflow-auto">
                   {availLoading ? (
-                    <p className="px-3 py-8 text-center text-sm text-slate-400">Ачаалж байна…</p>
+                    <p className="px-3 py-8 text-center text-sm text-slate-400">{t("common.loading")}</p>
                   ) : remaining.length === 0 ? (
                     <p className="px-3 py-8 text-center text-sm text-slate-400">
                       {(avail ?? []).length === 0
                         ? txType === "return"
-                          ? "Энэ салбарт буцаах боломжтой (Борлуулсан/Бусад гүйлгээт) EPC алга."
-                          : "Энэ салбарт идэвхтэй EPC алга."
-                        : "Тохирох EPC алга."}
+                          ? t("transactions.emptyReturnable")
+                          : t("transactions.emptyActive")
+                        : t("transactions.emptyFiltered")}
                     </p>
                   ) : (
                     <table className="min-w-full text-sm">
                       <thead>
                         <tr>
-                          <th className={th}>Барааны нэр</th>
+                          <th className={th}>{t("transactions.colItemName")}</th>
                           <th className={th}>SKU</th>
-                          <th className={th}>Баркод</th>
-                          <th className={th}>EPC код</th>
-                          <th className={th + " text-right"}>Барааны үнэ</th>
+                          <th className={th}>{t("common.barcode")}</th>
+                          <th className={th}>{t("transactions.colEpcCode")}</th>
+                          <th className={th + " text-right"}>{t("transactions.colItemPrice")}</th>
                           <th className={th} />
                         </tr>
                       </thead>
@@ -563,7 +573,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                                 onClick={() => addItem(a)}
                                 className="rounded border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
                               >
-                                + Нэмэх
+                                + {t("common.add")}
                               </button>
                             </td>
                           </tr>
@@ -571,7 +581,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                         {remaining.length > AVAIL_RENDER_CAP && (
                           <tr>
                             <td colSpan={6} className="px-3 py-2 text-center text-xs text-slate-400">
-                              … нийт {remaining.length.toLocaleString()} — хайлтаар нарийсгана уу
+                              {t("transactions.moreRows", { n: remaining.length.toLocaleString() })}
                             </td>
                           </tr>
                         )}
@@ -590,21 +600,21 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
           <table className="min-w-full text-sm">
             <thead>
               <tr>
-                <th className={th}>Огноо</th>
-                <th className={th}>Төрөл</th>
-                <th className={th}>Төлөв</th>
-                <th className={th}>Салбар</th>
-                <th className={th + " text-right"}>Тоо</th>
-                <th className={th}>Хэн</th>
-                <th className={th}>Тэмдэглэл</th>
-                {pendingCount > 0 && <th className={th + " text-right"}>Хүлээн авалт</th>}
+                <th className={th}>{t("common.date")}</th>
+                <th className={th}>{t("transactions.typeLabel")}</th>
+                <th className={th}>{t("common.status")}</th>
+                <th className={th}>{t("common.branch")}</th>
+                <th className={th + " text-right"}>{t("common.qty")}</th>
+                <th className={th}>{t("transactions.colWho")}</th>
+                <th className={th}>{t("common.note")}</th>
+                {pendingCount > 0 && <th className={th + " text-right"}>{t("transactions.colReceipt")}</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">Ачаалж байна…</td></tr>
+                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">Гүйлгээ алга.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">{t("transactions.noTransactions")}</td></tr>
               ) : (
                 rows.map((tx) => (
                   <tr key={tx.id} className="cursor-pointer hover:bg-slate-50" onClick={() => openDetail(tx)}>
@@ -623,8 +633,8 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                       <td className={td + " text-right"} onClick={(e) => e.stopPropagation()}>
                         {tx.type === "transfer" && tx.status === "pending" && can("act_receive") && (
                           <div className="flex justify-end gap-2">
-                            <button onClick={() => handleReceive(tx)} disabled={busy} className="text-xs font-medium text-emerald-600 hover:underline disabled:opacity-50">Хүлээн авах</button>
-                            <button onClick={() => handleCancel(tx)} disabled={busy} className="text-xs text-red-600 hover:underline disabled:opacity-50">Цуцлах</button>
+                            <button onClick={() => handleReceive(tx)} disabled={busy} className="text-xs font-medium text-emerald-600 hover:underline disabled:opacity-50">{t("transactions.receive")}</button>
+                            <button onClick={() => handleCancel(tx)} disabled={busy} className="text-xs text-red-600 hover:underline disabled:opacity-50">{t("common.cancel")}</button>
                           </div>
                         )}
                       </td>
@@ -658,23 +668,23 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                   disabled={!detailItems || detailItems.length === 0}
                   className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
                 >
-                  CSV татах
+                  {t("common.exportCsv")}
                 </button>
                 <button onClick={() => setDetail(null)} className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">✕</button>
               </div>
             </div>
             <div className="max-h-[65vh] overflow-auto">
               {!detailItems ? (
-                <p className="px-4 py-10 text-center text-slate-400">Ачаалж байна…</p>
+                <p className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</p>
               ) : (
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr>
-                      <th className={th}>Барааны нэр</th>
+                      <th className={th}>{t("transactions.colItemName")}</th>
                       <th className={th}>SKU</th>
-                      <th className={th}>EPC код</th>
+                      <th className={th}>{t("transactions.colEpcCode")}</th>
                       <th className={th + " text-right"}>Serial</th>
-                      <th className={th + " text-right"}>Барааны үнэ</th>
+                      <th className={th + " text-right"}>{t("transactions.colItemPrice")}</th>
                     </tr>
                   </thead>
                   <tbody>

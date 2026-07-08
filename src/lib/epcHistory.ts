@@ -5,6 +5,7 @@
 // ============================================================
 import { supabase } from "./supabaseClient";
 import { labelOf } from "./epcStatus";
+import i18n from "../i18n";
 
 export type EpcEventType =
   | "created"
@@ -17,16 +18,26 @@ export type EpcEventType =
   | "other"
   | "returned";
 
+/** label нь getter — уншилт бүрд тухайн үеийн хэлээр i18n.t() дуудагдана (API хэвээр). */
+function meta(key: string, cls: string): { label: string; cls: string } {
+  return {
+    get label() {
+      return i18n.t(key);
+    },
+    cls,
+  };
+}
+
 export const EVENT_META: Record<EpcEventType, { label: string; cls: string }> = {
-  created: { label: "Үүссэн", cls: "bg-slate-100 text-slate-600" },
-  printed: { label: "Хэвлэж идэвхжүүлсэн", cls: "bg-emerald-50 text-emerald-700" },
-  status_change: { label: "Төлөв өөрчилсөн", cls: "bg-indigo-50 text-indigo-700" },
-  transfer_out: { label: "Шилжүүлэгт гарсан", cls: "bg-amber-50 text-amber-700" },
-  transfer_in: { label: "Шилжүүлэг хүлээн авсан", cls: "bg-emerald-50 text-emerald-700" },
-  transfer_cancel: { label: "Шилжүүлэг цуцлагдсан", cls: "bg-slate-100 text-slate-600" },
-  sold: { label: "Борлуулсан", cls: "bg-sky-50 text-sky-700" },
-  other: { label: "Бусад гүйлгээ", cls: "bg-rose-50 text-rose-700" },
-  returned: { label: "Буцаалт", cls: "bg-violet-50 text-violet-700" },
+  created: meta("epcHistory.created", "bg-slate-100 text-slate-600"),
+  printed: meta("epcHistory.printed", "bg-emerald-50 text-emerald-700"),
+  status_change: meta("epcHistory.statusChange", "bg-indigo-50 text-indigo-700"),
+  transfer_out: meta("epcHistory.transferOut", "bg-amber-50 text-amber-700"),
+  transfer_in: meta("epcHistory.transferIn", "bg-emerald-50 text-emerald-700"),
+  transfer_cancel: meta("epcHistory.transferCancel", "bg-slate-100 text-slate-600"),
+  sold: meta("epcHistory.sold", "bg-sky-50 text-sky-700"),
+  other: meta("epcHistory.other", "bg-rose-50 text-rose-700"),
+  returned: meta("epcHistory.returned", "bg-violet-50 text-violet-700"),
 };
 
 interface RawEvent {
@@ -78,17 +89,17 @@ export async function fetchEpcHistory(epcId: string): Promise<EpcHistoryItem[]> 
     ((txRes.data ?? []) as { id: string; note: string | null; to_branch: string | null }[]).map((t) => [t.id, t])
   );
 
-  const bn = (id: string | null) => (id ? (bMap.get(id) ?? "?") : "(Салбаргүй)");
+  const bn = (id: string | null) => (id ? (bMap.get(id) ?? "?") : i18n.t("epcHistory.noBranch"));
 
   return events.map((ev) => {
     const tx = ev.tx_id ? tMap.get(ev.tx_id) : undefined;
     let detail: string;
     switch (ev.event) {
       case "created":
-        detail = `Салбар: ${bn(ev.new_branch)}`;
+        detail = i18n.t("epcHistory.branchDetail", { branch: bn(ev.new_branch) });
         break;
       case "printed":
-        detail = "Шошго хэвлэгдэж, агуулахад бүртгэгдсэн";
+        detail = i18n.t("epcHistory.printedDetail");
         break;
       case "transfer_out":
         detail = `${bn(ev.new_branch)} → ${tx ? bn(tx.to_branch) : "?"}`;
@@ -97,14 +108,14 @@ export async function fetchEpcHistory(epcId: string): Promise<EpcHistoryItem[]> 
         detail = `${bn(ev.old_branch)} → ${bn(ev.new_branch)}`;
         break;
       case "transfer_cancel":
-        detail = `${bn(ev.new_branch)}-д буцсан`;
+        detail = i18n.t("epcHistory.transferCancelDetail", { branch: bn(ev.new_branch) });
         break;
       case "sold":
       case "other":
-        detail = `Салбар: ${bn(ev.new_branch ?? ev.old_branch)}`;
+        detail = i18n.t("epcHistory.branchDetail", { branch: bn(ev.new_branch ?? ev.old_branch) });
         break;
       case "returned":
-        detail = `Идэвхтэй болж буцсан — Салбар: ${bn(ev.new_branch ?? ev.old_branch)}`;
+        detail = i18n.t("epcHistory.returnedDetail", { branch: bn(ev.new_branch ?? ev.old_branch) });
         break;
       default:
         detail = `${labelOf(ev.old_status ?? "")} → ${labelOf(ev.new_status ?? "")}`;

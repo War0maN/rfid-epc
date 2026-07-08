@@ -1,8 +1,9 @@
 // ============================================================
-// Эрхийн систем (Phase 2c) — нэг эх сурвалж: түлхүүр ↔ Монгол нэр ↔ бүлэг.
+// Эрхийн систем (Phase 2c) — нэг эх сурвалж: түлхүүр ↔ нэр ↔ бүлэг.
 //   UI давхарга: таб/товч нуух (App, компонентууд). DB давхарга:
 //   RLS policy + RPC доторх has_perm() — тойрч гарах боломжгүй.
 //   Тохиргоогүй хэрэглэгч = бүрэн эрх (default); админ үргэлж бүрэн.
+//   title/label = ОРЧУУЛГЫН ТҮЛХҮҮР — render дээр t(...)-ээр тайлна.
 // ============================================================
 
 export type Perm =
@@ -30,32 +31,32 @@ export type Perm =
 
 export const PERM_GROUPS: { title: string; perms: { key: Perm; label: string }[] }[] = [
   {
-    title: "Цэс харах",
+    title: "permissions.groupTabs",
     perms: [
-      { key: "tab_create", label: "Шинэ ажил" },
-      { key: "tab_products", label: "Бүтээгдэхүүн" },
-      { key: "tab_inventory", label: "Үлдэгдэл" },
-      { key: "tab_transactions", label: "Гүйлгээ" },
-      { key: "tab_reports", label: "Тайлан" },
-      { key: "tab_epc", label: "Бараа (EPC)" },
-      { key: "tab_labels", label: "Шошго" },
-      { key: "tab_branches", label: "Салбар" },
-      { key: "tab_audit", label: "Аудит" },
+      { key: "tab_create", label: "permissions.tab_create" },
+      { key: "tab_products", label: "permissions.tab_products" },
+      { key: "tab_inventory", label: "permissions.tab_inventory" },
+      { key: "tab_transactions", label: "permissions.tab_transactions" },
+      { key: "tab_reports", label: "permissions.tab_reports" },
+      { key: "tab_epc", label: "permissions.tab_epc" },
+      { key: "tab_labels", label: "permissions.tab_labels" },
+      { key: "tab_branches", label: "permissions.tab_branches" },
+      { key: "tab_audit", label: "permissions.tab_audit" },
     ],
   },
   {
-    title: "Үйлдэл",
+    title: "permissions.groupActions",
     perms: [
-      { key: "act_import", label: "Импорт / EPC үүсгэх" },
-      { key: "act_print", label: "Шошго хэвлэх" },
-      { key: "act_sale", label: "Борлуулалт хийх" },
-      { key: "act_transfer", label: "Шилжүүлэг илгээх" },
-      { key: "act_receive", label: "Шилжүүлэг хүлээн авах/цуцлах" },
-      { key: "act_return", label: "Буцаалт хийх" },
-      { key: "act_other", label: "Бусад гүйлгээ хийх" },
-      { key: "act_product_edit", label: "Бараа нэмэх/засах" },
-      { key: "act_catalog_edit", label: "Ангилал/шинж чанар засах" },
-      { key: "act_branch_edit", label: "Салбар нэмэх/засах" },
+      { key: "act_import", label: "permissions.act_import" },
+      { key: "act_print", label: "permissions.act_print" },
+      { key: "act_sale", label: "permissions.act_sale" },
+      { key: "act_transfer", label: "permissions.act_transfer" },
+      { key: "act_receive", label: "permissions.act_receive" },
+      { key: "act_return", label: "permissions.act_return" },
+      { key: "act_other", label: "permissions.act_other" },
+      { key: "act_product_edit", label: "permissions.act_product_edit" },
+      { key: "act_catalog_edit", label: "permissions.act_catalog_edit" },
+      { key: "act_branch_edit", label: "permissions.act_branch_edit" },
     ],
   },
 ];

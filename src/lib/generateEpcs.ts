@@ -6,6 +6,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sgtin96BatchFromGtin, gid96Batch } from "./epc";
 import { logAuditEvent } from "./audit";
+import i18n from "../i18n";
 
 export interface JobLine {
   productId: string;       // products.id
@@ -95,9 +96,10 @@ export async function generateEpcsForJob(
 
   for (const line of lines) {
     const prod = prodById.get(line.productId);
-    if (!prod) throw new Error(`бараа ${line.productId}: олдсонгүй`);
+    if (!prod) throw new Error(i18n.t("createJob.productNotFound", { id: line.productId }));
     const serial = nextSerial.get(line.productId);
-    if (serial == null) throw new Error(`бараа ${line.productId}: serial захиалга алга`);
+    if (serial == null)
+      throw new Error(i18n.t("createJob.serialAllocMissing", { id: line.productId }));
 
     // GTIN (баркод) байвал SGTIN-96; байхгүй бол GID-96 (GS1-гүй дотоод код).
     const hasGtin = !!prod.gtin && prod.gtin.trim() !== "";
@@ -106,10 +108,10 @@ export async function generateEpcsForJob(
       batch = sgtin96BatchFromGtin(prod.gtin as string, serial, line.count, filter);
     } else {
       if (prod.object_class == null) {
-        throw new Error(`бараа ${line.productId}: object_class алга (GID-96 кодлоход шаардлагатай)`);
+        throw new Error(i18n.t("createJob.objectClassMissing", { id: line.productId }));
       }
       if (tenant.manager_number == null) {
-        throw new Error("Тенантад manager_number тохируулаагүй (GID-96 кодлоход шаардлагатай)");
+        throw new Error(i18n.t("createJob.managerNumberMissing"));
       }
       batch = gid96Batch(
         { managerNumber: tenant.manager_number, objectClass: prod.object_class },
@@ -152,7 +154,7 @@ export async function generateEpcsForJob(
   const byProduct: Record<string, number> = {};
   for (const [pid, cnt] of totalByProduct) {
     const p = prodById.get(pid);
-    const key = p?.name || p?.sku || "Нэргүй бараа";
+    const key = p?.name || p?.sku || i18n.t("createJob.unnamedProduct");
     byProduct[key] = (byProduct[key] ?? 0) + cnt;
   }
   await logAuditEvent(supabase, "generate", "job", params.jobId, {

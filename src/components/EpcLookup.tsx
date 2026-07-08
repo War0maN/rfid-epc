@@ -1,5 +1,6 @@
 import { errorMessage } from "../lib/errorMessage";
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { normalizeEpc, epcHexToUri, epcHexToTagUri } from "../lib/epc";
 import { lookupEpc, type EpcRow } from "../lib/queries";
 import { badgeOf, labelOf } from "../lib/epcStatus";
@@ -37,6 +38,7 @@ function safeTagUri(hex: string): string {
 
 /** RFID-аас уншсан EPC-ийн мэдээлэл + бүрэн түүх (timeline). */
 export default function EpcLookup({ initialHex }: Props) {
+  const { t } = useTranslation();
   const [raw, setRaw] = useState(initialHex ?? "");
   const [state, setState] = useState<State>(initialHex ? { kind: "loading" } : { kind: "idle" });
   const [history, setHistory] = useState<EpcHistoryItem[] | null>(null);
@@ -84,10 +86,8 @@ export default function EpcLookup({ initialHex }: Props) {
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <form onSubmit={handleSubmit} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-1 text-lg font-semibold text-slate-900">EPC хайлт</h2>
-        <p className="mb-4 text-sm text-slate-500">
-          RFID таг уншсан 24 тэмдэгт hex-ээ бичээд хайна уу — барааны мэдээлэл + бүрэн түүх гарна.
-        </p>
+        <h2 className="mb-1 text-lg font-semibold text-slate-900">{t("epcLookup.title")}</h2>
+        <p className="mb-4 text-sm text-slate-500">{t("epcLookup.subtitle")}</p>
         <div className="flex gap-2">
           <input
             value={raw}
@@ -100,7 +100,7 @@ export default function EpcLookup({ initialHex }: Props) {
             disabled={state.kind === "loading"}
             className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
           >
-            {state.kind === "loading" ? "Хайж байна…" : "Хайх"}
+            {state.kind === "loading" ? t("epcLookup.searching") : t("common.search")}
           </button>
         </div>
       </form>
@@ -111,7 +111,7 @@ export default function EpcLookup({ initialHex }: Props) {
 
       {state.kind === "notfound" && (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          Энэ EPC бүртгэлд олдсонгүй.
+          {t("epcLookup.notFound")}
         </p>
       )}
 
@@ -121,7 +121,7 @@ export default function EpcLookup({ initialHex }: Props) {
           <div className="border-b border-slate-200 px-6 py-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-lg font-semibold text-slate-900">
-                {state.row.name || state.row.sku || "Нэргүй бараа"}
+                {state.row.name || state.row.sku || t("epcLookup.unnamedItem")}
               </h3>
               <span className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + badgeOf(state.row.status)}>
                 {labelOf(state.row.status)}
@@ -132,9 +132,9 @@ export default function EpcLookup({ initialHex }: Props) {
                 <>SKU: <span className="font-mono">{state.row.sku}</span> · </>
               )}
               {state.row.gtin && (
-                <>Баркод: <span className="font-mono">{state.row.gtin}</span> · </>
+                <>{t("common.barcode")}: <span className="font-mono">{state.row.gtin}</span> · </>
               )}
-              {state.row.branch_name && <>Салбар: {state.row.branch_name}</>}
+              {state.row.branch_name && <>{t("common.branch")}: {state.row.branch_name}</>}
             </p>
             <p className="mt-2 break-all font-mono text-sm text-indigo-700">{state.row.epc_hex}</p>
             <p className="mt-1 break-all font-mono text-[11px] text-slate-400">
@@ -145,13 +145,13 @@ export default function EpcLookup({ initialHex }: Props) {
           {/* Түүх — амьдралын дараалал (эртнээс сүүл рүү) */}
           <div className="px-6 py-4">
             <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Түүх {history ? `(${history.length})` : ""}
+              {t("epcLookup.historyTitle")} {history ? `(${history.length})` : ""}
             </h4>
             {!history ? (
-              <p className="py-4 text-center text-sm text-slate-400">Түүх ачаалж байна…</p>
+              <p className="py-4 text-center text-sm text-slate-400">{t("epcLookup.historyLoading")}</p>
             ) : history.length === 0 ? (
               <p className="py-4 text-center text-sm text-slate-400">
-                Түүх алга. (Supabase дээр schema.sql-ийн epc_events хэсгийг Run хийсэн эсэхийг шалгана уу.)
+                {t("epcLookup.historyEmpty")}
               </p>
             ) : (
               <ol className="relative ml-1.5 space-y-4 border-l-2 border-slate-100 pl-5">
@@ -169,7 +169,7 @@ export default function EpcLookup({ initialHex }: Props) {
                         </span>
                       </div>
                       <p className="mt-1 text-sm text-slate-700">{ev.detail}</p>
-                      {ev.reason && <p className="mt-0.5 text-xs text-slate-500">Тэмдэглэл: {ev.reason}</p>}
+                      {ev.reason && <p className="mt-0.5 text-xs text-slate-500">{t("common.note")}: {ev.reason}</p>}
                       {ev.actor_email && <p className="mt-0.5 text-xs text-slate-400">{ev.actor_email}</p>}
                     </li>
                   );

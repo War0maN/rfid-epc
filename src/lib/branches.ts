@@ -3,12 +3,13 @@
 //   RLS-ийн ачаар зөвхөн өөрийн тенант.
 // ============================================================
 import { supabase } from "./supabaseClient";
+import i18n from "../i18n";
 
 /** Давхцсан код (23505) бол найрсаг мессеж, эс бөгөөс эх алдааг буцаана. */
 function branchError(error: { code?: string } | null): Error | null {
   if (!error) return null;
   if (error.code === "23505") {
-    return new Error("Энэ код өөр салбарт бүртгэлтэй байна. Өөр код оруулна уу.");
+    return new Error(i18n.t("errors.branchCodeDuplicate"));
   }
   return error as unknown as Error;
 }
@@ -61,9 +62,7 @@ export async function deleteBranch(id: string): Promise<void> {
   if (error) {
     // 23503 = foreign_key_violation — энэ салбарт EPC бүртгэлтэй байна.
     if ((error as { code?: string }).code === "23503") {
-      throw new Error(
-        "Энэ салбарт EPC бүртгэлтэй тул устгах боломжгүй. Эхлээд барааг өөр салбарт шилжүүлнэ үү."
-      );
+      throw new Error(i18n.t("errors.branchHasEpc"));
     }
     throw error;
   }

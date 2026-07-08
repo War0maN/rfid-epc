@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabaseClient";
 import { listProducts, type ProductRow } from "../lib/products";
 import { listBranches, type Branch } from "../lib/branches";
@@ -44,6 +45,7 @@ function loadHidden(): Set<string> {
 
 /** Үлдэгдэл (Phase 4) — Идэвхтэй EPC-ийн тоо, бараа × салбар матрицаар. Зөвхөн унших. */
 export default function Inventory({ refreshKey = 0, allowedBranches = null }: Props) {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [attrDefs, setAttrDefs] = useState<AttributeDef[]>([]);
@@ -127,9 +129,9 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
   const branchDefs = useMemo(() => {
     const mine = allowedBranches ? branches.filter((b) => allowedBranches.includes(b.id)) : branches;
     const list = mine.map((b) => ({ key: b.id, label: b.name }));
-    if (hasNoBranch) list.push({ key: NO_BRANCH_KEY, label: "(Салбаргүй)" });
+    if (hasNoBranch) list.push({ key: NO_BRANCH_KEY, label: t("inventory.noBranch") });
     return list;
-  }, [branches, hasNoBranch, allowedBranches]);
+  }, [branches, hasNoBranch, allowedBranches, t]);
 
   // Зөвхөн ХАРАГДАЖ буй салбарын түлхүүрүүд (Нийт/үнэ эдгээрээр л тооцно).
   const visibleBranchKeys = useMemo(
@@ -144,13 +146,13 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
 
   const columns = useMemo<Col[]>(() => {
     const info: Col[] = [
-      { key: "name", label: "Бараа", kind: "info", get: (p) => p.name ?? "" },
-      { key: "cat1", label: "Үндсэн ангилал", kind: "info", get: (p) => p.category_l1 ?? "" },
-      { key: "cat2", label: "Дэд ангилал", kind: "info", get: (p) => p.category_l2 ?? "" },
-      { key: "cat3", label: "Барааны ангилал", kind: "info", get: (p) => p.category_l3 ?? "" },
+      { key: "name", label: t("common.product"), kind: "info", get: (p) => p.name ?? "" },
+      { key: "cat1", label: t("inventory.mainCategory"), kind: "info", get: (p) => p.category_l1 ?? "" },
+      { key: "cat2", label: t("inventory.subCategory"), kind: "info", get: (p) => p.category_l2 ?? "" },
+      { key: "cat3", label: t("inventory.productCategory"), kind: "info", get: (p) => p.category_l3 ?? "" },
       { key: "sku", label: "SKU", kind: "info", get: (p) => p.sku ?? "", mono: true },
-      { key: "gtin", label: "GTIN/баркод", kind: "info", get: (p) => p.gtin ?? "", mono: true },
-      { key: "price", label: "Үнэ", kind: "info", num: true, get: (p) => (p.price != null ? String(p.price) : "") },
+      { key: "gtin", label: t("inventory.gtinBarcode"), kind: "info", get: (p) => p.gtin ?? "", mono: true },
+      { key: "price", label: t("common.price"), kind: "info", num: true, get: (p) => (p.price != null ? String(p.price) : "") },
       // Динамик шинж чанар (Өнгө/Размер/Төрөл…) — нэргүй вариантуудыг ялгахад.
       ...dedupAttrs(attrDefs).map<Col>((d) => ({
         key: `attr:${d.label}`,
@@ -167,17 +169,17 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
       branchKey: b.key,
       get: (p) => String(pivot.get(p.id)?.get(b.key) ?? 0),
     }));
-    const total: Col = { key: "total", label: "Нийт", kind: "total", num: true, get: (p) => String(qtyOf(p)) };
+    const total: Col = { key: "total", label: t("common.total"), kind: "total", num: true, get: (p) => String(qtyOf(p)) };
     const totalValue: Col = {
       key: "value",
-      label: "Нийт үнэ",
+      label: t("inventory.totalValueCol"),
       kind: "total",
       num: true,
       get: (p) => String(valueOf(p)),
     };
     return [...info, ...branchCols, total, totalValue];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchDefs, attrDefs, pivot, visibleBranchKeys]);
+  }, [branchDefs, attrDefs, pivot, visibleBranchKeys, t]);
 
   const visibleColumns = useMemo(() => columns.filter((c) => !hidden.has(c.key)), [columns, hidden]);
 
@@ -265,11 +267,11 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
     const p = modal.product;
     const esc = (s: string) => '"' + s.replace(/"/g, '""') + '"';
     const head = [
-      ["Бараа", p.name ?? ""],
+      [t("common.product"), p.name ?? ""],
       ["SKU", p.sku ?? ""],
-      ["Баркод", p.gtin ?? ""],
-      ["Салбар", modal.label],
-      ["Идэвхтэй EPC", String(modalEpcs.length)],
+      [t("common.barcode"), p.gtin ?? ""],
+      [t("common.branch"), modal.label],
+      [t("inventory.activeEpc"), String(modalEpcs.length)],
     ]
       .map(([k, v]) => `${esc(k)},${esc(v)}`)
       .join("\r\n");
@@ -282,7 +284,7 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
       [
         { key: "epc", label: "EPC (hex)" },
         { key: "serial", label: "Serial" },
-        { key: "created", label: "Үүссэн огноо" },
+        { key: "created", label: t("inventory.createdAt") },
       ]
     );
     const safe = (p.sku || p.name || "baraa").replace(/[^\w.-]+/g, "_");
@@ -294,29 +296,28 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Үлдэгдэл</h2>
-          <p className="text-sm text-slate-500">
-            Идэвхтэй (хэвлэгдсэн, борлуулаагүй) EPC-ийн тоо — бараа × салбараар. Тоон дээр дарж EPC-г үзнэ.
-          </p>
+          <h2 className="text-lg font-semibold text-slate-900">{t("inventory.title")}</h2>
+          <p className="text-sm text-slate-500">{t("inventory.subtitle")}</p>
         </div>
         <div className="flex-1" />
         <span className="text-sm text-slate-600">
-          <strong>{sorted.length.toLocaleString()}</strong> бараа · {totalQty.toLocaleString()}ш ·{" "}
-          <strong>{totalValue.toLocaleString()}₮</strong>
+          <strong>{sorted.length.toLocaleString()}</strong> {t("inventory.productsUnit")} ·{" "}
+          {t("inventory.qtyPieces", { qty: totalQty.toLocaleString() })} ·{" "}
+          <strong>{t("inventory.amountCurrency", { amount: totalValue.toLocaleString() })}</strong>
         </span>
         <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
-          Бүгд харах
+          {t("inventory.showAll")}
         </label>
         <div className="relative">
           <button onClick={() => setShowColPicker((s) => !s)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-            ⚙ Багана
+            ⚙ {t("inventory.columns")}
           </button>
           {showColPicker && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowColPicker(false)} />
               <div className="absolute right-0 z-20 mt-1 max-h-80 w-60 overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                <div className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Харагдах багана</div>
+                <div className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{t("inventory.visibleColumns")}</div>
                 {columns.map((c) => (
                   <label key={c.key} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm text-slate-700 hover:bg-slate-50">
                     <input type="checkbox" checked={!hidden.has(c.key)} onChange={() => toggleColumn(c.key)} />
@@ -328,10 +329,10 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
           )}
         </div>
         <button onClick={handleExport} disabled={sorted.length === 0} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-          CSV татах ({sorted.length.toLocaleString()})
+          {t("inventory.exportCsvCount", { n: sorted.length.toLocaleString() })}
         </button>
         <button onClick={reload} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-          ↻ Сэргээх
+          ↻ {t("inventory.refresh")}
         </button>
       </div>
 
@@ -364,7 +365,7 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
                     <input
                       value={filters[c.key] ?? ""}
                       onChange={(e) => setFilter(c.key, e.target.value)}
-                      placeholder="Шүүх…"
+                      placeholder={t("inventory.filterPlaceholder")}
                       className="w-full min-w-[90px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
                     />
                   ) : (
@@ -376,9 +377,9 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-slate-400">Ачаалж байна…</td></tr>
+              <tr><td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-slate-400">{showAll ? "Бараа алга." : "Үлдэгдэлтэй бараа алга. (Хэвлэсэн EPC идэвхтэй болно.)"}</td></tr>
+              <tr><td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-slate-400">{showAll ? t("inventory.noProducts") : t("inventory.noStock")}</td></tr>
             ) : (
               visible.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50">
@@ -403,7 +404,7 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
                           <button
                             onClick={() => openModal(p, c.branchKey!, c.label)}
                             className="font-medium text-indigo-600 hover:underline"
-                            title="Идэвхтэй EPC-г үзэх"
+                            title={t("inventory.viewActiveEpcs")}
                           >
                             {disp}
                           </button>
@@ -425,9 +426,9 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
       {pageCount > 1 && (
         <div className="flex items-center justify-center gap-2 text-sm">
           <button onClick={() => setPage(0)} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">«</button>
-          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">Өмнөх</button>
-          <span className="px-2 text-slate-600">Хуудас <strong>{safePage + 1}</strong> / {pageCount}</span>
-          <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">Дараах</button>
+          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">{t("common.prev")}</button>
+          <span className="px-2 text-slate-600">{t("inventory.page")} <strong>{safePage + 1}</strong> / {pageCount}</span>
+          <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">{t("common.next")}</button>
           <button onClick={() => setPage(pageCount - 1)} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">»</button>
         </div>
       )}
@@ -438,12 +439,12 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
               <div className="min-w-0">
                 <h3 className="truncate font-semibold text-slate-900">
-                  {modal.product.name || modal.product.sku || "Бараа"} — {modal.label}
+                  {modal.product.name || modal.product.sku || t("common.product")} — {modal.label}
                 </h3>
                 <p className="text-xs text-slate-500">
                   {modal.product.sku && <>SKU: <span className="font-mono">{modal.product.sku}</span> · </>}
-                  {modal.product.gtin && <>Баркод: <span className="font-mono">{modal.product.gtin}</span> · </>}
-                  Идэвхтэй EPC {modalEpcs ? `(${modalEpcs.length})` : "…"}
+                  {modal.product.gtin && <>{t("common.barcode")}: <span className="font-mono">{modal.product.gtin}</span> · </>}
+                  {t("inventory.activeEpc")} {modalEpcs ? `(${modalEpcs.length})` : "…"}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -452,23 +453,23 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
                   disabled={!modalEpcs || modalEpcs.length === 0}
                   className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
                 >
-                  CSV татах
+                  {t("common.exportCsv")}
                 </button>
                 <button onClick={() => setModal(null)} className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">✕</button>
               </div>
             </div>
             <div className="max-h-[65vh] overflow-auto">
               {!modalEpcs ? (
-                <p className="px-4 py-10 text-center text-slate-400">Ачаалж байна…</p>
+                <p className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</p>
               ) : modalEpcs.length === 0 ? (
-                <p className="px-4 py-10 text-center text-slate-400">Идэвхтэй EPC алга.</p>
+                <p className="px-4 py-10 text-center text-slate-400">{t("inventory.noActiveEpcs")}</p>
               ) : (
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr>
                       <th className="sticky top-0 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">EPC (hex)</th>
                       <th className="sticky top-0 border-b border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Serial</th>
-                      <th className="sticky top-0 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Үүссэн огноо</th>
+                      <th className="sticky top-0 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{t("inventory.createdAt")}</th>
                     </tr>
                   </thead>
                   <tbody>

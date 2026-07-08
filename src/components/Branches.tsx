@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   listBranches,
   createBranch,
@@ -17,6 +18,7 @@ interface Props {
 
 /** Салбар (branch/location) удирдах — нэр + код. EPC ширхэг бүр салбарт байна. */
 export default function Branches({ isAdmin }: Props) {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +73,7 @@ export default function Branches({ isAdmin }: Props) {
       .catch((e) => setError(errorMessage(e)));
   }
   function remove(b: Branch) {
-    if (!window.confirm(`"${b.name}" салбарыг устгах уу?`)) return;
+    if (!window.confirm(t("branches.confirmDelete", { name: b.name }))) return;
     deleteBranch(b.id)
       .then(reload)
       .catch((e) => setError(errorMessage(e)));
@@ -84,14 +86,14 @@ export default function Branches({ isAdmin }: Props) {
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Салбар</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{t("branches.title")}</h2>
           <p className="text-sm text-slate-500">
-            Агуулах/дэлгүүрийн салбарууд. EPC ширхэг бүр аль салбарт байгаагаа заана.
+            {t("branches.subtitle")}
           </p>
         </div>
         {isAdmin && !adding && (
           <button onClick={() => setAdding(true)} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
-            + Салбар нэмэх
+            {t("branches.addBranch")}
           </button>
         )}
       </div>
@@ -102,26 +104,26 @@ export default function Branches({ isAdmin }: Props) {
         <table className="min-w-full text-sm">
           <thead>
             <tr>
-              <th className={th}>Нэр</th>
-              <th className={th}>Код</th>
-              {isAdmin && <th className={th + " text-right"}>Үйлдэл</th>}
+              <th className={th}>{t("common.name")}</th>
+              <th className={th}>{t("common.code")}</th>
+              {isAdmin && <th className={th + " text-right"}>{t("common.actions")}</th>}
             </tr>
           </thead>
           <tbody>
             {adding && (
               <tr>
-                <td className={td}><input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveAdd()} placeholder="Салбарын нэр" className={inp} /></td>
-                <td className={td}><input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Код (ж: S01)" className={inp} /></td>
+                <td className={td}><input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveAdd()} placeholder={t("branches.namePlaceholder")} className={inp} /></td>
+                <td className={td}><input value={code} onChange={(e) => setCode(e.target.value)} placeholder={t("branches.codePlaceholder")} className={inp} /></td>
                 <td className={td + " text-right"}>
-                  <button onClick={saveAdd} className="text-xs text-indigo-600 hover:underline">Хадгалах</button>
-                  <button onClick={() => setAdding(false)} className="ml-2 text-xs text-slate-400 hover:underline">Болих</button>
+                  <button onClick={saveAdd} className="text-xs text-indigo-600 hover:underline">{t("common.save")}</button>
+                  <button onClick={() => setAdding(false)} className="ml-2 text-xs text-slate-400 hover:underline">{t("branches.cancel")}</button>
                 </td>
               </tr>
             )}
             {loading ? (
-              <tr><td colSpan={3} className="px-4 py-8 text-center text-slate-400">Ачаалж байна…</td></tr>
+              <tr><td colSpan={3} className="px-4 py-8 text-center text-slate-400">{t("common.loading")}</td></tr>
             ) : rows.length === 0 && !adding ? (
-              <tr><td colSpan={3} className="px-4 py-8 text-center text-slate-400">Салбар алга.</td></tr>
+              <tr><td colSpan={3} className="px-4 py-8 text-center text-slate-400">{t("branches.empty")}</td></tr>
             ) : (
               rows.map((b) =>
                 editId === b.id ? (
@@ -129,8 +131,8 @@ export default function Branches({ isAdmin }: Props) {
                     <td className={td}><input autoFocus value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveEdit()} className={inp} /></td>
                     <td className={td}><input value={editCode} onChange={(e) => setEditCode(e.target.value)} className={inp} /></td>
                     <td className={td + " text-right"}>
-                      <button onClick={saveEdit} className="text-xs text-indigo-600 hover:underline">Хадгалах</button>
-                      <button onClick={() => setEditId(null)} className="ml-2 text-xs text-slate-400 hover:underline">Болих</button>
+                      <button onClick={saveEdit} className="text-xs text-indigo-600 hover:underline">{t("common.save")}</button>
+                      <button onClick={() => setEditId(null)} className="ml-2 text-xs text-slate-400 hover:underline">{t("branches.cancel")}</button>
                     </td>
                   </tr>
                 ) : (
@@ -139,8 +141,8 @@ export default function Branches({ isAdmin }: Props) {
                     <td className={td + " font-mono text-xs text-slate-500"}>{b.code || "—"}</td>
                     {isAdmin && (
                       <td className={td + " text-right"}>
-                        <button onClick={() => { setEditId(b.id); setEditName(b.name); setEditCode(b.code ?? ""); }} className="text-xs text-slate-500 hover:underline">Засах</button>
-                        <button onClick={() => remove(b)} className="ml-2 text-xs text-red-600 hover:underline">Устгах</button>
+                        <button onClick={() => { setEditId(b.id); setEditName(b.name); setEditCode(b.code ?? ""); }} className="text-xs text-slate-500 hover:underline">{t("common.edit")}</button>
+                        <button onClick={() => remove(b)} className="ml-2 text-xs text-red-600 hover:underline">{t("common.delete")}</button>
                       </td>
                     )}
                   </tr>

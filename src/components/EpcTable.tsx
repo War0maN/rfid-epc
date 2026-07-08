@@ -1,4 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   fetchEpcPage,
   fetchEpcAllMatching,
@@ -43,23 +45,24 @@ interface ColDef {
   money?: boolean; // харуулахдаа мянгатын таслалтай
 }
 
-// Тогтмол багана. Шинж чанарын багана нь attribute_defs-ээс динамикаар нэмэгдэнэ.
-const STATIC_COLUMNS: ColDef[] = [
-  { key: "epc", label: "EPC (hex)", get: (r) => r.epc_hex, mono: true },
-  { key: "serial", label: "Serial", get: (r) => String(r.serial) },
-  { key: "status", label: "Төлөв", get: (r) => labelOf(r.status) },
-  { key: "name", label: "Бараа", get: (r) => r.name ?? "" },
-  { key: "cat1", label: "Үндсэн ангилал", get: (r) => r.category_l1 ?? "" },
-  { key: "cat2", label: "Дэд ангилал", get: (r) => r.category_l2 ?? "" },
-  { key: "cat3", label: "Барааны ангилал", get: (r) => r.category_l3 ?? "" },
-  { key: "branch", label: "Салбар", get: (r) => r.branch_name ?? "" },
-  { key: "sku", label: "SKU", get: (r) => r.sku ?? "", mono: true },
-  { key: "price", label: "Үнэ", get: (r) => (r.price != null ? String(r.price) : ""), money: true },
-  { key: "gtin", label: "GTIN/баркод", get: (r) => r.gtin ?? "", mono: true },
-  { key: "box", label: "Хайрцаг", get: (r) => r.box_no ?? "" },
-  { key: "job", label: "Ажлын №", get: (r) => r.job_number ?? "" },
-  { key: "date", label: "Ирсэн огноо", get: (r) => r.arrival_date ?? "" },
-  { key: "supplier", label: "Нийлүүлэгч", get: (r) => r.supplier ?? "" },
+// Тогтмол багана (толгойн шошго нь идэвхтэй хэлээр — t-ээр render үед тооцно).
+// Шинж чанарын багана нь attribute_defs-ээс динамикаар нэмэгдэнэ.
+const staticColumns = (t: TFunction): ColDef[] => [
+  { key: "epc", label: t("epcTable.colEpcHex"), get: (r) => r.epc_hex, mono: true },
+  { key: "serial", label: t("epcTable.colSerial"), get: (r) => String(r.serial) },
+  { key: "status", label: t("common.status"), get: (r) => labelOf(r.status) },
+  { key: "name", label: t("common.product"), get: (r) => r.name ?? "" },
+  { key: "cat1", label: t("epcTable.colCat1"), get: (r) => r.category_l1 ?? "" },
+  { key: "cat2", label: t("epcTable.colCat2"), get: (r) => r.category_l2 ?? "" },
+  { key: "cat3", label: t("epcTable.colCat3"), get: (r) => r.category_l3 ?? "" },
+  { key: "branch", label: t("common.branch"), get: (r) => r.branch_name ?? "" },
+  { key: "sku", label: t("common.sku"), get: (r) => r.sku ?? "", mono: true },
+  { key: "price", label: t("common.price"), get: (r) => (r.price != null ? String(r.price) : ""), money: true },
+  { key: "gtin", label: t("epcTable.colGtin"), get: (r) => r.gtin ?? "", mono: true },
+  { key: "box", label: t("epcTable.colBox"), get: (r) => r.box_no ?? "" },
+  { key: "job", label: t("epcTable.colJob"), get: (r) => r.job_number ?? "" },
+  { key: "date", label: t("epcTable.colDate"), get: (r) => r.arrival_date ?? "" },
+  { key: "supplier", label: t("epcTable.colSupplier"), get: (r) => r.supplier ?? "" },
 ];
 
 // Нэг хуудсанд татах/харуулах мөрийн тоо (server-side хуудаслалт).
@@ -92,6 +95,7 @@ function safeTagUri(hex: string): string {
 }
 
 export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, perms = null }: Props) {
+  const { t } = useTranslation();
   const can = makeCan(perms);
   const [pageRows, setPageRows] = useState<EpcRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -136,8 +140,8 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
       label: d.label,
       get: (r: EpcRow) => r.attributes?.[d.label] ?? "",
     }));
-    return [...STATIC_COLUMNS, ...attrCols];
-  }, [attrDefs]);
+    return [...staticColumns(t), ...attrCols];
+  }, [attrDefs, t]);
 
   const visibleColumns = useMemo(
     () => columns.filter((c) => !hidden.has(c.key)),
@@ -288,7 +292,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
       const rows = await resolveRows();
       const ids = rows.map((r) => r.id);
       if (ids.length === 0) {
-        setError("Төлөв өөрчлөх мөр алга.");
+        setError(t("epcTable.noRowsToChange"));
         return;
       }
       // Optimistic: харагдаж буй хуудас + сонголтод тусгана.
@@ -353,25 +357,26 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
         for (const l of attrLabels) base[`a_${l}`] = r.attributes?.[l] ?? "";
         return base;
       });
+      // CSV-ийн толгойнууд export хийх мөчид идэвхтэй хэлээр тооцогдоно.
       const csv = toCsv(flat, [
-        { key: "epc_hex", label: "EPC (hex)" },
-        { key: "epc_uri", label: "EPC URI" },
-        { key: "epc_tag_uri", label: "EPC Tag URI" },
-        { key: "serial", label: "Serial" },
-        { key: "product", label: "Бараа" },
-        { key: "cat1", label: "Үндсэн ангилал" },
-        { key: "cat2", label: "Дэд ангилал" },
-        { key: "cat3", label: "Барааны ангилал" },
+        { key: "epc_hex", label: t("epcTable.colEpcHex") },
+        { key: "epc_uri", label: t("epcTable.csvEpcUri") },
+        { key: "epc_tag_uri", label: t("epcTable.csvEpcTagUri") },
+        { key: "serial", label: t("epcTable.colSerial") },
+        { key: "product", label: t("common.product") },
+        { key: "cat1", label: t("epcTable.colCat1") },
+        { key: "cat2", label: t("epcTable.colCat2") },
+        { key: "cat3", label: t("epcTable.colCat3") },
         ...attrLabels.map((l) => ({ key: `a_${l}`, label: l })),
-        { key: "sku", label: "SKU" },
-        { key: "price", label: "Үнэ" },
-        { key: "gtin", label: "GTIN/баркод" },
-        { key: "box_no", label: "Хайрцаг" },
-        { key: "job_number", label: "Ажлын №" },
-        { key: "arrival_date", label: "Ирсэн огноо" },
-        { key: "supplier", label: "Нийлүүлэгч" },
-        { key: "status", label: "Төлөв" },
-        { key: "created_at", label: "Үүссэн" },
+        { key: "sku", label: t("common.sku") },
+        { key: "price", label: t("common.price") },
+        { key: "gtin", label: t("epcTable.colGtin") },
+        { key: "box_no", label: t("epcTable.colBox") },
+        { key: "job_number", label: t("epcTable.colJob") },
+        { key: "arrival_date", label: t("epcTable.colDate") },
+        { key: "supplier", label: t("epcTable.colSupplier") },
+        { key: "status", label: t("common.status") },
+        { key: "created_at", label: t("epcTable.colCreated") },
       ]);
       downloadCsv(`epc-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
       void logAuditEvent(supabase, "export_csv", "epc", null, { count: rows.length });
@@ -412,7 +417,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
     try {
       const rows = await resolveRows();
       if (rows.length === 0) {
-        setError("Хэвлэх мөр алга.");
+        setError(t("epcTable.noRowsToPrint"));
         return;
       }
       setPrintRows(rows);
@@ -472,14 +477,14 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
       }
       if (withHistory.size > 0) {
         setError(
-          `${ids.length} EPC устгав. ${withHistory.size} нь гүйлгээний түүхтэй тул хамгаалагдаж үлдлээ (түүхэн дата устгагдахгүй).`
+          t("epcTable.deletedProtected", { deleted: ids.length, kept: withHistory.size })
         );
       }
     } catch (e) {
       // 23503 = FK — гүйлгээний түүх/төлөвийн хамгаалалт (fallback найрсаг мессеж).
       const err = e as { code?: string };
       if (err.code === "23503") {
-        setError("Зарим EPC гүйлгээний түүхтэй эсвэл хамгаалагдсан төлөвтэй тул устгах боломжгүй.");
+        setError(t("epcTable.deleteFkProtected"));
       } else {
         setError(errorMessage(e));
       }
@@ -501,7 +506,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
       {/* Үйлдлийн мөр */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-slate-600">
-          {hasFilters ? "Шүүсэн" : "Нийт"} <strong>{total.toLocaleString()}</strong>
+          {hasFilters ? t("epcTable.filtered") : t("common.total")} <strong>{total.toLocaleString()}</strong>
         </span>
         <div className="flex-1" />
 
@@ -511,14 +516,14 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
             onClick={() => setShowColPicker((s) => !s)}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
           >
-            ⚙ Багана
+            ⚙ {t("epcTable.columns")}
           </button>
           {showColPicker && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowColPicker(false)} />
               <div className="absolute right-0 z-20 mt-1 max-h-80 w-60 overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
                 <div className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Харагдах багана
+                  {t("epcTable.visibleColumns")}
                 </div>
                 {columns.map((c) => (
                   <label
@@ -543,7 +548,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
             onClick={clearFilters}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
           >
-            Шүүлт цэвэрлэх
+            {t("epcTable.clearFilters")}
           </button>
         )}
         <button
@@ -551,7 +556,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
           disabled={busy || outCount === 0}
           className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
         >
-          CSV татах ({outCount.toLocaleString()})
+          {t("epcTable.exportCsvN", { n: outCount.toLocaleString() })}
         </button>
         {can("act_print") && (
           <button
@@ -559,7 +564,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
             disabled={busy || outCount === 0}
             className="rounded-lg bg-slate-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
           >
-            ZPL татах ({outCount.toLocaleString()})
+            {t("epcTable.exportZplN", { n: outCount.toLocaleString() })}
           </button>
         )}
         {can("act_print") && (
@@ -568,7 +573,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
             disabled={busy || outCount === 0}
             className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            🖨 Хэвлэх ({outCount.toLocaleString()})
+            🖨 {t("epcTable.printN", { n: outCount.toLocaleString() })}
           </button>
         )}
         {isAdmin && (
@@ -583,10 +588,10 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
               }
               e.target.value = "";
             }}
-            title="Сонгосон (эсвэл шүүлтэд тохирох бүх) EPC-ийн төлөв өөрчлөх"
+            title={t("epcTable.changeStatusTitle")}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
-            <option value="">Төлөв өөрчлөх ({outCount.toLocaleString()})…</option>
+            <option value="">{t("epcTable.changeStatusN", { n: outCount.toLocaleString() })}</option>
             {/* "Шилжүүлж буй" гараар тохируулахгүй — зөвхөн Шилжүүлэг гүйлгээгээр (DB trigger ч хориглоно). */}
             {EPC_STATUSES.filter((s) => s !== "transferring").map((s) => (
               <option key={s} value={s}>
@@ -601,7 +606,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
             disabled={busy}
             className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
           >
-            Устгах ({selected.size})
+            {t("epcTable.deleteN", { n: selected.size })}
           </button>
         )}
         {selected.size > 0 && (
@@ -609,7 +614,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
             onClick={() => setSelected(new Map())}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
           >
-            Сонголт цэвэрлэх ({selected.size})
+            {t("epcTable.clearSelectionN", { n: selected.size })}
           </button>
         )}
         {(loading || busy) && (
@@ -618,7 +623,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
             </svg>
-            {busy ? "Бэлдэж байна…" : "Ачаалж байна…"}
+            {busy ? t("epcTable.preparing") : t("common.loading")}
           </span>
         )}
       </div>
@@ -635,7 +640,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                   type="checkbox"
                   checked={allVisibleSelected}
                   onChange={toggleAllVisible}
-                  title="Энэ хуудсыг бүгдийг сонгох"
+                  title={t("epcTable.selectPageAll")}
                 />
               </th>
               {visibleColumns.map((c) => (
@@ -647,7 +652,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                     type="button"
                     onClick={() => toggleSort(c.key)}
                     className="mb-1 flex min-h-[32px] items-start gap-1 text-left text-xs font-semibold uppercase leading-4 tracking-wide text-slate-500 hover:text-indigo-600"
-                    title="Эрэмбэлэх"
+                    title={t("epcTable.sort")}
                   >
                     {c.label}
                     <span className="text-[10px] text-slate-400">
@@ -660,7 +665,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                       onChange={(e) => setFilter(c.key, e.target.value)}
                       className="w-full min-w-[110px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
                     >
-                      <option value="">Бүгд</option>
+                      <option value="">{t("common.all")}</option>
                       {EPC_STATUSES.map((s) => (
                         <option key={s} value={s}>
                           {STATUS_LABEL[s]}
@@ -671,7 +676,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                     <input
                       value={filters[c.key] ?? ""}
                       onChange={(e) => setFilter(c.key, e.target.value)}
-                      placeholder="Шүүх…"
+                      placeholder={t("epcTable.filterPlaceholder")}
                       className="w-full min-w-[90px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
                     />
                   )}
@@ -688,14 +693,14 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
                     </svg>
-                    <span className="text-sm font-medium">EPC өгөгдөл ачаалж байна…</span>
+                    <span className="text-sm font-medium">{t("epcTable.loadingEpcData")}</span>
                   </div>
                 </td>
               </tr>
             ) : visible.length === 0 ? (
               <tr>
                 <td colSpan={visibleColumns.length + 1} className="px-4 py-8 text-center text-slate-400">
-                  {hasFilters ? "Шүүлтэд тохирох мөр алга." : "EPC алга."}
+                  {hasFilters ? t("epcTable.noFilterMatch") : t("epcTable.noEpc")}
                 </td>
               </tr>
             ) : (
@@ -717,7 +722,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                         {c.key === "status" ? (
                           <span
                             className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + badgeOf(r.status)}
-                            title={r.printed_at ? `Хэвлэсэн: ${new Date(r.printed_at).toLocaleString()}` : undefined}
+                            title={r.printed_at ? t("epcTable.printedAt", { date: new Date(r.printed_at).toLocaleString() }) : undefined}
                           >
                             {labelOf(r.status)}
                           </span>
@@ -725,7 +730,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                           <button
                             onClick={() => onLookup?.(r.epc_hex)}
                             className="font-mono text-xs text-indigo-600 hover:underline"
-                            title="Түүхийг харах"
+                            title={t("epcTable.viewHistory")}
                           >
                             {r.epc_hex}
                           </button>
@@ -759,17 +764,17 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
             disabled={safePage === 0}
             className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
           >
-            Өмнөх
+            {t("common.prev")}
           </button>
           <span className="px-2 text-slate-600">
-            Хуудас <strong>{safePage + 1}</strong> / {pageCount.toLocaleString()}
+            {t("epcTable.page")} <strong>{safePage + 1}</strong> / {pageCount.toLocaleString()}
           </span>
           <button
             onClick={() => goPage(Math.min(pageCount - 1, safePage + 1))}
             disabled={safePage >= pageCount - 1}
             className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
           >
-            Дараах
+            {t("common.next")}
           </button>
           <button
             onClick={() => goPage(pageCount - 1)}
@@ -798,30 +803,32 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
           onClick={() => setDeleteModal(false)}
         >
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold text-slate-900">EPC устгах</h3>
+            <h3 className="font-semibold text-slate-900">{t("epcTable.deleteTitle")}</h3>
             <p className="mt-2 text-sm text-slate-600">
-              Сонгосон <strong>{selected.size.toLocaleString()}</strong> EPC-ээс{" "}
-              <strong className="text-red-700">{selDeletableCount.toLocaleString()}</strong> ширхэг
-              (Хэвлээгүй/Идэвхтэй) устгагдана.
+              <Trans
+                i18nKey="epcTable.deleteBody"
+                values={{
+                  selected: selected.size.toLocaleString(),
+                  deletable: selDeletableCount.toLocaleString(),
+                }}
+                components={{ b: <strong />, r: <strong className="text-red-700" /> }}
+              />
             </p>
             {selProtectedCount > 0 && (
               <p className="mt-1 text-xs text-amber-700">
-                Борлуулсан/Шилжүүлж буй/Бусад гүйлгээ төлөвтэй {selProtectedCount.toLocaleString()} нь
-                түүхэн дата тул хамгаалагдсан — устгагдахгүй.
+                {t("epcTable.deleteProtectedNote", { n: selProtectedCount.toLocaleString() })}
               </p>
             )}
-            <p className="mt-1 text-xs text-slate-500">
-              Жич: гүйлгээний түүхтэй (өмнө нь борлуулагдаж байсан г.м.) EPC автоматаар алгасагдана.
-            </p>
+            <p className="mt-1 text-xs text-slate-500">{t("epcTable.deleteSkipNote")}</p>
             <p className="mt-2 text-sm font-medium text-slate-800">
-              {selDeletableCount > 0 ? "Итгэлтэй байна уу? Буцаах боломжгүй." : "Устгах боломжтой EPC алга."}
+              {selDeletableCount > 0 ? t("epcTable.deleteConfirm") : t("epcTable.nothingDeletable")}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setDeleteModal(false)}
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
               >
-                Болих
+                {t("epcTable.dismiss")}
               </button>
               <button
                 disabled={busy || selDeletableCount === 0}
@@ -831,7 +838,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                 }}
                 className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
               >
-                Устгах ({selDeletableCount.toLocaleString()})
+                {t("epcTable.deleteN", { n: selDeletableCount.toLocaleString() })}
               </button>
             </div>
           </div>
@@ -845,24 +852,30 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
           onClick={() => setStatusModal(null)}
         >
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold text-slate-900">Төлөв өөрчлөх</h3>
+            <h3 className="font-semibold text-slate-900">{t("epcTable.statusTitle")}</h3>
             <p className="mt-2 text-sm text-slate-600">
-              {selected.size > 0 ? "Сонгосон" : "Шүүлтэд тохирох"}{" "}
-              <strong>{outCount.toLocaleString()}</strong> EPC-ийн төлөвийг{" "}
-              <span className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + badgeOf(statusModal)}>
-                {STATUS_LABEL[statusModal]}
-              </span>{" "}
-              болгоно.
+              <Trans
+                i18nKey={selected.size > 0 ? "epcTable.statusBodySelected" : "epcTable.statusBodyFiltered"}
+                values={{ n: outCount.toLocaleString(), status: STATUS_LABEL[statusModal] }}
+                components={{
+                  b: <strong />,
+                  s: (
+                    <span
+                      className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + badgeOf(statusModal)}
+                    />
+                  ),
+                }}
+              />
             </p>
             <label className="mt-3 block text-sm">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Тэмдэглэл
+                {t("common.note")}
               </span>
               <input
                 autoFocus
                 value={statusNote}
                 onChange={(e) => setStatusNote(e.target.value)}
-                placeholder="Жишээ: актласан, алга болсон…"
+                placeholder={t("epcTable.notePlaceholder")}
                 className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
               />
             </label>
@@ -871,18 +884,18 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                 onClick={() => setStatusModal(null)}
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
               >
-                Болих
+                {t("epcTable.dismiss")}
               </button>
               <button
                 disabled={busy}
                 onClick={() => {
-                  const t = statusModal;
+                  const target = statusModal;
                   setStatusModal(null);
-                  void changeStatus(t, statusNote);
+                  void changeStatus(target, statusNote);
                 }}
                 className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
               >
-                Өөрчлөх
+                {t("epcTable.change")}
               </button>
             </div>
           </div>

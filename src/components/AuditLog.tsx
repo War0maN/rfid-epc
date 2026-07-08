@@ -1,73 +1,88 @@
 import { errorMessage } from "../lib/errorMessage";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
+import { labelMap } from "../i18n/labelMap";
 import { fetchAuditLog, type AuditRow } from "../lib/audit";
 import { labelOf } from "../lib/epcStatus";
 import { TX_TYPE_LABEL, TX_STATUS_LABEL, type TxType, type TxStatus } from "../lib/transactions";
 
-/** Үйлдлийн монгол шошго + өнгө. */
-const ACTION_META: Record<string, { label: string; cls: string }> = {
-  insert: { label: "Нэмсэн", cls: "bg-emerald-50 text-emerald-700" },
-  update: { label: "Зассан", cls: "bg-amber-50 text-amber-700" },
-  delete: { label: "Устгасан", cls: "bg-red-50 text-red-700" },
-  generate: { label: "EPC үүсгэсэн", cls: "bg-indigo-50 text-indigo-700" },
-  print: { label: "Хэвлэсэн", cls: "bg-emerald-50 text-emerald-700" },
-  status_change: { label: "Төлөв өөрчилсөн", cls: "bg-sky-50 text-sky-700" },
-  export_csv: { label: "CSV татсан", cls: "bg-slate-100 text-slate-700" },
-  export_zpl: { label: "ZPL татсан", cls: "bg-slate-100 text-slate-700" },
-};
+/** Үйлдлийн шошго (i18n) + өнгө. */
+const ACTION_LABEL: Record<string, string> = labelMap({
+  insert: "audit.action.insert",
+  update: "audit.action.update",
+  delete: "audit.action.delete",
+  generate: "audit.action.generate",
+  print: "audit.action.print",
+  status_change: "audit.action.statusChange",
+  export_csv: "audit.action.exportCsv",
+  export_zpl: "audit.action.exportZpl",
+});
 
-const ENTITY_LABEL: Record<string, string> = {
-  job: "Ажил",
-  product: "Бараа",
-  tenant: "Тохиргоо",
-  epc: "EPC",
-  category: "Ангилал",
-  attribute: "Шинж чанар",
-  branch: "Салбар",
-  transaction: "Гүйлгээ",
-  inventory: "Үлдэгдэл",
-  inventory_epcs: "Үлдэгдэл (EPC)",
+const ACTION_CLS: Record<string, string> = {
+  insert: "bg-emerald-50 text-emerald-700",
+  update: "bg-amber-50 text-amber-700",
+  delete: "bg-red-50 text-red-700",
+  generate: "bg-indigo-50 text-indigo-700",
+  print: "bg-emerald-50 text-emerald-700",
+  status_change: "bg-sky-50 text-sky-700",
+  export_csv: "bg-slate-100 text-slate-700",
+  export_zpl: "bg-slate-100 text-slate-700",
 };
+const DEFAULT_CLS = "bg-slate-100 text-slate-700";
 
-/** Талбарын түлхүүр → Монгол нэр (дэлгэрэнгүй модалд). Танихгүйг түлхүүрээр нь. */
-const FIELD_LABEL: Record<string, string> = {
-  name: "Нэр",
-  code: "Код",
-  sku: "SKU",
-  gtin: "GTIN/баркод",
-  price: "Үнэ",
-  status: "Төлөв",
-  note: "Тэмдэглэл",
-  sort: "Эрэмбэ",
-  label: "Шошго/нэр",
-  input_type: "Төрөл",
-  required: "Заавал эсэх",
-  options: "Сонголтууд",
-  attributes: "Шинж чанарууд",
-  category_id: "Ангилал",
-  parent_id: "Эцэг ангилал",
-  branch_id: "Салбар",
-  from_branch: "Эх салбар",
-  to_branch: "Очих салбар",
-  type: "Гүйлгээний төрөл",
-  job_number: "Ажлын №",
-  arrival_date: "Ирсэн огноо",
-  supplier: "Нийлүүлэгч",
-  box_no: "Хайрцаг",
-  serial: "Serial",
-  epc_hex: "EPC",
-  printed_at: "Хэвлэсэн огноо",
-  completed_at: "Дууссан огноо",
-  created_at: "Үүссэн огноо",
-  created_by: "Үүсгэсэн хэрэглэгч",
-  email: "Имэйл",
-  role: "Эрх",
-  count: "Тоо ширхэг",
-  report: "Тайлан",
-  from: "Эхлэх",
-  to: "Дуусах",
-  group: "Бүлэглэлт",
-};
+const ENTITY_LABEL: Record<string, string> = labelMap({
+  job: "audit.entity.job",
+  product: "audit.entity.product",
+  tenant: "audit.entity.tenant",
+  epc: "audit.entity.epc",
+  category: "audit.entity.category",
+  attribute: "audit.entity.attribute",
+  branch: "audit.entity.branch",
+  transaction: "audit.entity.transaction",
+  inventory: "audit.entity.inventory",
+  inventory_epcs: "audit.entity.inventoryEpcs",
+});
+
+/** Талбарын түлхүүр → нэр (дэлгэрэнгүй модалд). Танихгүйг түлхүүрээр нь. */
+const FIELD_LABEL: Record<string, string> = labelMap({
+  name: "audit.field.name",
+  code: "audit.field.code",
+  sku: "audit.field.sku",
+  gtin: "audit.field.gtin",
+  price: "audit.field.price",
+  status: "audit.field.status",
+  note: "audit.field.note",
+  sort: "audit.field.sort",
+  label: "audit.field.label",
+  input_type: "audit.field.inputType",
+  required: "audit.field.required",
+  options: "audit.field.options",
+  attributes: "audit.field.attributes",
+  category_id: "audit.field.categoryId",
+  parent_id: "audit.field.parentId",
+  branch_id: "audit.field.branchId",
+  from_branch: "audit.field.fromBranch",
+  to_branch: "audit.field.toBranch",
+  type: "audit.field.type",
+  job_number: "audit.field.jobNumber",
+  arrival_date: "audit.field.arrivalDate",
+  supplier: "audit.field.supplier",
+  box_no: "audit.field.boxNo",
+  serial: "audit.field.serial",
+  epc_hex: "audit.field.epcHex",
+  printed_at: "audit.field.printedAt",
+  completed_at: "audit.field.completedAt",
+  created_at: "audit.field.createdAt",
+  created_by: "audit.field.createdBy",
+  email: "audit.field.email",
+  role: "audit.field.role",
+  count: "audit.field.count",
+  report: "audit.field.report",
+  from: "audit.field.from",
+  to: "audit.field.to",
+  group: "audit.field.group",
+});
 const fieldLabel = (k: string) => FIELD_LABEL[k] ?? k;
 
 // Дэлгэрэнгүйд нуух техник талбарууд (мэдээллийн үнэ цэнэгүй).
@@ -119,34 +134,34 @@ function subjectRows(row: AuditRow): { label: string; value: string }[] {
   switch (row.entity) {
     case "product":
       return pick([
-        ["Бараа", src.name],
-        ["SKU", src.sku],
-        ["GTIN/баркод", src.gtin],
-        ["Үнэ", src.price],
+        [i18n.t("audit.entity.product"), src.name],
+        [i18n.t("audit.field.sku"), src.sku],
+        [i18n.t("audit.field.gtin"), src.gtin],
+        [i18n.t("audit.field.price"), src.price],
       ]);
     case "branch":
       return pick([
-        ["Салбар", src.name],
-        ["Код", src.code],
+        [i18n.t("audit.entity.branch"), src.name],
+        [i18n.t("audit.field.code"), src.code],
       ]);
     case "category":
-      return pick([["Ангилал", src.name]]);
+      return pick([[i18n.t("audit.entity.category"), src.name]]);
     case "attribute":
-      return pick([["Шинж чанар", src.label]]);
+      return pick([[i18n.t("audit.entity.attribute"), src.label]]);
     case "job":
       return pick([
-        ["Ажлын №", src.job_number],
-        ["Ирсэн огноо", src.arrival_date],
-        ["Нийлүүлэгч", src.supplier],
+        [i18n.t("audit.field.jobNumber"), src.job_number],
+        [i18n.t("audit.field.arrivalDate"), src.arrival_date],
+        [i18n.t("audit.field.supplier"), src.supplier],
       ]);
     case "transaction":
       return pick([
-        ["Төрөл", TX_TYPE_LABEL[src.type as TxType] ?? src.type],
-        ["Гүйлгээний төлөв", TX_STATUS_LABEL[src.status as TxStatus] ?? src.status],
-        ["Тэмдэглэл", src.note],
+        [i18n.t("audit.subjectType"), TX_TYPE_LABEL[src.type as TxType] ?? src.type],
+        [i18n.t("audit.subjectTxStatus"), TX_STATUS_LABEL[src.status as TxStatus] ?? src.status],
+        [i18n.t("audit.field.note"), src.note],
       ]);
     case "tenant":
-      return pick([["Нэр", src.name]]);
+      return pick([[i18n.t("audit.field.name"), src.name]]);
     default:
       return [];
   }
@@ -159,9 +174,11 @@ function describe(row: AuditRow): string {
   const before = row.before ?? {};
 
   if (row.action === "generate")
-    return `${meta.job_number ? `№ ${meta.job_number} — ` : ""}${meta.count ?? "?"} ширхэг EPC`;
+    return `${meta.job_number ? `№ ${meta.job_number} — ` : ""}${i18n.t("audit.epcCount", {
+      n: meta.count ?? "?",
+    })}`;
   if (row.action === "export_csv" || row.action === "export_zpl")
-    return `${meta.count ?? "?"} мөр`;
+    return i18n.t("audit.rowCount", { n: meta.count ?? "?" });
 
   const src = row.action === "delete" ? before : after;
   if (row.entity === "job") return src.job_number ? `№ ${src.job_number}` : "";
@@ -175,6 +192,7 @@ function describe(row: AuditRow): string {
 
 /** Аудит лог: хэн/хэзээ/юу хийсэн түүх (зөвхөн өөрийн тенант). */
 export default function AuditLog() {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -213,13 +231,13 @@ export default function AuditLog() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-900">Аудит лог</h2>
+        <h2 className="text-lg font-semibold text-slate-900">{t("audit.title")}</h2>
         <button
           onClick={load}
           disabled={loading}
           className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
-          {loading ? "Ачаалж байна…" : "Сэргээх"}
+          {loading ? t("common.loading") : t("audit.refresh")}
         </button>
       </div>
 
@@ -227,7 +245,7 @@ export default function AuditLog() {
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
           <span className="mt-1 block text-xs text-red-500">
-            (audit_log хүснэгт үүсээгүй бол docs/schema.sql-ийг Supabase дээр дахин ажиллуулна уу.)
+            {t("audit.schemaHint")}
           </span>
         </p>
       )}
@@ -236,25 +254,25 @@ export default function AuditLog() {
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-3">Хэзээ</th>
-              <th className="px-4 py-3">Хэн</th>
-              <th className="px-4 py-3">Үйлдэл</th>
-              <th className="px-4 py-3">Обьект</th>
-              <th className="px-4 py-3">Дэлгэрэнгүй</th>
+              <th className="px-4 py-3">{t("audit.colWhen")}</th>
+              <th className="px-4 py-3">{t("audit.colWho")}</th>
+              <th className="px-4 py-3">{t("audit.colAction")}</th>
+              <th className="px-4 py-3">{t("audit.colEntity")}</th>
+              <th className="px-4 py-3">{t("audit.colDetail")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && !loading ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
-                  Лог хоосон байна.
+                  {t("audit.emptyLog")}
                 </td>
               </tr>
             ) : (
               rows.map((r) => {
-                const am = ACTION_META[r.action] ?? {
-                  label: r.action,
-                  cls: "bg-slate-100 text-slate-700",
+                const am = {
+                  label: ACTION_LABEL[r.action] ?? r.action,
+                  cls: ACTION_CLS[r.action] ?? DEFAULT_CLS,
                 };
                 return (
                   <tr key={r.id} className="cursor-pointer hover:bg-slate-50" onClick={() => openDetail(r)}>
@@ -295,10 +313,10 @@ export default function AuditLog() {
                   <span
                     className={
                       "whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " +
-                      (ACTION_META[detail.action]?.cls ?? "bg-slate-100 text-slate-700")
+                      (ACTION_CLS[detail.action] ?? DEFAULT_CLS)
                     }
                   >
-                    {ACTION_META[detail.action]?.label ?? detail.action}
+                    {ACTION_LABEL[detail.action] ?? detail.action}
                   </span>
                   {ENTITY_LABEL[detail.entity] ?? detail.entity}
                   {describe(detail) && <span className="font-normal text-slate-500">· {describe(detail)}</span>}
@@ -361,7 +379,7 @@ export default function AuditLog() {
                     {byProduct && Object.keys(byProduct).length > 0 && (
                       <div className="mb-3">
                         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Бараагаар
+                          {t("audit.byProduct")}
                         </p>
                         <div className="rounded-lg border border-slate-200">
                           {Object.entries(byProduct).map(([name, cnt]) => (
@@ -371,7 +389,7 @@ export default function AuditLog() {
                             >
                               <span className="text-slate-700">{name}</span>
                               <span className="font-medium tabular-nums text-slate-900">
-                                {Number(cnt).toLocaleString()}ш
+                                {t("audit.pcs", { n: Number(cnt).toLocaleString() })}
                               </span>
                             </div>
                           ))}
@@ -383,9 +401,12 @@ export default function AuditLog() {
                     {epcs && epcs.length > 0 && (
                       <div className="mb-3">
                         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          EPC жагсаалт{" "}
+                          {t("audit.epcList")}{" "}
                           {meta.epcsTruncated
-                            ? `(эхний ${epcs.length} — нийт ${fmtVal(meta.count)})`
+                            ? t("audit.epcListTruncated", {
+                                shown: epcs.length,
+                                total: fmtVal(meta.count),
+                              })
                             : `(${epcs.length})`}
                         </p>
                         <div className="max-h-40 overflow-auto rounded-lg bg-slate-50 px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-600">
@@ -401,9 +422,9 @@ export default function AuditLog() {
                       <table className="mb-3 min-w-full text-sm">
                         <thead>
                           <tr>
-                            <th className="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Талбар</th>
-                            <th className="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Өмнө</th>
-                            <th className="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Дараа</th>
+                            <th className="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{t("audit.diffField")}</th>
+                            <th className="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{t("audit.diffBefore")}</th>
+                            <th className="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{t("audit.diffAfter")}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -419,7 +440,7 @@ export default function AuditLog() {
                     )}
 
                     {empty && (
-                      <p className="py-6 text-center text-sm text-slate-400">Дэлгэрэнгүй мэдээлэл алга.</p>
+                      <p className="py-6 text-center text-sm text-slate-400">{t("audit.noDetails")}</p>
                     )}
                   </>
                 );
@@ -430,7 +451,7 @@ export default function AuditLog() {
                 onClick={() => setShowRaw((s) => !s)}
                 className="text-xs text-slate-400 hover:text-slate-600 hover:underline"
               >
-                {showRaw ? "▾ Түүхий JSON нуух" : "▸ Түүхий JSON харах"}
+                {showRaw ? t("audit.hideRawJson") : t("audit.showRawJson")}
               </button>
               {showRaw && (
                 <pre className="mt-2 max-h-60 overflow-auto rounded-lg bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-100">

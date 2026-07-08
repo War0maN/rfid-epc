@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Stage, Layer, Rect, Text, Image as KonvaImage, Transformer } from "react-konva";
 import type Konva from "konva";
 import {
@@ -134,6 +135,7 @@ function RectNode({ o, px, onSelect, onChange, pxToMm }: NodeProps) {
 }
 
 function RfidNode({ o, px, onSelect, onChange, pxToMm }: NodeProps) {
+  const { t } = useTranslation();
   if (o.type !== "rfid") return null;
   const w = 22;
   const h = 8;
@@ -158,7 +160,7 @@ function RfidNode({ o, px, onSelect, onChange, pxToMm }: NodeProps) {
       <Text
         x={px(o.x) + 3}
         y={px(o.y) + 2}
-        text={"📡 RFID чип"}
+        text={t("labels.designer.rfidChip")}
         fontSize={Math.max(8, px(2.2))}
         fill="#7c3aed"
         listening={false}
@@ -294,6 +296,7 @@ function ImageNode({ o, px, onSelect, onChange, pxToMm }: NodeProps) {
 // ---------- Үндсэн дизайнер ----------
 
 export default function LabelDesigner({ template, onChange }: Props) {
+  const { t } = useTranslation();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const trRef = useRef<Konva.Transformer>(null);
@@ -392,28 +395,28 @@ export default function LabelDesigner({ template, onChange }: Props) {
       {/* Зүүн: хэрэгсэл + canvas */}
       <div className="flex-1 space-y-3">
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => addObject("text")} className={toolBtn}>+ Текст</button>
-          <button onClick={() => addObject("barcode")} className={toolBtn}>+ Баркод/QR</button>
-          <button onClick={() => addObject("image")} className={toolBtn}>+ Зураг</button>
+          <button onClick={() => addObject("text")} className={toolBtn}>{t("labels.designer.addText")}</button>
+          <button onClick={() => addObject("barcode")} className={toolBtn}>{t("labels.designer.addBarcode")}</button>
+          <button onClick={() => addObject("image")} className={toolBtn}>{t("labels.designer.addImage")}</button>
           <button onClick={() => addObject("rfid")} className={toolBtn}>+ RFID</button>
-          <button onClick={() => addObject("rect")} className={toolBtn}>+ Хүрээ</button>
+          <button onClick={() => addObject("rect")} className={toolBtn}>{t("labels.designer.addRect")}</button>
           {selectedId && (
             <>
               <span className="mx-1 w-px self-stretch bg-slate-200" />
-              <button onClick={() => moveSelected("front")} className={toolBtn} title="Хамгийн урд (дээр) гаргах">
-                ⤒ Урд
+              <button onClick={() => moveSelected("front")} className={toolBtn} title={t("labels.designer.bringFrontTitle")}>
+                {t("labels.designer.bringFront")}
               </button>
-              <button onClick={() => moveSelected("forward")} className={toolBtn} title="Нэг шат урагшлуулах">
+              <button onClick={() => moveSelected("forward")} className={toolBtn} title={t("labels.designer.forwardTitle")}>
                 ↑
               </button>
-              <button onClick={() => moveSelected("backward")} className={toolBtn} title="Нэг шат ухраах">
+              <button onClick={() => moveSelected("backward")} className={toolBtn} title={t("labels.designer.backwardTitle")}>
                 ↓
               </button>
-              <button onClick={() => moveSelected("back")} className={toolBtn} title="Хамгийн ард (доор) явуулах">
-                ⤓ Ард
+              <button onClick={() => moveSelected("back")} className={toolBtn} title={t("labels.designer.sendBackTitle")}>
+                {t("labels.designer.sendBack")}
               </button>
               <button onClick={removeSelected} className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50">
-                Устгах
+                {t("common.delete")}
               </button>
             </>
           )}
@@ -443,8 +446,13 @@ export default function LabelDesigner({ template, onChange }: Props) {
           </Stage>
         </div>
         <p className="text-xs text-slate-500">
-          {template.width_mm}×{template.height_mm}мм · {template.dpi} DPI · {template.objects.length} объект.
-          Объект дээр дарж сонгоод чирэх / булангаас нь хэмжээ өөрчлөх / эргүүлэх боломжтой.
+          {t("labels.sizeSummary", {
+            w: template.width_mm,
+            h: template.height_mm,
+            dpi: template.dpi,
+            n: template.objects.length,
+          }) + ". "}
+          {t("labels.designer.canvasHint")}
         </p>
       </div>
 
@@ -452,7 +460,7 @@ export default function LabelDesigner({ template, onChange }: Props) {
       <div className="w-full shrink-0 space-y-3 lg:w-72">
         {!selected ? (
           <p className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-sm text-slate-400">
-            Объект сонгоно уу.
+            {t("labels.designer.selectObjectPrompt")}
           </p>
         ) : (
           <PropertiesPanel
@@ -484,34 +492,35 @@ function PropertiesPanel({
   onChange: (patch: Partial<LabelObject>) => void;
   onPickImage: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-sm">
       <div className="font-semibold text-slate-700">
-        {o.type === "text" && "Текст"}
-        {o.type === "barcode" && "Баркод/QR"}
-        {o.type === "image" && "Зураг"}
-        {o.type === "rfid" && "RFID чип"}
-        {o.type === "rect" && "Хүрээ"}
+        {o.type === "text" && t("labels.designer.objectType.text")}
+        {o.type === "barcode" && t("labels.designer.objectType.barcode")}
+        {o.type === "image" && t("labels.designer.objectType.image")}
+        {o.type === "rfid" && t("labels.designer.objectType.rfid")}
+        {o.type === "rect" && t("labels.designer.objectType.rect")}
       </div>
 
       {/* Дата холболт (текст/баркод) */}
       {(o.type === "text" || o.type === "barcode") && (
         <div>
-          <label className={lbl}>Дата талбар</label>
+          <label className={lbl}>{t("labels.designer.dataField")}</label>
           <select
             value={o.field}
             onChange={(e) => onChange({ field: e.target.value } as Partial<LabelObject>)}
             className={inp}
           >
             {DATA_FIELDS.map((f) => (
-              <option key={f.value} value={f.value}>{f.label}</option>
+              <option key={f.value} value={f.value}>{t(f.label)}</option>
             ))}
           </select>
           {o.field === "static" && (
             <input
               value={o.text}
               onChange={(e) => onChange({ text: e.target.value } as Partial<LabelObject>)}
-              placeholder="Текст бичих"
+              placeholder={t("labels.designer.staticTextPlaceholder")}
               className={inp + " mt-1"}
             />
           )}
@@ -523,7 +532,7 @@ function PropertiesPanel({
         <>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className={lbl}>Фонт хэмжээ (pt)</label>
+              <label className={lbl}>{t("labels.designer.fontSize")}</label>
               <input
                 type="number"
                 value={o.fontSize}
@@ -532,7 +541,7 @@ function PropertiesPanel({
               />
             </div>
             <div>
-              <label className={lbl}>Фонт</label>
+              <label className={lbl}>{t("labels.designer.font")}</label>
               <select
                 value={o.fontFamily}
                 onChange={(e) => onChange({ fontFamily: e.target.value } as Partial<LabelObject>)}
@@ -551,16 +560,16 @@ function PropertiesPanel({
                 checked={o.bold}
                 onChange={(e) => onChange({ bold: e.target.checked } as Partial<LabelObject>)}
               />
-              Тод (bold)
+              {t("labels.designer.bold")}
             </label>
             <select
               value={o.align}
               onChange={(e) => onChange({ align: e.target.value } as Partial<LabelObject>)}
               className={inp + " w-auto"}
             >
-              <option value="left">Зүүн</option>
-              <option value="center">Төв</option>
-              <option value="right">Баруун</option>
+              <option value="left">{t("labels.designer.alignLeft")}</option>
+              <option value="center">{t("labels.designer.alignCenter")}</option>
+              <option value="right">{t("labels.designer.alignRight")}</option>
             </select>
           </div>
         </>
@@ -570,14 +579,14 @@ function PropertiesPanel({
       {o.type === "barcode" && (
         <>
           <div>
-            <label className={lbl}>Төрөл</label>
+            <label className={lbl}>{t("labels.designer.barcodeType")}</label>
             <select
               value={o.symbology}
               onChange={(e) => onChange({ symbology: e.target.value } as Partial<LabelObject>)}
               className={inp}
             >
               {SYMBOLOGIES.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
+                <option key={s.value} value={s.value}>{t(s.label)}</option>
               ))}
             </select>
           </div>
@@ -587,7 +596,7 @@ function PropertiesPanel({
               checked={o.showText}
               onChange={(e) => onChange({ showText: e.target.checked } as Partial<LabelObject>)}
             />
-            Текст харуулах (1D)
+            {t("labels.designer.showHri")}
           </label>
         </>
       )}
@@ -595,14 +604,14 @@ function PropertiesPanel({
       {/* Зураг */}
       {o.type === "image" && (
         <button onClick={onPickImage} className={toolBtn + " w-full"}>
-          Зураг сонгох…
+          {t("labels.designer.pickImage")}
         </button>
       )}
 
       {/* Хүрээ */}
       {o.type === "rect" && (
         <div>
-          <label className={lbl}>Шугамын зузаан (мм)</label>
+          <label className={lbl}>{t("labels.designer.borderWidth")}</label>
           <input
             type="number"
             step="0.1"
@@ -616,7 +625,7 @@ function PropertiesPanel({
       {/* Байрлал */}
       <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
         <div>
-          <label className={lbl}>X (мм)</label>
+          <label className={lbl}>{t("labels.designer.xMm")}</label>
           <input
             type="number"
             step="0.5"
@@ -626,7 +635,7 @@ function PropertiesPanel({
           />
         </div>
         <div>
-          <label className={lbl}>Y (мм)</label>
+          <label className={lbl}>{t("labels.designer.yMm")}</label>
           <input
             type="number"
             step="0.5"
@@ -636,7 +645,7 @@ function PropertiesPanel({
           />
         </div>
         <div>
-          <label className={lbl}>Эргүүлэлт (°)</label>
+          <label className={lbl}>{t("labels.designer.rotationDeg")}</label>
           <input
             type="number"
             step="15"

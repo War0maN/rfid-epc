@@ -5,6 +5,7 @@
 //   бүлэглэгдэнэ (epc_codes-д job_id шаардлагатай).
 // ============================================================
 import type { SupabaseClient } from "@supabase/supabase-js";
+import i18n from "../i18n";
 import { generateEpcsForJob } from "./generateEpcs";
 import { ensureAttributeDefs } from "./catalog";
 import { normalizeGtin } from "./epc";
@@ -38,7 +39,7 @@ export async function upsertCatalogProduct(
   input: ProductInput
 ): Promise<string> {
   const name = input.name.trim();
-  if (!name) throw new Error("Барааны нэр оруулна уу.");
+  if (!name) throw new Error(i18n.t("products.nameRequired"));
 
   const { data: tenant, error: tErr } = await supabase.from("tenants").select("id").single();
   if (tErr) throw tErr;
@@ -85,7 +86,7 @@ export async function generateEpcsForProduct(
   branchId: string | null = null
 ): Promise<number> {
   if (!Number.isFinite(quantity) || quantity < 1) {
-    throw new Error("Тоо ширхэг 1-ээс багагүй байх ёстой.");
+    throw new Error(i18n.t("products.qtyMin"));
   }
   const { data: tenant, error: tErr } = await supabase.from("tenants").select("id").single();
   if (tErr) throw tErr;

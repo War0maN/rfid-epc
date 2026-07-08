@@ -5,28 +5,30 @@
 //   Гүйлгээ түүхэн бүртгэл тул хэзээ ч устгагдахгүй.
 // ============================================================
 import { supabase } from "./supabaseClient";
+import { labelMap } from "../i18n/labelMap";
 
 export type TxType = "sale" | "transfer" | "other" | "return";
 export type TxStatus = "pending" | "done" | "cancelled";
 
 export const TX_TYPES: TxType[] = ["sale", "transfer", "return", "other"];
-export const TX_TYPE_LABEL: Record<TxType, string> = {
-  sale: "Борлуулсан",
-  transfer: "Шилжүүлэг",
-  other: "Бусад гүйлгээ",
-  return: "Буцаалт",
-};
+// Нэрс i18n-ээс (labelMap — уншилт бүрд идэвхтэй хэлээр).
+export const TX_TYPE_LABEL: Record<TxType, string> = labelMap({
+  sale: "transactions.type.sale",
+  transfer: "transactions.type.transfer",
+  other: "transactions.type.other",
+  return: "transactions.type.return",
+});
 export const TX_TYPE_BADGE: Record<TxType, string> = {
   sale: "bg-sky-50 text-sky-700",
   transfer: "bg-amber-50 text-amber-700",
   other: "bg-rose-50 text-rose-700",
   return: "bg-violet-50 text-violet-700",
 };
-export const TX_STATUS_LABEL: Record<TxStatus, string> = {
-  pending: "Хүлээгдэж буй",
-  done: "Дууссан",
-  cancelled: "Цуцлагдсан",
-};
+export const TX_STATUS_LABEL: Record<TxStatus, string> = labelMap({
+  pending: "transactions.status.pending",
+  done: "transactions.status.done",
+  cancelled: "transactions.status.cancelled",
+});
 export const TX_STATUS_BADGE: Record<TxStatus, string> = {
   pending: "bg-amber-50 text-amber-700",
   done: "bg-emerald-50 text-emerald-700",

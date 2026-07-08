@@ -1,5 +1,6 @@
 import { errorMessage } from "../lib/errorMessage";
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabaseClient";
 import { createTenantAndAdmin } from "../lib/tenantAuth";
 
@@ -17,6 +18,7 @@ interface Props {
  * Имэйл баталгаажуулалт идэвхтэй үед бүртгэлийн дараах алхам энд хийгдэнэ.
  */
 export default function Onboarding({ onDone }: Props) {
+  const { t } = useTranslation();
   const [tenantName, setTenantName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,22 +43,20 @@ export default function Onboarding({ onDone }: Props) {
         onSubmit={handleSubmit}
         className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
       >
-        <h1 className="mb-1 text-xl font-semibold text-slate-900">Байгууллагаа үүсгэх</h1>
-        <p className="mb-6 text-sm text-slate-500">
-          Эхний удаа байгууллагынхаа мэдээллийг оруулна уу.
-        </p>
+        <h1 className="mb-1 text-xl font-semibold text-slate-900">{t("auth.createOrgTitle")}</h1>
+        <p className="mb-6 text-sm text-slate-500">{t("auth.createOrgSubtitle")}</p>
 
         {error && (
           <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
         )}
 
-        <label className={labelCls}>Байгууллагын нэр</label>
+        <label className={labelCls}>{t("auth.orgName")}</label>
         <input
           required
           value={tenantName}
           onChange={(e) => setTenantName(e.target.value)}
           className={inputCls + " mb-4"}
-          placeholder="Миний дэлгүүр"
+          placeholder={t("auth.orgNamePlaceholder")}
         />
 
         <button
@@ -64,7 +64,7 @@ export default function Onboarding({ onDone }: Props) {
           disabled={loading}
           className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60"
         >
-          {loading ? "Үүсгэж байна…" : "Үүсгэх"}
+          {loading ? t("auth.creating") : t("auth.create")}
         </button>
 
         <button
@@ -72,7 +72,7 @@ export default function Onboarding({ onDone }: Props) {
           onClick={() => supabase.auth.signOut()}
           className="mt-3 w-full rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
         >
-          Гарах
+          {t("auth.signOut")}
         </button>
       </form>
     </div>

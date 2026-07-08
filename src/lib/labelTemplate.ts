@@ -17,26 +17,28 @@ export type LabelDataField =
   | "arrival_date"
   | "supplier";
 
+// label = орчуулгын ТҮЛХҮҮР — харуулахдаа t(f.label)-ээр орчуулна (LabelDesigner).
 export const DATA_FIELDS: { value: LabelDataField; label: string }[] = [
-  { value: "static", label: "Чөлөөт текст" },
-  { value: "name", label: "Барааны нэр" },
-  { value: "sku", label: "SKU" },
-  { value: "gtin", label: "GTIN/баркод" },
-  { value: "epc_hex", label: "EPC (hex)" },
-  { value: "serial", label: "Serial" },
-  { value: "box_no", label: "Хайрцаг" },
-  { value: "job_number", label: "Ажлын №" },
-  { value: "arrival_date", label: "Ирсэн огноо" },
-  { value: "supplier", label: "Нийлүүлэгч" },
+  { value: "static", label: "labels.field.static" },
+  { value: "name", label: "labels.field.name" },
+  { value: "sku", label: "labels.field.sku" },
+  { value: "gtin", label: "labels.field.gtin" },
+  { value: "epc_hex", label: "labels.field.epcHex" },
+  { value: "serial", label: "labels.field.serial" },
+  { value: "box_no", label: "labels.field.boxNo" },
+  { value: "job_number", label: "labels.field.jobNumber" },
+  { value: "arrival_date", label: "labels.field.arrivalDate" },
+  { value: "supplier", label: "labels.field.supplier" },
 ];
 
 export type Symbology = "code128" | "ean13" | "qrcode" | "datamatrix";
 
+// label = орчуулгын ТҮЛХҮҮР — харуулахдаа t(s.label)-ээр орчуулна (LabelDesigner).
 export const SYMBOLOGIES: { value: Symbology; label: string }[] = [
-  { value: "qrcode", label: "QR код (EPC-д тохиромжтой)" },
-  { value: "datamatrix", label: "DataMatrix" },
-  { value: "code128", label: "Code 128 (1D)" },
-  { value: "ean13", label: "EAN-13 (1D)" },
+  { value: "qrcode", label: "labels.symbology.qrcode" },
+  { value: "datamatrix", label: "labels.symbology.datamatrix" },
+  { value: "code128", label: "labels.symbology.code128" },
+  { value: "ean13", label: "labels.symbology.ean13" },
 ];
 
 export type LabelObjectType = "text" | "barcode" | "image" | "rfid" | "rect";

@@ -1,5 +1,7 @@
 import { errorMessage } from "../lib/errorMessage";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Trans, useTranslation } from "react-i18next";
+import { labelMap } from "../i18n/labelMap";
 import {
   addInvite,
   cancelInvite,
@@ -17,10 +19,14 @@ import { ALL_PERMS, PERM_GROUPS } from "../lib/permissions";
 const inputCls =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
 
-const ROLE_LABEL: Record<Role, string> = { admin: "Админ", operator: "Оператор" };
+const ROLE_LABEL: Record<Role, string> = labelMap({
+  admin: "members.roleAdmin",
+  operator: "members.roleOperator",
+});
 
 /** Admin: тенантын гишүүд (+ салбарын хуваарилалт) + урилга удирдах. */
 export default function Members() {
+  const { t } = useTranslation();
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -147,7 +153,7 @@ export default function Members() {
   /** Гишүүний хуваарилалтыг chip-үүдээр (хоосон = Бүгд). */
   function branchChips(m: Member) {
     if (m.branch_ids.length === 0) {
-      return <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">Бүх салбар</span>;
+      return <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">{t("members.allBranches")}</span>;
     }
     return m.branch_ids.map((id) => (
       <span key={id} className="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
@@ -158,7 +164,7 @@ export default function Members() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <h2 className="text-lg font-semibold text-slate-900">Хэрэглэгчид</h2>
+      <h2 className="text-lg font-semibold text-slate-900">{t("members.title")}</h2>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
@@ -167,24 +173,24 @@ export default function Members() {
         onSubmit={handleInvite}
         className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       >
-        <h3 className="mb-3 text-sm font-semibold text-slate-700">Хэрэглэгч урих</h3>
+        <h3 className="mb-3 text-sm font-semibold text-slate-700">{t("members.inviteTitle")}</h3>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
-            <label className="mb-1 block text-xs font-medium text-slate-600">Имэйл</label>
+            <label className="mb-1 block text-xs font-medium text-slate-600">{t("members.email")}</label>
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className={inputCls}
-              placeholder="hereglegch@company.com"
+              placeholder={t("members.emailPlaceholder")}
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Эрх</label>
+            <label className="mb-1 block text-xs font-medium text-slate-600">{t("members.role")}</label>
             <select value={role} onChange={(e) => setRole(e.target.value as Role)} className={inputCls}>
-              <option value="operator">Оператор</option>
-              <option value="admin">Админ</option>
+              <option value="operator">{t("members.roleOperator")}</option>
+              <option value="admin">{t("members.roleAdmin")}</option>
             </select>
           </div>
           <button
@@ -192,19 +198,18 @@ export default function Members() {
             disabled={saving}
             className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
           >
-            {saving ? "Уриж байна…" : "Урих"}
+            {saving ? t("members.inviting") : t("members.invite")}
           </button>
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          Уригдсан хүн энэ имэйлээрээ <strong>Бүртгүүлэх</strong> хийхэд автоматаар таны
-          байгууллагад нэгдэнэ. Нэгдсэний дараа доороос салбар хуваарилна.
+          <Trans i18nKey="members.inviteHint" />
         </p>
       </form>
 
       {/* Гишүүд */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Гишүүд ({members.length})
+          {t("members.membersHeader", { n: members.length })}
         </div>
         <ul className="divide-y divide-slate-100">
           {members.map((m) => (
@@ -225,23 +230,23 @@ export default function Members() {
                           : "bg-amber-50 text-amber-700")
                       }
                     >
-                      {m.perms.length === 0 ? "Бүрэн эрх" : `${m.perms.length} эрх`}
+                      {m.perms.length === 0 ? t("members.fullPerms") : t("members.permCount", { n: m.perms.length })}
                     </span>
                     <button
                       onClick={() => openBranchModal(m)}
                       className="ml-1 text-xs font-medium text-indigo-600 hover:underline"
                     >
-                      Салбар
+                      {t("common.branch")}
                     </button>
                     <button
                       onClick={() => openPermModal(m)}
                       className="text-xs font-medium text-indigo-600 hover:underline"
                     >
-                      Эрх
+                      {t("members.permsBtn")}
                     </button>
                   </>
                 ) : (
-                  <span className="text-xs text-slate-400">Бүрэн эрх (админ)</span>
+                  <span className="text-xs text-slate-400">{t("members.fullPermsAdmin")}</span>
                 )}
               </span>
             </li>
@@ -253,7 +258,7 @@ export default function Members() {
       {invites.length > 0 && (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Хүлээгдэж буй урилга ({invites.length})
+            {t("members.pendingInvites", { n: invites.length })}
           </div>
           <ul className="divide-y divide-slate-100">
             {invites.map((inv) => (
@@ -267,7 +272,7 @@ export default function Members() {
                     onClick={() => handleCancel(inv.id)}
                     className="text-xs text-red-600 hover:underline"
                   >
-                    Цуцлах
+                    {t("common.cancel")}
                   </button>
                 </span>
               </li>
@@ -283,15 +288,14 @@ export default function Members() {
           onClick={() => setPermModal(null)}
         >
           <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold text-slate-900">Эрх тохируулах</h3>
+            <h3 className="font-semibold text-slate-900">{t("members.permModalTitle")}</h3>
             <p className="mt-1 text-xs text-slate-500">
-              {permModal.email} — сонгосон цэс/үйлдэл л зөвшөөрөгдөнө (UI + DB хоёуланд).
-              <strong> Бүгдийг чеклэвэл бүрэн эрх</strong> (default) болно.
+              <Trans i18nKey="members.permModalHint" values={{ email: permModal.email }} />
             </p>
             <div className="mt-3 grid max-h-80 grid-cols-1 gap-4 overflow-auto sm:grid-cols-2">
               {PERM_GROUPS.map((g) => (
                 <div key={g.title}>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{g.title}</p>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{t(g.title)}</p>
                   <div className="space-y-0.5">
                     {g.perms.map((p) => (
                       <label
@@ -303,7 +307,7 @@ export default function Members() {
                           checked={pickedPerms.has(p.key)}
                           onChange={() => togglePerm(p.key)}
                         />
-                        {p.label}
+                        {t(p.label)}
                       </label>
                     ))}
                   </div>
@@ -313,22 +317,22 @@ export default function Members() {
             <div className="mt-4 flex items-center justify-between gap-2">
               <span className="text-xs text-slate-500">
                 {pickedPerms.size === ALL_PERMS.length
-                  ? "Бүрэн эрх"
-                  : `${pickedPerms.size}/${ALL_PERMS.length} эрх`}
+                  ? t("members.fullPerms")
+                  : t("members.permCountOf", { picked: pickedPerms.size, total: ALL_PERMS.length })}
               </span>
               <div className="flex gap-2">
                 <button
                   onClick={() => setPermModal(null)}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
                 >
-                  Болих
+                  {t("members.dismiss")}
                 </button>
                 <button
                   disabled={permSaving}
                   onClick={handleSavePerms}
                   className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
                 >
-                  {permSaving ? "Хадгалж байна…" : "Хадгалах"}
+                  {permSaving ? t("members.saving") : t("common.save")}
                 </button>
               </div>
             </div>
@@ -343,10 +347,9 @@ export default function Members() {
           onClick={() => setBranchModal(null)}
         >
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold text-slate-900">Салбар хуваарилах</h3>
+            <h3 className="font-semibold text-slate-900">{t("members.branchModalTitle")}</h3>
             <p className="mt-1 text-xs text-slate-500">
-              {branchModal.email} — сонгосон салбарын өгөгдлийг л харж, гүйлгээ хийнэ.
-              Юу ч сонгохгүй бол <strong>бүх салбар</strong> нээлттэй.
+              <Trans i18nKey="members.branchModalHint" values={{ email: branchModal.email }} />
             </p>
             <div className="mt-3 max-h-64 space-y-1 overflow-auto">
               {branches.map((b) => (
@@ -362,21 +365,21 @@ export default function Members() {
             </div>
             <div className="mt-4 flex items-center justify-between gap-2">
               <span className="text-xs text-slate-500">
-                {picked.size === 0 ? "Бүх салбар" : `${picked.size} салбар`}
+                {picked.size === 0 ? t("members.allBranches") : t("members.branchCount", { n: picked.size })}
               </span>
               <div className="flex gap-2">
                 <button
                   onClick={() => setBranchModal(null)}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
                 >
-                  Болих
+                  {t("members.dismiss")}
                 </button>
                 <button
                   disabled={branchSaving}
                   onClick={handleSaveBranches}
                   className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
                 >
-                  {branchSaving ? "Хадгалж байна…" : "Хадгалах"}
+                  {branchSaving ? t("members.saving") : t("common.save")}
                 </button>
               </div>
             </div>

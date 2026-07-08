@@ -1,22 +1,23 @@
 // ============================================================
-// EPC төлөв (status lifecycle) — нэг эх сурвалж: код ↔ Монгол нэр ↔ badge өнгө.
+// EPC төлөв (status lifecycle) — нэг эх сурвалж: код ↔ нэр ↔ badge өнгө.
 //   Хэвлээгүй → Идэвхтэй → Борлуулсан / Шилжүүлж буй / Бусад.
 //   EpcTable (харах/шүүх/export), EpcLookup бүгд эндээс авна.
+//   Нэрс i18n-ээс (labelMap — уншилт бүрд идэвхтэй хэлээр).
 // ============================================================
+import { labelMap } from "../i18n/labelMap";
 
 export type EpcStatus = "unprinted" | "active" | "sold" | "transferring" | "other";
 
 /** Dropdown/жагсаалтын дараалал (lifecycle урсгалаар). */
 export const EPC_STATUSES: EpcStatus[] = ["unprinted", "active", "sold", "transferring", "other"];
 
-export const STATUS_LABEL: Record<EpcStatus, string> = {
-  unprinted: "Хэвлээгүй",
-  active: "Идэвхтэй",
-  sold: "Борлуулсан",
-  transferring: "Шилжүүлж буй",
-  // Гүйлгээ цэсний "Бусад гүйлгээ" төрөлтэй нэг ойлголт — нэг нэршил.
-  other: "Бусад гүйлгээ",
-};
+export const STATUS_LABEL: Record<EpcStatus, string> = labelMap({
+  unprinted: "epcStatus.unprinted",
+  active: "epcStatus.active",
+  sold: "epcStatus.sold",
+  transferring: "epcStatus.transferring",
+  other: "epcStatus.other",
+});
 
 /** Badge-ийн Tailwind классууд (фон + текст). */
 export const STATUS_BADGE: Record<EpcStatus, string> = {

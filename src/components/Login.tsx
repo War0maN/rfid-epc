@@ -1,6 +1,8 @@
 import { errorMessage } from "../lib/errorMessage";
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { loginWithEmail, signUpUser } from "../lib/tenantAuth";
+import { LANGS, setLang, type Lang } from "../i18n";
 
 type Mode = "login" | "signup";
 
@@ -10,6 +12,7 @@ const labelCls = "mb-1 block text-sm font-medium text-slate-700";
 
 /** Имэйл+нууц үгээр нэвтрэх ба байгууллага үүсгэж бүртгүүлэх дэлгэц. */
 export default function Login() {
+  const { t, i18n } = useTranslation();
   const [mode, setMode] = useState<Mode>("login");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -39,9 +42,7 @@ export default function Login() {
     try {
       const { needsEmailConfirm } = await signUpUser(email, password);
       if (needsEmailConfirm) {
-        setInfo(
-          "Бүртгэл үүслээ. Имэйлээ баталгаажуулаад нэвтэрнэ үү — нэвтэрсний дараа байгууллагаа үүсгэх эсвэл урилгад нэгдэнэ."
-        );
+        setInfo(t("auth.signupEmailConfirm"));
         setMode("login");
       }
       // Session шууд гарвал useSession → App: урилга шалгаад онбординг/үндсэн апп.
@@ -55,7 +56,21 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="mb-1 text-2xl font-semibold text-slate-900">RFID EPC Generator</h1>
+        <div className="mb-1 flex items-start justify-between gap-2">
+          <h1 className="text-2xl font-semibold text-slate-900">RFID EPC Generator</h1>
+          <select
+            value={i18n.language}
+            onChange={(e) => setLang(e.target.value as Lang)}
+            className="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-700"
+            aria-label="Language"
+          >
+            {LANGS.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="mb-6 mt-4 flex rounded-lg bg-slate-100 p-1 text-sm">
           {(["login", "signup"] as Mode[]).map((m) => (
@@ -72,7 +87,7 @@ export default function Login() {
                 (mode === m ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500")
               }
             >
-              {m === "login" ? "Нэвтрэх" : "Бүртгүүлэх"}
+              {m === "login" ? t("auth.login") : t("auth.signup")}
             </button>
           ))}
         </div>
@@ -87,12 +102,11 @@ export default function Login() {
         <form onSubmit={mode === "login" ? handleLogin : handleSignup}>
           {mode === "signup" && (
             <p className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              Бүртгүүлсний дараа байгууллагаа үүсгэнэ. Хэрэв танд урилга ирсэн бол
-              автоматаар тэр байгууллагад нэгдэнэ.
+              {t("auth.signupHint")}
             </p>
           )}
 
-          <label className={labelCls}>Имэйл</label>
+          <label className={labelCls}>{t("auth.email")}</label>
           <input
             type="email"
             required
@@ -103,7 +117,7 @@ export default function Login() {
             placeholder="you@company.com"
           />
 
-          <label className={labelCls}>Нууц үг</label>
+          <label className={labelCls}>{t("auth.password")}</label>
           <input
             type="password"
             required
@@ -121,11 +135,11 @@ export default function Login() {
           >
             {loading
               ? mode === "login"
-                ? "Нэвтэрч байна…"
-                : "Үүсгэж байна…"
+                ? t("auth.loggingIn")
+                : t("auth.creating")
               : mode === "login"
-                ? "Нэвтрэх"
-                : "Бүртгүүлж байгууллага үүсгэх"}
+                ? t("auth.login")
+                : t("auth.signupAndCreateOrg")}
           </button>
         </form>
       </div>

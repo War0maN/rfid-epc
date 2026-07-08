@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { listTemplates, type LabelTemplate, type LabelData } from "../lib/labelTemplate";
 import { renderLabelToCanvas, buildBatchZpl, type PrintOffset } from "../lib/labelZpl";
 import {
@@ -19,6 +20,7 @@ interface Props {
 
 /** Сонгосон EPC-үүдийг загвараар preview хийж, Browser Print-ээр хэвлэх диалог. */
 export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
+  const { t } = useTranslation();
   const [templates, setTemplates] = useState<LabelTemplate[]>([]);
   const [templateId, setTemplateId] = useState<string>("");
   const [preview, setPreview] = useState<string>("");
@@ -33,7 +35,7 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
   const offset: PrintOffset = { x_mm: offsetX, y_mm: offsetY };
 
   const template = useMemo(
-    () => templates.find((t) => t.id === templateId) ?? null,
+    () => templates.find((tp) => tp.id === templateId) ?? null,
     [templates, templateId]
   );
 
@@ -41,10 +43,10 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
   useEffect(() => {
     let active = true;
     listTemplates()
-      .then((t) => {
+      .then((ts) => {
         if (!active) return;
-        setTemplates(t);
-        if (t.length) setTemplateId(t[0].id);
+        setTemplates(ts);
+        if (ts.length) setTemplateId(ts[0].id);
       })
       .catch((e) => active && setError(errorMessage(e)));
     return () => {
@@ -71,7 +73,7 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
       .then((ds) => {
         setPrinters(ds);
         if (ds.length) setPrinterUid(ds[0].uid);
-        else setError("Принтер олдсонгүй. Browser Print болон принтерийн холболтоо шалгана уу.");
+        else setError(t("labels.print.noPrintersFound"));
       })
       .catch((e) => setError(errorMessage(e)));
   }
@@ -80,7 +82,7 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
     if (!template) return;
     const device = printers.find((p) => p.uid === printerUid);
     if (!device) {
-      setError("Принтер сонгоно уу (Принтер хайх дарна уу).");
+      setError(t("labels.print.selectPrinter"));
       return;
     }
     setBusy(true);
@@ -89,7 +91,7 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
     try {
       const zpl = await buildBatchZpl(template, rows, offset);
       await sendToPrinter(device, zpl);
-      setInfo(`${rows.length} шошго принтер рүү илгээлээ.`);
+      setInfo(t("labels.print.sentToPrinter", { n: rows.length }));
       onPrinted?.();
     } catch (e) {
       setError(errorMessage(e));
@@ -117,19 +119,25 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-xl bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">Шошго хэвлэх</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{t("labels.print.title")}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
         </div>
 
         <p className="mb-3 text-sm text-slate-600">
-          Сонгосон <strong>{rows.length}</strong> EPC-д шошго хэвлэнэ.
+          <Trans
+            i18nKey="labels.print.willPrint"
+            values={{ n: rows.length }}
+            components={{ b: <strong /> }}
+          />
         </p>
 
         {/* Загвар */}
-        <label className="mb-1 block text-xs font-medium text-slate-600">Шошгоны загвар</label>
+        <label className="mb-1 block text-xs font-medium text-slate-600">
+          {t("labels.print.templateLabel")}
+        </label>
         {templates.length === 0 ? (
           <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
-            Загвар алга. Эхлээд "Шошго" таб дээр загвар үүсгэнэ үү.
+            {t("labels.print.noTemplates")}
           </p>
         ) : (
           <select
@@ -137,9 +145,9 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
             onChange={(e) => setTemplateId(e.target.value)}
             className="mb-3 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
           >
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({t.width_mm}×{t.height_mm}мм · {t.dpi}dpi)
+            {templates.map((tp) => (
+              <option key={tp.id} value={tp.id}>
+                {tp.name} ({t("labels.print.templateSize", { w: tp.width_mm, h: tp.height_mm, dpi: tp.dpi })})
               </option>
             ))}
           </select>
@@ -148,7 +156,7 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
         {/* Preview */}
         {preview && (
           <div className="mb-3">
-            <div className="mb-1 text-xs font-medium text-slate-600">Урьдчилан харах (эхний мөр)</div>
+            <div className="mb-1 text-xs font-medium text-slate-600">{t("labels.print.previewLabel")}</div>
             <div className="inline-block rounded border border-slate-300 bg-[repeating-conic-gradient(#f1f5f9_0%_25%,#fff_0%_50%)] bg-[length:12px_12px] p-2">
               <img src={preview} alt="preview" className="max-h-40" style={{ imageRendering: "pixelated" }} />
             </div>
@@ -158,11 +166,11 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
         {/* Байрлал тааруулах (хэвлэгдэх байрлал гажвал) */}
         <div className="mb-3">
           <label className="mb-1 block text-xs font-medium text-slate-600">
-            Байрлал тааруулах (мм)
+            {t("labels.print.offsetLabel")}
           </label>
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-slate-500">Хэвтээ X</span>
+              <span className="text-xs text-slate-500">{t("labels.print.offsetX")}</span>
               <input
                 type="number"
                 step={0.5}
@@ -172,7 +180,7 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
               />
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-slate-500">Босоо Y</span>
+              <span className="text-xs text-slate-500">{t("labels.print.offsetY")}</span>
               <input
                 type="number"
                 step={0.5}
@@ -189,21 +197,19 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
                 }}
                 className="text-xs text-indigo-600 hover:underline"
               >
-                Тэглэх
+                {t("labels.print.resetOffset")}
               </button>
             )}
           </div>
-          <p className="mt-1 text-[11px] text-slate-400">
-            Доош/баруун тийш = эерэг (+), дээш/зүүн тийш = сөрөг (−).
-          </p>
+          <p className="mt-1 text-[11px] text-slate-400">{t("labels.print.offsetHint")}</p>
         </div>
 
         {/* Принтер */}
         <div className="mb-3">
           <div className="mb-1 flex items-center justify-between">
-            <label className="text-xs font-medium text-slate-600">Принтер (Browser Print)</label>
+            <label className="text-xs font-medium text-slate-600">{t("labels.print.printerLabel")}</label>
             <button onClick={loadPrinters} className="text-xs text-indigo-600 hover:underline">
-              Принтер хайх
+              {t("labels.print.findPrinters")}
             </button>
           </div>
           {printers.length > 0 ? (
@@ -221,8 +227,8 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
           ) : (
             <p className="text-xs text-slate-500">
               {isBrowserPrintAvailable()
-                ? "«Принтер хайх» дарна уу."
-                : "Browser Print суулгаагүй байж магадгүй — ZPL татаж хэвлэж болно."}
+                ? t("labels.print.pressFindPrinters")
+                : t("labels.print.noBrowserPrint")}
             </p>
           )}
         </div>
@@ -236,14 +242,14 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
             disabled={busy || !template}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
-            ZPL татах
+            {t("labels.print.downloadZpl")}
           </button>
           <button
             onClick={handlePrint}
             disabled={busy || !template || printers.length === 0}
             className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            {busy ? "Хэвлэж байна…" : "Хэвлэх"}
+            {busy ? t("labels.print.printing") : t("labels.print.print")}
           </button>
         </div>
       </div>

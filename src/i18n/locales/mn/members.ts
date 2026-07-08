@@ -1,0 +1,30 @@
+export default {
+  title: "Хэрэглэгчид",
+  inviteTitle: "Хэрэглэгч урих",
+  email: "Имэйл",
+  emailPlaceholder: "hereglegch@company.com",
+  role: "Эрх",
+  roleAdmin: "Админ",
+  roleOperator: "Оператор",
+  invite: "Урих",
+  inviting: "Уриж байна…",
+  inviteHint:
+    "Уригдсан хүн энэ имэйлээрээ <strong>Бүртгүүлэх</strong> хийхэд автоматаар таны байгууллагад нэгдэнэ. Нэгдсэний дараа доороос салбар хуваарилна.",
+  membersHeader: "Гишүүд ({{n}})",
+  allBranches: "Бүх салбар",
+  fullPerms: "Бүрэн эрх",
+  permCount: "{{n}} эрх",
+  permsBtn: "Эрх",
+  fullPermsAdmin: "Бүрэн эрх (админ)",
+  pendingInvites: "Хүлээгдэж буй урилга ({{n}})",
+  permModalTitle: "Эрх тохируулах",
+  permModalHint:
+    "{{email}} — сонгосон цэс/үйлдэл л зөвшөөрөгдөнө (UI + DB хоёуланд).<strong> Бүгдийг чеклэвэл бүрэн эрх</strong> (default) болно.",
+  permCountOf: "{{picked}}/{{total}} эрх",
+  branchModalTitle: "Салбар хуваарилах",
+  branchModalHint:
+    "{{email}} — сонгосон салбарын өгөгдлийг л харж, гүйлгээ хийнэ. Юу ч сонгохгүй бол <strong>бүх салбар</strong> нээлттэй.",
+  branchCount: "{{n}} салбар",
+  dismiss: "Болих",
+  saving: "Хадгалж байна…",
+};

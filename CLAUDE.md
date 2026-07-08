@@ -27,6 +27,7 @@ RFID EPC Generator: Vite + React 19 + TS + Tailwind + Supabase (Postgres/RLS/Aut
 
 ## Client хэв маягууд (src/)
 
+- **i18n (MN/EN/ZH):** react-i18next; толь = `src/i18n/locales/{mn,en,zh}/<секц>.ts` (нэг секц = нэг домэйн, aggregator index.ts). Компонентод `useTranslation()` + `t("секц.түлхүүр")`; lib-д алдааны мессежийг **функц дотор** `i18n.t(...)` (module-level const-д хэзээ ч биш); `Record<код, нэр>` label map-уудыг `labelMap()` (src/i18n/labelMap.ts) — утга нь түлхүүр, уншилт бүрд идэвхтэй хэлээр, дуудагч талын API өөрчлөгдөхгүй. Хэл солигч header + Login (localStorage `lang`, default mn). Орчуулахгүй: DB raise exception passthrough, DB-д хадгалагддаг утга, Excel толгойн synonym, шошгон дээр хэвлэгдэх текст, динамик attribute баганын нэр, комментууд. Шинэ UI текст нэмэхдээ 3 хэлэнд зэрэг нэм (түлхүүрийн олонлог ижил байх ёстой).
 - **lib/ = логик, components/ = UI.** Нэг ойлголт = нэг эх сурвалж: `epcStatus.ts` (статус код↔нэр↔badge), `transactions.ts` (TX_TYPE_LABEL...), `permissions.ts` (эрхийн каталог + makeCan), `epcHistory.ts` (EVENT_META), `format.ts` (formatMoney/parseMoney).
 - **Тоо харуулах:** үнэ/тоо мянгатын таслалтай (`formatMoney`) — гэхдээ column `get()` ТҮҮХИЙ утга буцаана (эрэмбэ/шүүлт эвдрэхгүй), форматыг render дээр. **CSV export үргэлж түүхий тоо** (Excel-д танигдана).
 - **Хүснэгтийн загвар** (ProductList/Inventory/EpcTable): ColDef массив, client-side шүүлт/эрэмбэ/хуудас (EpcTable нь server-side: `epc_full` view + `fetchEpcPage`), багана нуух localStorage, толгойн шошго тогтмол өндөр (min-h-[32px]) + баганын босоо зааг.
@@ -38,7 +39,6 @@ RFID EPC Generator: Vite + React 19 + TS + Tailwind + Supabase (Postgres/RLS/Aut
 
 ## Хийгдээгүй / мэдэгдэж буй хязгаарлалт
 
-- i18n (MN/EN/ZH) төлөвлөгдсөн — одоогоор бүх текст Монгол hardcode.
 - Урилга имэйл илгээдэггүй (уригдсан хүн өөрөө бүртгүүлдэг); deploy хийгдээгүй (localhost).
 - Тайлан буцаалтыг хасдаггүй (буцаагдаад дахин зарагдвал 2 тоологдоно).
 - Тооллого (stocktake) хийгдээгүй.

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { labelMap } from "../i18n/labelMap";
 import {
   listCategories,
   listAttributeDefs,
@@ -25,15 +27,16 @@ const btn = "rounded-lg border border-slate-300 px-2.5 py-1 text-sm text-slate-7
 const primaryBtn =
   "rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50";
 
-const TYPE_LABEL: Record<AttrInputType, string> = {
-  text: "Текст",
-  number: "Тоо",
-  select: "Сонголт",
-};
+const TYPE_LABEL: Record<AttrInputType, string> = labelMap({
+  text: "catalog.typeText",
+  number: "catalog.typeNumber",
+  select: "catalog.typeSelect",
+});
 
 /** Динамик каталог: ангиллын мод + шинж чанарын тодорхойлолт (Тохиргоо). */
 /** canEdit=false бол зөвхөн харах горим (эрхийн систем — DB давхар хамгаална). */
 export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
+  const { t } = useTranslation();
   const [cats, setCats] = useState<Category[]>([]);
   const [attrs, setAttrs] = useState<AttributeDef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,8 +109,8 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
   }
   function removeCategory(c: CategoryNode) {
     const msg = c.children.length
-      ? `"${c.name}" болон доtorх бүх дэд ангилал устах. Үргэлжлүүлэх үү?`
-      : `"${c.name}" ангилал устах. Үргэлжлүүлэх үү?`;
+      ? t("catalog.confirmDeleteCategoryWithChildren", { name: c.name })
+      : t("catalog.confirmDeleteCategory", { name: c.name });
     if (!window.confirm(msg)) return;
     deleteCategory(c.id)
       .then(reload)
@@ -147,7 +150,7 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
                   <button
                     onClick={() => startAdd(node.id, CATEGORY_LEVELS[depth + 1])}
                     className="text-xs text-slate-400 hover:text-indigo-600"
-                    title={`${CATEGORY_LEVELS[depth + 1]} нэмэх`}
+                    title={t("catalog.addLevelTitle", { level: CATEGORY_LEVELS[depth + 1] })}
                   >
                     ＋
                   </button>
@@ -158,11 +161,11 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
                     setRenameName(node.name);
                   }}
                   className="text-xs text-slate-400 hover:text-indigo-600"
-                  title="Нэр солих"
+                  title={t("catalog.renameTitle")}
                 >
                   ✎
                 </button>
-                <button onClick={() => removeCategory(node)} className="text-xs text-slate-400 hover:text-red-600" title="Устгах">🗑</button>
+                <button onClick={() => removeCategory(node)} className="text-xs text-slate-400 hover:text-red-600" title={t("common.delete")}>🗑</button>
               </div>
             </>
           )}
@@ -174,7 +177,7 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
               value={addName}
               onChange={(e) => setAddName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && saveAdd()}
-              placeholder={`${addLevel} нэр`}
+              placeholder={t("catalog.levelNamePlaceholder", { level: addLevel })}
               className={inp + " h-7 max-w-[160px]"}
             />
             <button onClick={saveAdd} className="text-xs text-indigo-600">✓</button>
@@ -189,10 +192,9 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-slate-900">Ангилал ба шинж чанар</h2>
+        <h2 className="text-lg font-semibold text-slate-900">{t("catalog.title")}</h2>
         <p className="text-sm text-slate-500">
-          Ангилал нь 3 түвшинтэй ({CATEGORY_LEVELS.join(" → ")}) — заавал бүгдийг бөглөх албагүй.
-          Шинж чанар (өнгө/размер/үнэ…) нь нэг л глобал жагсаалтад тодорхойлогдоно.
+          {t("catalog.intro", { levels: CATEGORY_LEVELS.join(" → ") })}
         </p>
       </div>
 
@@ -202,7 +204,7 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
         {/* Зүүн: ангиллын мод */}
         <div className="w-full shrink-0 rounded-xl border border-slate-200 bg-white p-3 lg:w-80">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm font-semibold text-slate-700">Ангилал</span>
+            <span className="text-sm font-semibold text-slate-700">{t("common.category")}</span>
             {canEdit && (
               <button onClick={() => startAdd(null, CATEGORY_LEVELS[0])} className={btn}>
                 + {CATEGORY_LEVELS[0]}
@@ -217,7 +219,7 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
                 value={addName}
                 onChange={(e) => setAddName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && saveAdd()}
-                placeholder={`${addLevel} нэр`}
+                placeholder={t("catalog.levelNamePlaceholder", { level: addLevel })}
                 className={inp + " h-7"}
               />
               <button onClick={saveAdd} className="text-xs text-indigo-600">✓</button>
@@ -226,9 +228,9 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
           )}
 
           {loading ? (
-            <p className="px-2 py-4 text-sm text-slate-400">Ачаалж байна…</p>
+            <p className="px-2 py-4 text-sm text-slate-400">{t("common.loading")}</p>
           ) : tree.length === 0 ? (
-            <p className="px-2 py-4 text-sm text-slate-400">Ангилал алга. "+ Үндсэн ангилал" дарж эхэл.</p>
+            <p className="px-2 py-4 text-sm text-slate-400">{t("catalog.noCategories", { level: CATEGORY_LEVELS[0] })}</p>
           ) : (
             <div>{tree.map((n) => renderNode(n, 0))}</div>
           )}
@@ -237,9 +239,9 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
         {/* Баруун: шинж чанарууд (нэг глобал жагсаалт) */}
         <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-3">
-            <span className="text-sm font-semibold text-slate-700">Шинж чанар (глобал)</span>
+            <span className="text-sm font-semibold text-slate-700">{t("catalog.attrsGlobalTitle")}</span>
             <p className="mt-1 text-xs text-slate-400">
-              Энд тодорхойлсон шинж чанар бүх бараанд хэрэглэгдэнэ. Бараа үүсгэхэд эдгээр талбар гарна.
+              {t("catalog.attrsGlobalDesc")}
             </p>
           </div>
 
@@ -271,10 +273,11 @@ function AttrList({
   onChanged: () => void;
   onError: (m: string) => void;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState<AttributeDef | "new" | null>(null);
 
   function remove(a: AttributeDef) {
-    if (!window.confirm(`"${a.label}" шинж чанарыг устгах уу?`)) return;
+    if (!window.confirm(t("catalog.confirmDeleteAttr", { label: a.label }))) return;
     deleteAttributeDef(a.id)
       .then(onChanged)
       .catch((e) => onError(errorMessage(e)));
@@ -284,7 +287,7 @@ function AttrList({
     <div className="space-y-2">
       {attrs.length === 0 && editing !== "new" && (
         <p className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-center text-sm text-slate-400">
-          Шинж чанар алга.
+          {t("catalog.noAttrs")}
         </p>
       )}
 
@@ -305,14 +308,14 @@ function AttrList({
           <div key={a.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
             <span className="font-medium text-slate-800">{a.label}</span>
             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{TYPE_LABEL[a.input_type]}</span>
-            {a.required && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">заавал</span>}
+            {a.required && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">{t("catalog.requiredBadge")}</span>}
             {a.input_type === "select" && a.options.length > 0 && (
               <span className="truncate text-xs text-slate-400">{a.options.join(", ")}</span>
             )}
             {canEdit && (
               <div className="ml-auto flex gap-2">
-                <button onClick={() => setEditing(a)} className="text-xs text-indigo-600 hover:underline">Засах</button>
-                <button onClick={() => remove(a)} className="text-xs text-red-600 hover:underline">Устгах</button>
+                <button onClick={() => setEditing(a)} className="text-xs text-indigo-600 hover:underline">{t("common.edit")}</button>
+                <button onClick={() => remove(a)} className="text-xs text-red-600 hover:underline">{t("common.delete")}</button>
               </div>
             )}
           </div>
@@ -331,7 +334,7 @@ function AttrList({
         />
       ) : canEdit ? (
         <button onClick={() => setEditing("new")} className={btn + " mt-1"}>
-          + Шинж чанар нэмэх
+          {t("catalog.addAttr")}
         </button>
       ) : null}
     </div>
@@ -351,6 +354,7 @@ function AttrForm({
   onCancel: () => void;
   onError: (m: string) => void;
 }) {
+  const { t } = useTranslation();
   const [label, setLabel] = useState(initial?.label ?? "");
   const [type, setType] = useState<AttrInputType>(initial?.input_type ?? "text");
   const [optionsText, setOptionsText] = useState((initial?.options ?? []).join(", "));
@@ -365,7 +369,7 @@ function AttrForm({
         ? optionsText.split(",").map((s) => s.trim()).filter(Boolean)
         : [];
     if (type === "select" && options.length === 0) {
-      onError("Сонголт төрөлд дор хаяж нэг утга оруулна уу (таслалаар).");
+      onError(t("catalog.selectNeedsOption"));
       return;
     }
     setBusy(true);
@@ -382,26 +386,26 @@ function AttrForm({
     <div className="space-y-2 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3">
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <div>
-          <label className="mb-0.5 block text-xs text-slate-500">Нэр</label>
-          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Өнгө" className={inp} />
+          <label className="mb-0.5 block text-xs text-slate-500">{t("common.name")}</label>
+          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t("catalog.attrNamePlaceholder")} className={inp} />
         </div>
         <div>
-          <label className="mb-0.5 block text-xs text-slate-500">Төрөл</label>
+          <label className="mb-0.5 block text-xs text-slate-500">{t("catalog.typeLabel")}</label>
           <select value={type} onChange={(e) => setType(e.target.value as AttrInputType)} className={inp}>
-            <option value="text">Текст</option>
-            <option value="number">Тоо</option>
-            <option value="select">Сонголт (dropdown)</option>
+            <option value="text">{t("catalog.typeText")}</option>
+            <option value="number">{t("catalog.typeNumber")}</option>
+            <option value="select">{t("catalog.typeSelectDropdown")}</option>
           </select>
         </div>
       </div>
 
       {type === "select" && (
         <div>
-          <label className="mb-0.5 block text-xs text-slate-500">Сонголтууд (таслалаар)</label>
+          <label className="mb-0.5 block text-xs text-slate-500">{t("catalog.optionsLabel")}</label>
           <input
             value={optionsText}
             onChange={(e) => setOptionsText(e.target.value)}
-            placeholder="Улаан, Хөх, Ногоон"
+            placeholder={t("catalog.optionsPlaceholder")}
             className={inp}
           />
         </div>
@@ -409,13 +413,13 @@ function AttrForm({
 
       <label className="flex items-center gap-2 text-sm text-slate-600">
         <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} />
-        Заавал бөглөх
+        {t("catalog.requiredLabel")}
       </label>
 
       <div className="flex justify-end gap-2">
-        <button onClick={onCancel} className={btn}>Болих</button>
+        <button onClick={onCancel} className={btn}>{t("catalog.cancel")}</button>
         <button onClick={save} disabled={busy || !label.trim()} className={primaryBtn}>
-          {busy ? "Хадгалж байна…" : "Хадгалах"}
+          {busy ? t("catalog.saving") : t("common.save")}
         </button>
       </div>
     </div>

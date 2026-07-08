@@ -4,6 +4,7 @@
 // GS1 жишээ дээр шалгасан:
 //   3.0614141.812345.6789  ->  3074257BF7194E4000001A85
 // ============================================================
+import i18n from "../i18n";
 
 /** Company Prefix-ийн уртаар тодорхойлогдох partition хүснэгт. */
 const PARTITION: Record<number, { partition: number; cpBits: number; refBits: number; refDigits: number }> = {
@@ -46,9 +47,11 @@ export function buildIndicatorItemRef(prefixLen: number, indicator: number, item
   if (itemDigits < 0) throw new Error(`prefix length ${prefixLen} invalid`);
   const ref = String(itemReference).replace(/\D/g, "");
   if (ref.length > itemDigits) {
-    throw new Error(`item reference "${itemReference}" нь ${itemDigits} оронд багтахгүй (prefix len ${prefixLen})`);
+    throw new Error(
+      i18n.t("createJob.epc.itemRefTooLong", { ref: itemReference, digits: itemDigits, prefixLen })
+    );
   }
-  if (indicator < 0 || indicator > 9) throw new Error("indicator нь 0-9 байх ёстой");
+  if (indicator < 0 || indicator > 9) throw new Error(i18n.t("createJob.epc.indicatorRange"));
   return String(indicator) + ref.padStart(itemDigits, "0");
 }
 
@@ -63,14 +66,18 @@ export interface Sgtin96Input {
 export function sgtin96Encode({ companyPrefix, indicatorItemRef, serial, filter = 1 }: Sgtin96Input): string {
   const cpLen = companyPrefix.length;
   const p = PARTITION[cpLen];
-  if (!p) throw new Error(`Company prefix урт ${cpLen} буруу (6-12 байх ёстой)`);
+  if (!p) throw new Error(i18n.t("createJob.epc.companyPrefixLength", { len: cpLen }));
   if (indicatorItemRef.length !== p.refDigits) {
-    throw new Error(`indicatorItemRef нь ${p.refDigits} орон байх ёстой (prefix len ${cpLen})`);
+    throw new Error(
+      i18n.t("createJob.epc.indicatorItemRefDigits", { digits: p.refDigits, prefixLen: cpLen })
+    );
   }
-  if (filter < 0 || filter > 7) throw new Error("filter нь 0-7 байх ёстой");
+  if (filter < 0 || filter > 7) throw new Error(i18n.t("createJob.epc.filterRange"));
 
   const s = BigInt(serial);
-  if (s < 0n || s > SERIAL_MAX) throw new Error(`serial нь 0..${SERIAL_MAX} хооронд байх ёстой`);
+  if (s < 0n || s > SERIAL_MAX) {
+    throw new Error(i18n.t("createJob.epc.serialRange", { max: SERIAL_MAX.toString() }));
+  }
 
   const binary =
     bits(SGTIN96_HEADER, 8) +
@@ -80,7 +87,9 @@ export function sgtin96Encode({ companyPrefix, indicatorItemRef, serial, filter 
     bits(BigInt(indicatorItemRef), p.refBits) +
     bits(s, 38);
 
-  if (binary.length !== 96) throw new Error(`encode алдаа: ${binary.length} bit`);
+  if (binary.length !== 96) {
+    throw new Error(i18n.t("createJob.epc.encodeError", { bits: binary.length }));
+  }
   return BigInt("0b" + binary).toString(16).toUpperCase().padStart(24, "0");
 }
 
@@ -132,11 +141,11 @@ export function gtinCheckDigit(digitsWithoutCheck: string): number {
 export function normalizeGtin(raw: string): string {
   const d = String(raw).replace(/\D/g, "");
   if (d.length < 8 || d.length > 14) {
-    throw new Error(`GTIN/баркод "${raw}" урт буруу (${d.length} орон; 8–14 байх ёстой)`);
+    throw new Error(i18n.t("createJob.epc.gtinLength", { raw, len: d.length }));
   }
   const g14 = d.padStart(14, "0");
   if (gtinCheckDigit(g14.slice(0, 13)) !== Number(g14[13])) {
-    throw new Error(`Баркод "${raw}"-ийн шалгах орон таарахгүй байна`);
+    throw new Error(i18n.t("createJob.epc.gtinCheckDigit", { raw }));
   }
   return g14;
 }
@@ -183,7 +192,7 @@ export function sgtin96BatchFromGtin(
 export function normalizeEpc(raw: string): string {
   const cleaned = raw.replace(/[\s:.-]/g, "").toUpperCase();
   if (!/^[0-9A-F]{24}$/.test(cleaned)) {
-    throw new Error("SGTIN-96 hex буруу (24 hex тэмдэгт байх ёстой)");
+    throw new Error(i18n.t("createJob.epc.epcHexInvalid"));
   }
   return cleaned;
 }
@@ -211,13 +220,13 @@ export function sgtin96Decode(epcHex: string): Sgtin96Parts {
 
   const header = parseInt(bin.slice(0, 8), 2);
   if (header !== 0x30) {
-    throw new Error(`SGTIN-96 биш (header 0x${header.toString(16)}, 0x30 байх ёстой)`);
+    throw new Error(i18n.t("createJob.epc.notSgtin96", { header: header.toString(16) }));
   }
 
   const filter = parseInt(bin.slice(8, 11), 2);
   const partition = parseInt(bin.slice(11, 14), 2);
   const p = PARTITION_BY_VALUE[partition];
-  if (!p) throw new Error(`partition ${partition} буруу (0-6 байх ёстой)`);
+  if (!p) throw new Error(i18n.t("createJob.epc.partitionInvalid", { partition }));
 
   const cpStart = 14;
   const refStart = cpStart + p.cpBits;
@@ -271,12 +280,20 @@ export function gid96Encode({ managerNumber, objectClass, serial }: Gid96Input):
   const m = BigInt(managerNumber);
   const c = BigInt(objectClass);
   const s = BigInt(serial);
-  if (m < 0n || m > GID_MANAGER_MAX) throw new Error(`manager number 0..${GID_MANAGER_MAX} байх ёстой`);
-  if (c < 0n || c > GID_CLASS_MAX) throw new Error(`object class 0..${GID_CLASS_MAX} байх ёстой`);
-  if (s < 0n || s > GID_SERIAL_MAX) throw new Error(`serial 0..${GID_SERIAL_MAX} байх ёстой`);
+  if (m < 0n || m > GID_MANAGER_MAX) {
+    throw new Error(i18n.t("createJob.epc.managerRange", { max: GID_MANAGER_MAX.toString() }));
+  }
+  if (c < 0n || c > GID_CLASS_MAX) {
+    throw new Error(i18n.t("createJob.epc.objectClassRange", { max: GID_CLASS_MAX.toString() }));
+  }
+  if (s < 0n || s > GID_SERIAL_MAX) {
+    throw new Error(i18n.t("createJob.epc.gidSerialRange", { max: GID_SERIAL_MAX.toString() }));
+  }
 
   const binary = bits(GID96_HEADER, 8) + bits(m, 28) + bits(c, 24) + bits(s, 36);
-  if (binary.length !== 96) throw new Error(`encode алдаа: ${binary.length} bit`);
+  if (binary.length !== 96) {
+    throw new Error(i18n.t("createJob.epc.encodeError", { bits: binary.length }));
+  }
   return BigInt("0b" + binary).toString(16).toUpperCase().padStart(24, "0");
 }
 
@@ -307,7 +324,7 @@ export function gid96Decode(epcHex: string): Gid96Parts {
   const bin = BigInt("0x" + hex).toString(2).padStart(96, "0");
   const header = parseInt(bin.slice(0, 8), 2);
   if (header !== 0x35) {
-    throw new Error(`GID-96 биш (header 0x${header.toString(16)}, 0x35 байх ёстой)`);
+    throw new Error(i18n.t("createJob.epc.notGid96", { header: header.toString(16) }));
   }
   return {
     managerNumber: BigInt("0b" + bin.slice(8, 36)).toString(),
@@ -333,7 +350,7 @@ export function epcHexToUri(epcHex: string): string {
   const header = parseInt(hex.slice(0, 2), 16);
   if (header === 0x30) return sgtin96HexToUri(hex);
   if (header === 0x35) return gid96HexToUri(hex);
-  throw new Error(`EPC header 0x${header.toString(16)} дэмжигдээгүй`);
+  throw new Error(i18n.t("createJob.epc.headerUnsupported", { header: header.toString(16) }));
 }
 
 /** EPC hex -> Tag URI (header-ээр төрлийг таньж). */
@@ -345,5 +362,5 @@ export function epcHexToTagUri(epcHex: string): string {
     const { managerNumber, objectClass, serial } = gid96Decode(hex);
     return `urn:epc:tag:gid-96:${managerNumber}.${objectClass}.${serial}`;
   }
-  throw new Error(`EPC header 0x${header.toString(16)} дэмжигдээгүй`);
+  throw new Error(i18n.t("createJob.epc.headerUnsupported", { header: header.toString(16) }));
 }

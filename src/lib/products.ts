@@ -4,6 +4,7 @@
 //   төлөвөөр нарийсна.) RLS-ийн ачаар зөвхөн өөрийн тенант.
 // ============================================================
 import { supabase } from "./supabaseClient";
+import i18n from "../i18n";
 
 export interface ProductRow {
   id: string;
@@ -36,10 +37,7 @@ export async function deleteProduct(id: string): Promise<void> {
   if (error) {
     // 23503 = foreign_key_violation — энэ бараанд EPC бүртгэлтэй (түүхэн дата).
     if ((error as { code?: string }).code === "23503") {
-      throw new Error(
-        "Энэ бараанд EPC бүртгэлтэй тул устгах боломжгүй. " +
-          "Эхлээд холбогдох Ажлыг устгаж EPC-г цэвэрлэнэ үү (үлдэгдэл 0 болсны дараа устгана)."
-      );
+      throw new Error(i18n.t("products.deleteBlockedFk"));
     }
     throw error;
   }

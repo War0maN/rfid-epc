@@ -1,0 +1,21 @@
+// App.tsx — үндсэн табууд, header, дэд таб шошгууд.
+export default {
+  tabCreate: "Шинэ ажил",
+  tabProducts: "Бүтээгдэхүүн",
+  tabInventory: "Үлдэгдэл",
+  tabTransactions: "Гүйлгээ",
+  tabReports: "Тайлан",
+  tabEpc: "Бараа (EPC)",
+  tabLabels: "Шошго",
+  tabBranches: "Салбар",
+  tabAudit: "Аудит",
+  tabMembers: "Хэрэглэгчид",
+  signOut: "Гарах",
+  loading: "Ачаалж байна…",
+  reportsLoading: "Тайлан ачаалж байна…",
+  designerLoading: "Дизайнер ачаалж байна…",
+  subList: "Жагсаалт",
+  subLookup: "Хайлт",
+  subProducts: "Бүтээгдэхүүн",
+  subCatalog: "Ангилал",
+};

@@ -1,0 +1,30 @@
+export default {
+  title: "成员",
+  inviteTitle: "邀请成员",
+  email: "邮箱",
+  emailPlaceholder: "user@company.com",
+  role: "角色",
+  roleAdmin: "管理员",
+  roleOperator: "操作员",
+  invite: "邀请",
+  inviting: "邀请中…",
+  inviteHint:
+    "受邀者使用此邮箱<strong>注册</strong>后将自动加入您的组织。加入后请在下方分配分店。",
+  membersHeader: "成员 ({{n}})",
+  allBranches: "全部分店",
+  fullPerms: "全部权限",
+  permCount: "{{n}} 项权限",
+  permsBtn: "权限",
+  fullPermsAdmin: "全部权限（管理员）",
+  pendingInvites: "待处理邀请 ({{n}})",
+  permModalTitle: "设置权限",
+  permModalHint:
+    "{{email}} — 仅允许所选菜单/操作（UI 与数据库两侧）。<strong>全部勾选即为全部权限</strong>（默认）。",
+  permCountOf: "{{picked}}/{{total}} 项权限",
+  branchModalTitle: "分配分店",
+  branchModalHint:
+    "{{email}} — 仅能查看所选分店的数据并进行交易。若不选择任何分店，则<strong>全部分店</strong>开放。",
+  branchCount: "{{n}} 家分店",
+  dismiss: "取消",
+  saving: "保存中…",
+};

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabaseClient";
 import {
   listCategories,
@@ -37,6 +38,7 @@ function resolveLevels(catId: string | null, cats: Category[]) {
 
 /** Бараа (master) үүсгэх/засах форм — EPC үүсгэхгүй. */
 export default function ProductForm({ initial, onSaved, onCancel }: Props) {
+  const { t } = useTranslation();
   const [cats, setCats] = useState<Category[]>([]);
   const [defs, setDefs] = useState<AttributeDef[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -107,7 +109,7 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
     setError(null);
     for (const a of attrs) {
       if (a.required && !(attrValues[a.id] ?? "").trim()) {
-        setError(`"${a.label}" заавал бөглөнө.`);
+        setError(t("products.attrRequired", { label: a.label }));
         return;
       }
     }
@@ -142,13 +144,13 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
     }
   }
 
-  if (!loaded) return <p className="text-sm text-slate-400">Ачаалж байна…</p>;
+  if (!loaded) return <p className="text-sm text-slate-400">{t("common.loading")}</p>;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Ангилал — 3 холбоост */}
       <div>
-        <label className={lbl}>Ангилал</label>
+        <label className={lbl}>{t("common.category")}</label>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <select
             value={l1Id ?? ""}
@@ -194,15 +196,15 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label className={lbl}>Барааны нэр <span className="text-red-500">*</span></label>
-          <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Цамц" className={inp} />
+          <label className={lbl}>{t("products.nameLabel")} <span className="text-red-500">*</span></label>
+          <input required value={name} onChange={(e) => setName(e.target.value)} placeholder={t("products.namePlaceholder")} className={inp} />
         </div>
         <div>
-          <label className={lbl}>SKU / код</label>
-          <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Заавал биш" className={inp} />
+          <label className={lbl}>{t("products.skuLabel")}</label>
+          <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder={t("products.optionalPlaceholder")} className={inp} />
         </div>
         <div>
-          <label className={lbl}>Үнэ</label>
+          <label className={lbl}>{t("common.price")}</label>
           <input
             type="text"
             inputMode="numeric"
@@ -212,27 +214,27 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
               const n = parseMoney(e.target.value);
               setPrice(n != null ? formatMoney(n) : "");
             }}
-            placeholder="Заавал биш"
+            placeholder={t("products.optionalPlaceholder")}
             className={inp}
           />
         </div>
         <div>
-          <label className={lbl}>GTIN / баркод</label>
-          <input value={gtin} onChange={(e) => setGtin(e.target.value)} placeholder="Заавал биш (байвал SGTIN-96)" className={inp + " font-mono"} />
+          <label className={lbl}>{t("products.gtinLabel")}</label>
+          <input value={gtin} onChange={(e) => setGtin(e.target.value)} placeholder={t("products.gtinPlaceholder")} className={inp + " font-mono"} />
         </div>
       </div>
 
       {/* Динамик шинж чанарууд */}
       {attrs.length > 0 && (
         <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Шинж чанар</div>
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{t("products.attributesTitle")}</div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {attrs.map((a) => (
               <div key={a.id}>
                 <label className={lbl}>{a.label}{a.required && <span className="text-red-500"> *</span>}</label>
                 {a.input_type === "select" ? (
                   <select value={attrValues[a.id] ?? ""} onChange={(e) => setAttr(a.id, e.target.value)} className={inp}>
-                    <option value="">— Сонгох —</option>
+                    <option value="">{t("products.selectOption")}</option>
                     {a.options.map((opt) => (<option key={opt} value={opt}>{opt}</option>))}
                   </select>
                 ) : (
@@ -247,17 +249,17 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
       {/* Нэмэлт чөлөөт шинж чанар */}
       <div className="rounded-lg border border-dashed border-slate-300 p-3">
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Нэмэлт шинж чанар</span>
-          <button type="button" onClick={() => setExtra((x) => [...x, { label: "", value: "" }])} className="text-xs text-indigo-600 hover:underline">+ Нэмэх</button>
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("products.extraAttrsTitle")}</span>
+          <button type="button" onClick={() => setExtra((x) => [...x, { label: "", value: "" }])} className="text-xs text-indigo-600 hover:underline">+ {t("common.add")}</button>
         </div>
         {extra.length === 0 ? (
-          <p className="text-xs text-slate-400">Жагсаалтад байхгүй шинж чанар нэмбэл автоматаар бүртгэгдэнэ.</p>
+          <p className="text-xs text-slate-400">{t("products.extraAttrsHint")}</p>
         ) : (
           <div className="space-y-2">
             {extra.map((row, i) => (
               <div key={i} className="flex items-center gap-2">
-                <input value={row.label} onChange={(e) => setExtra((x) => x.map((r, j) => (j === i ? { ...r, label: e.target.value } : r)))} placeholder="Нэр" className={inp + " max-w-[180px]"} />
-                <input value={row.value} onChange={(e) => setExtra((x) => x.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))} placeholder="Утга" className={inp} />
+                <input value={row.label} onChange={(e) => setExtra((x) => x.map((r, j) => (j === i ? { ...r, label: e.target.value } : r)))} placeholder={t("common.name")} className={inp + " max-w-[180px]"} />
+                <input value={row.value} onChange={(e) => setExtra((x) => x.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))} placeholder={t("products.valuePlaceholder")} className={inp} />
                 <button type="button" onClick={() => setExtra((x) => x.filter((_, j) => j !== i))} className="shrink-0 text-sm text-red-500 hover:text-red-700">✕</button>
               </div>
             ))}
@@ -269,10 +271,10 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
 
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-          Болих
+          {t("products.dismiss")}
         </button>
         <button type="submit" disabled={busy || !name.trim()} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
-          {busy ? "Хадгалж байна…" : initial ? "Хадгалах" : "Бараа үүсгэх"}
+          {busy ? t("products.saving") : initial ? t("common.save") : t("products.createProduct")}
         </button>
       </div>
     </form>

@@ -4,6 +4,7 @@
 //   window.BrowserPrint глобалыг гаргадаг. Энд promise-болгон боож өгнө.
 //   SDK байхгүй бол ойлгомжтой алдаа шиднэ (ZPL татах fallback ашиглана).
 // ============================================================
+import i18n from "../i18n";
 
 export interface BrowserPrintDevice {
   uid: string;
@@ -36,18 +37,14 @@ export function isBrowserPrintAvailable(): boolean {
   return typeof window !== "undefined" && !!window.BrowserPrint;
 }
 
-const NO_SDK =
-  "Zebra Browser Print олдсонгүй. Принтертэй компьютер дээр Browser Print-ийг " +
-  "суулгаж, SDK script-ийг нэмсэн эсэхээ шалгана уу. (Эсвэл ZPL татаж хэвлэнэ.)";
-
 /** Холбогдсон Zebra принтерүүдийг жагсаана. */
 export function getPrinters(): Promise<BrowserPrintDevice[]> {
   return new Promise((resolve, reject) => {
     const bp = window.BrowserPrint;
-    if (!bp) return reject(new Error(NO_SDK));
+    if (!bp) return reject(new Error(i18n.t("labels.print.noSdk")));
     bp.getLocalDevices(
       (devices) => resolve(devices ?? []),
-      (e) => reject(new Error(typeof e === "string" ? e : "Browser Print алдаа")),
+      (e) => reject(new Error(typeof e === "string" ? e : i18n.t("labels.print.bpError"))),
       "printer"
     );
   });
@@ -57,11 +54,11 @@ export function getPrinters(): Promise<BrowserPrintDevice[]> {
 export function getDefaultPrinter(): Promise<BrowserPrintDevice | null> {
   return new Promise((resolve, reject) => {
     const bp = window.BrowserPrint;
-    if (!bp) return reject(new Error(NO_SDK));
+    if (!bp) return reject(new Error(i18n.t("labels.print.noSdk")));
     bp.getDefaultDevice(
       "printer",
       (d) => resolve(d ?? null),
-      (e) => reject(new Error(typeof e === "string" ? e : "Browser Print алдаа"))
+      (e) => reject(new Error(typeof e === "string" ? e : i18n.t("labels.print.bpError")))
     );
   });
 }
@@ -72,7 +69,7 @@ export function sendToPrinter(device: BrowserPrintDevice, zpl: string): Promise<
     device.send(
       zpl,
       () => resolve(),
-      (e) => reject(new Error(typeof e === "string" ? e : "Хэвлэх алдаа"))
+      (e) => reject(new Error(typeof e === "string" ? e : i18n.t("labels.print.sendError")))
     );
   });
 }

@@ -4,6 +4,8 @@
 // client талд pivot хийнэ — бүлэглэлт солиход дахин татахгүй.
 // ============================================================
 import { supabase } from "./supabaseClient";
+import i18n from "../i18n";
+import { labelMap } from "../i18n/labelMap";
 
 export interface SalesRow {
   day: string; // 'YYYY-MM-DD'
@@ -42,13 +44,13 @@ function nextDay(d: string): string {
 
 export type SalesGroup = "day" | "month" | "branch" | "product" | "user";
 
-export const GROUP_LABEL: Record<SalesGroup, string> = {
-  day: "Өдрөөр",
-  month: "Сараар",
-  branch: "Салбараар",
-  product: "Бараагаар",
-  user: "Хэрэглэгчээр",
-};
+export const GROUP_LABEL: Record<SalesGroup, string> = labelMap({
+  day: "reports.groupDay",
+  month: "reports.groupMonth",
+  branch: "reports.groupBranch",
+  product: "reports.groupProduct",
+  user: "reports.groupUser",
+});
 
 export interface GroupedSales {
   key: string;
@@ -82,16 +84,16 @@ export function groupSales(rows: SalesRow[], group: SalesGroup, maps: NameMaps):
         break;
       case "branch":
         key = r.branch_id ?? "__none__";
-        label = r.branch_id ? (maps.branchName.get(r.branch_id) ?? "?") : "(Салбаргүй)";
+        label = r.branch_id ? (maps.branchName.get(r.branch_id) ?? "?") : i18n.t("reports.noBranch");
         break;
       case "user":
         key = r.actor_id ?? "__none__";
-        label = r.actor_id ? (maps.userEmail.get(r.actor_id) ?? "?") : "(Тодорхойгүй)";
+        label = r.actor_id ? (maps.userEmail.get(r.actor_id) ?? "?") : i18n.t("reports.unknownUser");
         break;
       default: {
         key = r.product_id;
         const p = maps.productName.get(r.product_id);
-        label = p?.name || p?.sku || "Нэргүй бараа";
+        label = p?.name || p?.sku || i18n.t("reports.unnamedProduct");
         sub = p?.sku ?? null;
       }
     }

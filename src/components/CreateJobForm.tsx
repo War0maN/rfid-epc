@@ -1,5 +1,6 @@
 import { errorMessage } from "../lib/errorMessage";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabaseClient";
 import { importPackingListXlsx } from "../lib/importPackingList";
 import { listBranches, type Branch } from "../lib/branches";
@@ -23,6 +24,7 @@ interface Result {
 
 /** Ажил (Job) үүсгэх форм + packing list CSV upload -> EPC генерац. */
 export default function CreateJobForm({ onCreated, allowedBranches = null }: Props) {
+  const { t } = useTranslation();
   const [jobNumber, setJobNumber] = useState("");
   const [arrivalDate, setArrivalDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [supplier, setSupplier] = useState("");
@@ -66,7 +68,7 @@ export default function CreateJobForm({ onCreated, allowedBranches = null }: Pro
     setResult(null);
 
     if (!file) {
-      setError("Packing list Excel файл сонгоно уу.");
+      setError(t("createJob.selectFile"));
       return;
     }
 
@@ -99,25 +101,25 @@ export default function CreateJobForm({ onCreated, allowedBranches = null }: Pro
         onSubmit={handleSubmit}
         className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
       >
-        <h2 className="mb-4 text-lg font-semibold text-slate-900">Шинэ ажил үүсгэх</h2>
+        <h2 className="mb-4 text-lg font-semibold text-slate-900">{t("createJob.title")}</h2>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
-              Ажлын дугаар <span className="text-red-500">*</span>
+              {t("createJob.jobNumber")} <span className="text-red-500">*</span>
             </label>
             <input
               required
               value={jobNumber}
               onChange={(e) => setJobNumber(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-              placeholder="JOB-2026-001"
+              placeholder={t("createJob.jobNumberPlaceholder")}
             />
           </div>
 
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
-              Ирсэн огноо <span className="text-red-500">*</span>
+              {t("createJob.arrivalDate")} <span className="text-red-500">*</span>
             </label>
             <input
               type="date"
@@ -129,18 +131,18 @@ export default function CreateJobForm({ onCreated, allowedBranches = null }: Pro
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Нийлүүлэгч</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">{t("createJob.supplier")}</label>
             <input
               value={supplier}
               onChange={(e) => setSupplier(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-              placeholder="Нийлүүлэгчийн нэр"
+              placeholder={t("createJob.supplierPlaceholder")}
             />
           </div>
 
           {branches.length > 0 && (
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Салбар</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">{t("common.branch")}</label>
               <select
                 value={branchId}
                 onChange={(e) => setBranchId(e.target.value)}
@@ -152,19 +154,19 @@ export default function CreateJobForm({ onCreated, allowedBranches = null }: Pro
           )}
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Тэмдэглэл</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">{t("common.note")}</label>
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-              placeholder="Заавал биш"
+              placeholder={t("createJob.optionalPlaceholder")}
             />
           </div>
         </div>
 
         <div className="mt-4">
           <label className="mb-1 block text-sm font-medium text-slate-700">
-            Packing list (Excel) <span className="text-red-500">*</span>
+            {t("createJob.fileLabel")} <span className="text-red-500">*</span>
           </label>
           <input
             ref={fileRef}
@@ -174,16 +176,16 @@ export default function CreateJobForm({ onCreated, allowedBranches = null }: Pro
             className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
           />
           <p className="mt-2 text-xs text-slate-500">
-            Багана: <code className="rounded bg-slate-100 px-1">name, sku, price, barcode, piece, box, branch, category</code>{" "}
-            болон <strong>дурын шинж чанарын багана</strong> (Өнгө, Размер…).{" "}
-            <code className="rounded bg-slate-100 px-1">branch</code> (салбарын код/нэр) байвал мөр
-            бүрийг тэр салбарт; байхгүй бол дээрх "Салбар" сонголтыг ашиглана.{" "}
-            <code className="rounded bg-slate-100 px-1">piece</code> заавал;{" "}
-            <code className="rounded bg-slate-100 px-1">barcode</code> сонголт (байвал SGTIN-96, эс
-            бөгөөс GID-96). <code className="rounded bg-slate-100 px-1">category</code> нь зам байж
-            болно (ж: <code className="rounded bg-slate-100 px-1">Хувцас / Дээд</code>) — байхгүй
-            ангилал автоматаар үүснэ. Нөөц баганаас бусад бүх багана шинж чанар болж бараанд
-            хадгалагдана.
+            {t("createJob.hintIntro")}{" "}
+            <code className="rounded bg-slate-100 px-1">name, sku, price, barcode, piece, box, branch, category</code>{" "}
+            {t("createJob.hintAnd")} <strong>{t("createJob.hintAttrCols")}</strong>{" "}
+            {t("createJob.hintAttrExamples")}{" "}
+            <code className="rounded bg-slate-100 px-1">branch</code> {t("createJob.hintBranch")}{" "}
+            <code className="rounded bg-slate-100 px-1">piece</code> {t("createJob.hintPiece")}{" "}
+            <code className="rounded bg-slate-100 px-1">barcode</code> {t("createJob.hintBarcode")}{" "}
+            <code className="rounded bg-slate-100 px-1">category</code> {t("createJob.hintCategory1")}{" "}
+            <code className="rounded bg-slate-100 px-1">{t("createJob.hintCategoryExample")}</code>
+            {t("createJob.hintCategory2")}
           </p>
         </div>
 
@@ -194,16 +196,23 @@ export default function CreateJobForm({ onCreated, allowedBranches = null }: Pro
         {result && (
           <div className="mt-4 space-y-2">
             <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-              Амжилттай! <strong>{result.totalEpcs}</strong> EPC үүслээ ({result.productCount} бараа,{" "}
-              {result.boxCount} хайрцаг
-              {result.categoryCount > 0 ? `, ${result.categoryCount} ангилал` : ""}). "EPC хүснэгт"
-              таб дээр харна уу.
+              {t("createJob.successTitle")} <strong>{result.totalEpcs}</strong>{" "}
+              {t("createJob.successBody", {
+                products: result.productCount,
+                boxes: result.boxCount,
+              })}
+              {result.categoryCount > 0
+                ? t("createJob.successCategories", { n: result.categoryCount })
+                : ""}
+              {t("createJob.successTail")}
             </p>
             {result.skippedCount > 0 && (
               <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                ⚠️ {result.skippedCount} мөр алгаслаа (barcode дутуу/буруу).
+                {t("createJob.skippedRows", { n: result.skippedCount })}
                 {result.skippedSample.length > 0 && (
-                  <span className="block">Жишээ: {result.skippedSample.join("; ")}</span>
+                  <span className="block">
+                    {t("createJob.skippedExample", { sample: result.skippedSample.join("; ") })}
+                  </span>
                 )}
               </p>
             )}
@@ -215,7 +224,7 @@ export default function CreateJobForm({ onCreated, allowedBranches = null }: Pro
           disabled={loading}
           className="mt-6 w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60 sm:w-auto sm:px-6"
         >
-          {loading ? "Үүсгэж байна…" : "Ажил үүсгэж EPC генерацлэх"}
+          {loading ? t("createJob.creating") : t("createJob.submit")}
         </button>
       </form>
     </div>

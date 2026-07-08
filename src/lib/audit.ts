@@ -9,6 +9,7 @@
 // ============================================================
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
+import i18n from "../i18n";
 
 export type AuditAction =
   | "insert"
@@ -43,7 +44,7 @@ export function epcBulkMeta(
 ): Record<string, unknown> {
   const byProduct: Record<string, number> = {};
   for (const r of rows) {
-    const key = r.name || r.sku || "Нэргүй бараа";
+    const key = r.name || r.sku || i18n.t("audit.unnamedProduct");
     byProduct[key] = (byProduct[key] ?? 0) + 1;
   }
   const CAP = 100;
@@ -72,7 +73,7 @@ export async function logAuditEvent(
     p_entity_id: entityId,
     p_meta: meta ?? null,
   });
-  if (error) console.warn("audit log бичих амжилтгүй:", error.message);
+  if (error) console.warn(i18n.t("audit.writeFailed"), error.message);
 }
 
 /** Аудит логийг шинэ нь эхэнд татна (actor_id-г имэйлээр баяжуулна). */
