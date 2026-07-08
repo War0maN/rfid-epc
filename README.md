@@ -1,73 +1,62 @@
-# React + TypeScript + Vite
+# RFID EPC Generator
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Импортын барааны packing list-ээс GS1 стандартын **RFID EPC** (SGTIN-96 / GID-96) код үүсгэж, шошго хэвлэж, барааны бүрэн амьдралын мөчлөгийг (үлдэгдэл · борлуулалт · шилжүүлэг · буцаалт · тайлан) ширхэг бүрээр нь мөрддөг **олон компанийн (multi-tenant)** веб систем.
 
-Currently, two official plugins are available:
+## Гол боломжууд
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **EPC үүсгэлт** — баркодтой бараанд SGTIN-96, баркодгүйд GID-96; serial хэзээ ч давтагдахгүй (атом serial counter)
+- **Excel импорт** — packing list-ээс бараа/ангилал/шинж чанар автоматаар бүртгэж EPC бөөнөөр үүсгэнэ
+- **Шошго хэвлэлт** — Zebra Browser Print (ZPL), шошгоны дизайнер
+- **Төлөвийн мөчлөг** — Хэвлээгүй → Идэвхтэй → Борлуулсан / Шилжүүлж буй / Бусад гүйлгээ (+ Буцаалт)
+- **Үлдэгдэл** — бараа × салбар матриц, идэвхтэй EPC-ийн тоо + үнийн дүн
+- **Гүйлгээ** — UNIQLO маягийн скан→сагс урсгал; 2 алхамт шилжүүлэг; буцаалт
+- **EPC түүх** — ширхэг бүрийн бүрэн timeline (хэн/хэзээ/хаана/яагаад), append-only event log
+- **Тайлан** — борлуулалт (өдөр/сар/салбар/бараа/хэрэглэгчээр), график, CSV
+- **Эрхийн систем** — салбарын scoping (RLS) + таб/үйлдлийн нарийвчилсан эрх, бүгд DB түвшинд хамгаалагдсан
+- **Аудит** — бүх өөрчлөлт хэн/хэзээ/юуг дэлгэрэнгүйтэйгээ
 
-## React Compiler
+## Технологи
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Vite · React 19 · TypeScript · Tailwind CSS · Supabase (Postgres + RLS + Auth) · recharts · Zebra Browser Print
 
-## Expanding the ESLint configuration
+## Суулгах
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+git clone https://github.com/War0maN/rfid-epc.git
+cd rfid-epc
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+1. [Supabase](https://supabase.com) дээр төсөл үүсгэнэ.
+2. `.env.example`-ийг `.env` болгож хуулаад Supabase-ийн утгуудыг бөглөнө:
+   ```
+   VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-public-key
+   ```
+3. Supabase **SQL Editor** дээр [`docs/schema.sql`](docs/schema.sql)-ийг бүхэлд нь Run хийнэ (idempotent — дахин Run хийхэд аюулгүй; схем өөрчлөгдөх бүрт дахин Run хийдэг).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Ажиллуулах
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev      # http://localhost:5173
+npm run build    # tsc + vite build
+npm run lint
 ```
+
+Анхны хэрэглэгч бүртгүүлээд байгууллагаа үүсгэхэд **админ** болно; бусдыг Хэрэглэгчид табаас имэйлээр урина (уригдсан хүн тэр имэйлээрээ бүртгүүлэхэд автоматаар нэгдэнэ).
+
+## Бүтэц
+
+```
+docs/
+  schema.sql          # DB-ийн бүрэн эх сурвалж (Supabase дээр Run хийнэ)
+  architecture.md     # Системийн архитектур, ойлголт, зарчмууд
+  user-guide.md       # Хэрэглэгчийн гарын авлага (таб бүрээр)
+  printing-plan.md    # Хэвлэлтийн төлөвлөгөө
+src/
+  lib/                # Бизнес логик (epc, гүйлгээ, эрх, түүх, формат...)
+  components/         # Таб бүрийн UI компонентууд
+CLAUDE.md             # Кодын архитектур, тогтсон зарчмууд (хөгжүүлэгч/AI-д)
+```
+
+Дэлгэрэнгүй: [Архитектур](docs/architecture.md) · [Хэрэглэгчийн гарын авлага](docs/user-guide.md)
