@@ -10,7 +10,7 @@ import { downloadCsv, toCsv } from "../lib/exportCsv";
 import { buildZplBatch, downloadZpl } from "../lib/exportZpl";
 import { epcHexToUri, epcHexToTagUri } from "../lib/epc";
 import { supabase } from "../lib/supabaseClient";
-import { logAuditEvent } from "../lib/audit";
+import { logAuditEvent, epcBulkMeta } from "../lib/audit";
 import { errorMessage } from "../lib/errorMessage";
 import {
   EPC_STATUSES,
@@ -20,6 +20,7 @@ import {
   type EpcStatus,
 } from "../lib/epcStatus";
 import { makeCan } from "../lib/permissions";
+import { formatMoney } from "../lib/format";
 // bwip-js (баркод) том тул хэвлэх диалогийг зөвхөн нээх үед ачаална.
 const PrintDialog = lazy(() => import("./PrintDialog"));
 
@@ -37,8 +38,9 @@ interface Props {
 interface ColDef {
   key: string;
   label: string;
-  get: (r: EpcRow) => string;
+  get: (r: EpcRow) => string; // түүхий утга (шүүлт server талд, CSV тусдаа)
   mono?: boolean;
+  money?: boolean; // харуулахдаа мянгатын таслалтай
 }
 
 // Тогтмол багана. Шинж чанарын багана нь attribute_defs-ээс динамикаар нэмэгдэнэ.
@@ -52,7 +54,7 @@ const STATIC_COLUMNS: ColDef[] = [
   { key: "cat3", label: "Барааны ангилал", get: (r) => r.category_l3 ?? "" },
   { key: "branch", label: "Салбар", get: (r) => r.branch_name ?? "" },
   { key: "sku", label: "SKU", get: (r) => r.sku ?? "", mono: true },
-  { key: "price", label: "Үнэ", get: (r) => (r.price != null ? String(r.price) : "") },
+  { key: "price", label: "Үнэ", get: (r) => (r.price != null ? String(r.price) : ""), money: true },
   { key: "gtin", label: "GTIN/баркод", get: (r) => r.gtin ?? "", mono: true },
   { key: "box", label: "Хайрцаг", get: (r) => r.box_no ?? "" },
   { key: "job", label: "Ажлын №", get: (r) => r.job_number ?? "" },
@@ -107,6 +109,8 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
   // Төлөв өөрчлөх баталгаажуулалт: сонгосон зорилтот төлөв + тэмдэглэл.
   const [statusModal, setStatusModal] = useState<EpcStatus | null>(null);
   const [statusNote, setStatusNote] = useState("");
+  // Устгах баталгаажуулалт (зөвхөн Хэвлээгүй устгагдана — DB trigger давхар хамгаална).
+  const [deleteModal, setDeleteModal] = useState(false);
   // Динамик шинж чанарын багана + нуух/гаргах удирдлага.
   const [attrDefs, setAttrDefs] = useState<AttributeDef[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(loadHidden);
@@ -238,8 +242,9 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
   }
 
   /** Өгсөн EPC-үүдийг хэвлэгдсэн (printed_at) + Идэвхтэй (status) болгоно. */
-  async function markPrinted(ids: string[]) {
-    if (ids.length === 0) return;
+  async function markPrinted(rows: EpcRow[]) {
+    if (rows.length === 0) return;
+    const ids = rows.map((r) => r.id);
     const now = new Date().toISOString();
     const idSet = new Set(ids);
     // Optimistic: зөвхөн одоо Хэвлээгүй мөрд (хэвлэх нь sold/transferring-ийг буцаахгүй).
@@ -265,7 +270,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
           .is("printed_at", null);
         if (e) throw e;
       }
-      void logAuditEvent(supabase, "print", "epc", null, { count: ids.length });
+      void logAuditEvent(supabase, "print", "epc", null, epcBulkMeta(rows));
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -308,8 +313,9 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
         if (e) throw e;
       }
       void logAuditEvent(supabase, "status_change", "epc", null, {
+        ...epcBulkMeta(rows),
         status: target,
-        count: ids.length,
+        note: note.trim() || undefined,
       });
     } catch (e) {
       setError(errorMessage(e));
@@ -417,8 +423,78 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
     }
   }
 
+  /**
+   * Сонгосон Хэвлээгүй/Идэвхтэй EPC-үүдийг устгана. Борлуулсан/Шилжүүлж буй/
+   * Бусад гүйлгээт DB trigger-ээр, ГҮЙЛГЭЭНИЙ ТҮҮХТЭЙ нь transaction_items-ийн
+   * FK-ээр хамгаалагдана — түүхтэйг урьдчилан шалгаж алгасна (түүх тасрахгүй).
+   * Зөвхөн checkbox сонголтод үйлчилнэ (шүүлт-бүхэлд нь биш — аюулгүй тал).
+   */
+  async function handleDelete() {
+    const deletable = [...selected.values()].filter(
+      (r) => r.status === "unprinted" || r.status === "active"
+    );
+    if (deletable.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const candidateIds = deletable.map((r) => r.id);
+      // Гүйлгээний түүхтэй EPC-үүдийг олж алгасна (устгавал түүх тасарна).
+      const withHistory = new Set<string>();
+      for (let i = 0; i < candidateIds.length; i += 300) {
+        const { data, error: hErr } = await supabase
+          .from("transaction_items")
+          .select("epc_id")
+          .in("epc_id", candidateIds.slice(i, i + 300));
+        if (hErr) throw hErr;
+        for (const r of (data ?? []) as { epc_id: string }[]) withHistory.add(r.epc_id);
+      }
+      const ids = candidateIds.filter((id) => !withHistory.has(id));
+
+      for (let i = 0; i < ids.length; i += 500) {
+        const { error: e } = await supabase
+          .from("epc_codes")
+          .delete()
+          .in("id", ids.slice(i, i + 500));
+        if (e) throw e;
+      }
+      // Optimistic: хуудас + сонголт + нийт тооноос хасна.
+      const idSet = new Set(ids);
+      setPageRows((rs) => rs.filter((r) => !idSet.has(r.id)));
+      setSelected((m) => {
+        const n = new Map(m);
+        for (const id of ids) n.delete(id);
+        return n;
+      });
+      setTotal((t) => Math.max(0, t - ids.length));
+      if (ids.length > 0) {
+        const deletedRows = deletable.filter((r) => idSet.has(r.id));
+        void logAuditEvent(supabase, "delete", "epc", null, epcBulkMeta(deletedRows));
+      }
+      if (withHistory.size > 0) {
+        setError(
+          `${ids.length} EPC устгав. ${withHistory.size} нь гүйлгээний түүхтэй тул хамгаалагдаж үлдлээ (түүхэн дата устгагдахгүй).`
+        );
+      }
+    } catch (e) {
+      // 23503 = FK — гүйлгээний түүх/төлөвийн хамгаалалт (fallback найрсаг мессеж).
+      const err = e as { code?: string };
+      if (err.code === "23503") {
+        setError("Зарим EPC гүйлгээний түүхтэй эсвэл хамгаалагдсан төлөвтэй тул устгах боломжгүй.");
+      } else {
+        setError(errorMessage(e));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Export/print товчны тоо: сонгосон байвал сонголтын тоо, эс бөгөөс нийт (шүүсэн).
   const outCount = selected.size > 0 ? selected.size : total;
+  // Устгалын тойм: сонголтоос устгаж болох (Хэвлээгүй/Идэвхтэй) хэд, хамгаалагдсан хэд.
+  const selDeletableCount = [...selected.values()].filter(
+    (r) => r.status === "unprinted" || r.status === "active"
+  ).length;
+  const selProtectedCount = selected.size - selDeletableCount;
 
   return (
     <div className="space-y-4">
@@ -518,6 +594,15 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
               </option>
             ))}
           </select>
+        )}
+        {isAdmin && selected.size > 0 && (
+          <button
+            onClick={() => setDeleteModal(true)}
+            disabled={busy}
+            className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+          >
+            Устгах ({selected.size})
+          </button>
         )}
         {selected.size > 0 && (
           <button
@@ -644,8 +729,10 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                           >
                             {r.epc_hex}
                           </button>
+                        ) : v ? (
+                          c.money ? formatMoney(Number(v)) : v
                         ) : (
-                          v || <span className="text-slate-300">—</span>
+                          <span className="text-slate-300">—</span>
                         )}
                       </td>
                     );
@@ -699,9 +786,56 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
           <PrintDialog
             rows={printRows}
             onClose={() => setPrintRows(null)}
-            onPrinted={() => markPrinted(printRows.map((r) => r.id))}
+            onPrinted={() => markPrinted(printRows)}
           />
         </Suspense>
+      )}
+
+      {/* Устгах баталгаажуулалт — зөвхөн Хэвлээгүй устгагдана */}
+      {deleteModal && (
+        <div
+          className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4"
+          onClick={() => setDeleteModal(false)}
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-slate-900">EPC устгах</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Сонгосон <strong>{selected.size.toLocaleString()}</strong> EPC-ээс{" "}
+              <strong className="text-red-700">{selDeletableCount.toLocaleString()}</strong> ширхэг
+              (Хэвлээгүй/Идэвхтэй) устгагдана.
+            </p>
+            {selProtectedCount > 0 && (
+              <p className="mt-1 text-xs text-amber-700">
+                Борлуулсан/Шилжүүлж буй/Бусад гүйлгээ төлөвтэй {selProtectedCount.toLocaleString()} нь
+                түүхэн дата тул хамгаалагдсан — устгагдахгүй.
+              </p>
+            )}
+            <p className="mt-1 text-xs text-slate-500">
+              Жич: гүйлгээний түүхтэй (өмнө нь борлуулагдаж байсан г.м.) EPC автоматаар алгасагдана.
+            </p>
+            <p className="mt-2 text-sm font-medium text-slate-800">
+              {selDeletableCount > 0 ? "Итгэлтэй байна уу? Буцаах боломжгүй." : "Устгах боломжтой EPC алга."}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteModal(false)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                Болих
+              </button>
+              <button
+                disabled={busy || selDeletableCount === 0}
+                onClick={() => {
+                  setDeleteModal(false);
+                  void handleDelete();
+                }}
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Устгах ({selDeletableCount.toLocaleString()})
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Төлөв өөрчлөх баталгаажуулалт — Тэмдэглэлтэй (түүхэнд бичигдэнэ) */}

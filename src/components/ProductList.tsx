@@ -5,6 +5,7 @@ import { generateEpcsForProduct } from "../lib/createProduct";
 import { listAttributeDefs, dedupAttrs, type AttributeDef } from "../lib/catalog";
 import { listBranches, type Branch } from "../lib/branches";
 import { errorMessage } from "../lib/errorMessage";
+import { formatMoney } from "../lib/format";
 import { makeCan } from "../lib/permissions";
 import ProductForm from "./ProductForm";
 
@@ -20,9 +21,10 @@ interface Props {
 interface ColDef {
   key: string;
   label: string;
-  get: (p: ProductRow) => string;
+  get: (p: ProductRow) => string; // түүхий утга (эрэмбэ/шүүлт/CSV-д)
   mono?: boolean;
   num?: boolean;
+  money?: boolean; // харуулахдаа мянгатын таслалтай
 }
 
 const STATIC_COLUMNS: ColDef[] = [
@@ -32,7 +34,7 @@ const STATIC_COLUMNS: ColDef[] = [
   { key: "cat3", label: "Барааны ангилал", get: (p) => p.category_l3 ?? "" },
   { key: "sku", label: "SKU", get: (p) => p.sku ?? "", mono: true },
   { key: "gtin", label: "GTIN/баркод", get: (p) => p.gtin ?? "", mono: true },
-  { key: "price", label: "Үнэ", get: (p) => (p.price != null ? String(p.price) : ""), num: true },
+  { key: "price", label: "Үнэ", get: (p) => (p.price != null ? String(p.price) : ""), num: true, money: true },
   { key: "stock", label: "Үлдэгдэл", get: (p) => String(p.active_count), num: true },
 ];
 
@@ -271,8 +273,8 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
                   {visibleColumns.map((c) => {
                     const v = c.get(p);
                     return (
-                      <td key={c.key} className={"whitespace-nowrap border-b border-r border-slate-100 px-3 py-2 text-xs text-slate-700 last:border-r-0" + (c.mono ? " font-mono" : "") + (c.num ? " text-right" : "")}>
-                        {v || <span className="text-slate-300">—</span>}
+                      <td key={c.key} className={"whitespace-nowrap border-b border-r border-slate-100 px-3 py-2 text-xs text-slate-700 last:border-r-0" + (c.mono ? " font-mono" : "") + (c.num ? " text-right tabular-nums" : "")}>
+                        {v ? (c.money ? formatMoney(Number(v)) : v) : <span className="text-slate-300">—</span>}
                       </td>
                     );
                   })}

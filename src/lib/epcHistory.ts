@@ -14,7 +14,8 @@ export type EpcEventType =
   | "transfer_in"
   | "transfer_cancel"
   | "sold"
-  | "other";
+  | "other"
+  | "returned";
 
 export const EVENT_META: Record<EpcEventType, { label: string; cls: string }> = {
   created: { label: "Үүссэн", cls: "bg-slate-100 text-slate-600" },
@@ -25,6 +26,7 @@ export const EVENT_META: Record<EpcEventType, { label: string; cls: string }> = 
   transfer_cancel: { label: "Шилжүүлэг цуцлагдсан", cls: "bg-slate-100 text-slate-600" },
   sold: { label: "Борлуулсан", cls: "bg-sky-50 text-sky-700" },
   other: { label: "Бусад гүйлгээ", cls: "bg-rose-50 text-rose-700" },
+  returned: { label: "Буцаалт", cls: "bg-violet-50 text-violet-700" },
 };
 
 interface RawEvent {
@@ -100,6 +102,9 @@ export async function fetchEpcHistory(epcId: string): Promise<EpcHistoryItem[]> 
       case "sold":
       case "other":
         detail = `Салбар: ${bn(ev.new_branch ?? ev.old_branch)}`;
+        break;
+      case "returned":
+        detail = `Идэвхтэй болж буцсан — Салбар: ${bn(ev.new_branch ?? ev.old_branch)}`;
         break;
       default:
         detail = `${labelOf(ev.old_status ?? "")} → ${labelOf(ev.new_status ?? "")}`;

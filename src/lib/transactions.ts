@@ -6,19 +6,21 @@
 // ============================================================
 import { supabase } from "./supabaseClient";
 
-export type TxType = "sale" | "transfer" | "other";
+export type TxType = "sale" | "transfer" | "other" | "return";
 export type TxStatus = "pending" | "done" | "cancelled";
 
-export const TX_TYPES: TxType[] = ["sale", "transfer", "other"];
+export const TX_TYPES: TxType[] = ["sale", "transfer", "return", "other"];
 export const TX_TYPE_LABEL: Record<TxType, string> = {
   sale: "Борлуулсан",
   transfer: "Шилжүүлэг",
   other: "Бусад гүйлгээ",
+  return: "Буцаалт",
 };
 export const TX_TYPE_BADGE: Record<TxType, string> = {
   sale: "bg-sky-50 text-sky-700",
   transfer: "bg-amber-50 text-amber-700",
   other: "bg-rose-50 text-rose-700",
+  return: "bg-violet-50 text-violet-700",
 };
 export const TX_STATUS_LABEL: Record<TxStatus, string> = {
   pending: "Хүлээгдэж буй",
@@ -103,15 +105,21 @@ export interface ActiveEpcItem {
   price: number | null;
 }
 
-/** Тухайн салбарын БҮХ Идэвхтэй EPC (сагс/жагсаалтад). branchId null = Салбаргүй. */
-export async function fetchActiveEpcsByBranch(branchId: string | null): Promise<ActiveEpcItem[]> {
+/**
+ * Тухайн салбарын гүйлгээнд орох боломжтой EPC (сагс/жагсаалтад).
+ * statuses: энгийн гүйлгээнд ['active'], буцаалтад ['sold','other'].
+ */
+export async function fetchActiveEpcsByBranch(
+  branchId: string | null,
+  statuses: string[] = ["active"]
+): Promise<ActiveEpcItem[]> {
   const PAGE = 1000;
   const out: ActiveEpcItem[] = [];
   for (let from = 0; ; from += PAGE) {
     let q = supabase
       .from("epc_full")
       .select("id, epc_hex, serial, name, sku, gtin, price")
-      .eq("status", "active")
+      .in("status", statuses)
       .order("epc_hex", { ascending: true })
       .range(from, from + PAGE - 1);
     q = branchId == null ? q.is("branch_id", null) : q.eq("branch_id", branchId);

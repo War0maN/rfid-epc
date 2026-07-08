@@ -11,6 +11,7 @@ import {
 import { upsertCatalogProduct } from "../lib/createProduct";
 import type { ProductRow } from "../lib/products";
 import { errorMessage } from "../lib/errorMessage";
+import { formatMoney, parseMoney } from "../lib/format";
 
 const inp =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
@@ -47,7 +48,8 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [sku, setSku] = useState(initial?.sku ?? "");
   const [gtin, setGtin] = useState(initial?.gtin ?? "");
-  const [price, setPrice] = useState(initial?.price != null ? String(initial.price) : "");
+  // Үнэ: харагдац таслалтай ("1,500,000"), хадгалахад parseMoney-оор тоо болгоно.
+  const [price, setPrice] = useState(initial?.price != null ? formatMoney(initial.price) : "");
   const [attrValues, setAttrValues] = useState<Record<string, string>>({}); // def.id -> value
   const [extra, setExtra] = useState<{ label: string; value: string }[]>([]);
 
@@ -122,7 +124,7 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
 
     setBusy(true);
     try {
-      const priceNum = price.trim() ? Number(price.replace(/[^0-9.]/g, "")) : null;
+      const priceNum = parseMoney(price);
       await upsertCatalogProduct(supabase, {
         id: initial?.id,
         categoryId,
@@ -201,7 +203,18 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
         </div>
         <div>
           <label className={lbl}>Үнэ</label>
-          <input type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Заавал биш" className={inp} />
+          <input
+            type="text"
+            inputMode="numeric"
+            value={price}
+            onChange={(e) => {
+              // Зөвхөн цифр үлдээгээд шууд таслалтай харуулна (1500000 → 1,500,000).
+              const n = parseMoney(e.target.value);
+              setPrice(n != null ? formatMoney(n) : "");
+            }}
+            placeholder="Заавал биш"
+            className={inp}
+          />
         </div>
         <div>
           <label className={lbl}>GTIN / баркод</label>

@@ -11,6 +11,7 @@ import {
   type ActiveEpc,
 } from "../lib/inventory";
 import { toCsv, downloadCsv } from "../lib/exportCsv";
+import { formatMoney } from "../lib/format";
 import { logAuditEvent } from "../lib/audit";
 import { errorMessage } from "../lib/errorMessage";
 
@@ -386,6 +387,8 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
                     const n = Number(v);
                     const isZero = c.num && n === 0;
                     const clickable = c.kind === "branch" && n > 0;
+                    // Тоон баганыг таслалтай харуулна (эрэмбэ/шүүлт түүхий утгаар).
+                    const disp = c.num && v !== "" ? formatMoney(n) : v;
                     return (
                       <td
                         key={c.key}
@@ -402,12 +405,12 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
                             className="font-medium text-indigo-600 hover:underline"
                             title="Идэвхтэй EPC-г үзэх"
                           >
-                            {v}
+                            {disp}
                           </button>
                         ) : isZero ? (
                           <span className="text-slate-300">—</span>
                         ) : (
-                          v || <span className="text-slate-300">—</span>
+                          disp || <span className="text-slate-300">—</span>
                         )}
                       </td>
                     );

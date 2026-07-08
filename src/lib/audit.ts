@@ -34,6 +34,28 @@ export interface AuditRow {
 }
 
 /**
+ * Бөөн EPC үйлдлийн (устгах/хэвлэх/төлөв солих) дэлгэрэнгүй meta:
+ * бараагаар задаргаа + эхний 100 EPC hex — аудитын дэлгэрэнгүйд
+ * "яг аль барааны ямар EPC" гэдгийг харуулна.
+ */
+export function epcBulkMeta(
+  rows: { epc_hex: string; name: string | null; sku: string | null }[]
+): Record<string, unknown> {
+  const byProduct: Record<string, number> = {};
+  for (const r of rows) {
+    const key = r.name || r.sku || "Нэргүй бараа";
+    byProduct[key] = (byProduct[key] ?? 0) + 1;
+  }
+  const CAP = 100;
+  return {
+    count: rows.length,
+    byProduct,
+    epcs: rows.slice(0, CAP).map((r) => r.epc_hex),
+    epcsTruncated: rows.length > CAP,
+  };
+}
+
+/**
  * Бизнес үйлдлийг логлоно. Алдааг зөвхөн consol-д бичээд залгидаг —
  * лог амжилтгүй болсон ч үндсэн үйлдэл (EPC үүсгэх/export) тасрахгүй.
  */

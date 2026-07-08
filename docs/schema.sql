@@ -970,7 +970,7 @@ begin
   if v_tenant is null then
     raise exception 'Нэвтрээгүй байна.';
   end if;
-  if p_type not in ('sale','transfer','other') then
+  if p_type not in ('sale','transfer','other','return') then
     raise exception 'Гүйлгээний төрөл буруу (%).', p_type;
   end if;
   if v_total < 1 then
@@ -980,12 +980,22 @@ begin
     raise exception 'Шилжүүлэгт очих салбараа сонгоно уу.';
   end if;
 
-  -- Бүх EPC: тухайн тенантынх + Идэвхтэй байх ёстой.
-  select count(*) into v_active
-    from epc_codes
-   where id = any(p_epc_ids) and tenant_id = v_tenant and status = 'active';
-  if v_active <> v_total then
-    raise exception 'Зарим EPC идэвхтэй биш эсвэл олдсонгүй (идэвхтэй %/%).', v_active, v_total;
+  -- Бүх EPC: тухайн тенантынх + гүйлгээнд тохирох төлөвтэй байх ёстой.
+  -- Буцаалт: Борлуулсан/Бусад гүйлгээ → Идэвхтэй; бусад нь: Идэвхтэй л орно.
+  if p_type = 'return' then
+    select count(*) into v_active
+      from epc_codes
+     where id = any(p_epc_ids) and tenant_id = v_tenant and status in ('sold','other');
+    if v_active <> v_total then
+      raise exception 'Зарим EPC Борлуулсан/Бусад гүйлгээ төлөвтэй биш (тохирох %/%).', v_active, v_total;
+    end if;
+  else
+    select count(*) into v_active
+      from epc_codes
+     where id = any(p_epc_ids) and tenant_id = v_tenant and status = 'active';
+    if v_active <> v_total then
+      raise exception 'Зарим EPC идэвхтэй биш эсвэл олдсонгүй (идэвхтэй %/%).', v_active, v_total;
+    end if;
   end if;
 
   -- Бүгд нэг салбарынх байх (NULL = "Салбаргүй" гэсэн нэг bucket).
@@ -1012,6 +1022,8 @@ begin
     raise exception 'Танд шилжүүлэг хийх эрх байхгүй.';
   elsif p_type = 'other' and not has_perm('act_other') then
     raise exception 'Танд бусад гүйлгээ хийх эрх байхгүй.';
+  elsif p_type = 'return' and not has_perm('act_return') then
+    raise exception 'Танд буцаалт хийх эрх байхгүй.';
   end if;
 
   -- Guard trigger (epc_guard_transferring)-ийг энэ transaction-д давах эрх.
@@ -1040,8 +1052,11 @@ begin
   update epc_codes
      set status = case p_type when 'sale' then 'sold'
                               when 'transfer' then 'transferring'
+                              when 'return' then 'active'
                               else 'other' end
-   where id = any(p_epc_ids) and tenant_id = v_tenant and status = 'active';
+   where id = any(p_epc_ids) and tenant_id = v_tenant
+     and ((p_type = 'return' and status in ('sold','other'))
+          or (p_type <> 'return' and status = 'active'));
 
   return v_tx;
 end;
@@ -1211,6 +1226,8 @@ begin
       when new.status = 'transferring' then 'transfer_out'
       when old.status = 'transferring' and new.branch_id is distinct from old.branch_id then 'transfer_in'
       when old.status = 'transferring' and new.status = 'active' then 'transfer_cancel'
+      -- Борлуулсан/Бусад гүйлгээнээс Идэвхтэй рүү буцах = Буцаалт (гүйлгээгээр ч, гараар ч).
+      when old.status in ('sold','other') and new.status = 'active' then 'returned'
       when new.status = 'sold' then 'sold'
       when new.status = 'other' then 'other'
       else 'status_change'
@@ -1650,3 +1667,38 @@ create policy "branches read" on branches for select using (tenant_id = current_
 create policy "branches write" on branches for all
   using (tenant_id = current_tenant_id() and (select has_perm('act_branch_edit')))
   with check (tenant_id = current_tenant_id() and (select has_perm('act_branch_edit')));
+
+-- ============================================================
+-- EPC бөөнөөр устгах дэмжлэг: Хэвлээгүй EPC устгахад түүх нь (зөвхөн
+-- "Үүссэн" бичлэг) хамт устана. Бусад төлөвийн EPC-г epc_block_active_delete
+-- trigger хамгаалдаг тул жинхэнэ түүхэн дата аюулгүй. transaction_items-ийн
+-- FK RESTRICT хэвээр (гүйлгээтэй EPC давхар хамгаалалттай).
+-- ============================================================
+alter table epc_events drop constraint if exists epc_events_epc_id_fkey;
+alter table epc_events add constraint epc_events_epc_id_fkey
+  foreign key (epc_id) references epc_codes(id) on delete cascade;
+
+-- Устгалын дүрэм (шинэчилсэн): Хэвлээгүй + Идэвхтэй устгаж болно;
+-- Борлуулсан/Шилжүүлж буй/Бусад гүйлгээ хамгаалагдана. Гүйлгээний түүхтэй
+-- EPC-г transaction_items-ийн FK (RESTRICT) төлөв хамаагүй хамгаална.
+create or replace function epc_block_active_delete() returns trigger as $$
+begin
+  if old.status in ('sold', 'transferring', 'other') then
+    raise exception 'EPC-г устгах боломжгүй: % төлөвтэй (зөвхөн Хэвлээгүй/Идэвхтэйг устгана).', old.status
+      using errcode = '23503';
+  end if;
+  return old;
+end $$ language plpgsql;
+
+-- ============================================================
+-- Буцаалт (return) — Борлуулсан/Бусад гүйлгээгээр гарсан бараа буцаж ирэхэд
+-- гүйлгээ болгож бүртгэнэ (хэн/хэзээ/тэмдэглэл); EPC Идэвхтэй болно.
+-- ============================================================
+alter table transactions drop constraint if exists transactions_type_check;
+alter table transactions add constraint transactions_type_check
+  check (type in ('sale','transfer','other','return'));
+
+alter table epc_events drop constraint if exists epc_events_event_check;
+alter table epc_events add constraint epc_events_event_check
+  check (event in ('created','printed','status_change','transfer_out','transfer_in',
+                   'transfer_cancel','sold','other','returned'));

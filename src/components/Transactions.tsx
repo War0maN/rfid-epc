@@ -34,7 +34,11 @@ const TYPE_PERM: Record<TxType, Perm> = {
   sale: "act_sale",
   transfer: "act_transfer",
   other: "act_other",
+  return: "act_return",
 };
+
+/** Гүйлгээний төрөлд тохирох (сагсанд орж болох) EPC-ийн төлөвүүд. */
+const statusesFor = (t: TxType) => (t === "return" ? ["sold", "other"] : ["active"]);
 
 // Дээд мөрийн бүх удирдлага нэг өндөртэй (h-9) — жигд харагдана.
 const ctl =
@@ -123,10 +127,10 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
 
   // Сүүлийн хүсэлтийг таних тоолуур — хуучирсан салбарын хариу дарж бичихээс сэргийлнэ.
   const availReq = useRef(0);
-  function loadAvail(branchId: string) {
+  function loadAvail(branchId: string, statuses: string[]) {
     setAvailLoading(true);
     const req = ++availReq.current;
-    fetchActiveEpcsByBranch(branchId)
+    fetchActiveEpcsByBranch(branchId, statuses)
       .then((d) => availReq.current === req && setAvail(d))
       .catch((e) => availReq.current === req && setError(errorMessage(e)))
       .finally(() => availReq.current === req && setAvailLoading(false));
@@ -139,9 +143,17 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
     setAvailFilter("");
     setAvail(null);
     if (!id) return;
-    loadAvail(id);
+    loadAvail(id, statusesFor(txType));
     // Салбар сонгосны дараа скан талбарт фокус (уншигч шууд бичихэд бэлэн).
     setTimeout(() => scanRef.current?.focus(), 0);
+  }
+
+  /** Төрөл солиход сагс цэвэрлээд жагсаалтыг шинэ төрлийн төлөвөөр дахин татна. */
+  function selectType(t: TxType) {
+    setTxType(t);
+    setCart(new Map());
+    setScanMsg(null);
+    if (fromBranch) loadAvail(fromBranch, statusesFor(t));
   }
 
   function openDetail(tx: TxRow) {
@@ -182,7 +194,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
       }
       const item = availByHex.get(hex);
       if (!item) {
-        lastWarn = `${hex} — энэ салбарын идэвхтэй EPC-ээс олдсонгүй.`;
+        lastWarn = `${hex} — энэ салбарын жагсаалтаас олдсонгүй.`;
         continue;
       }
       if (cart.has(item.id)) {
@@ -246,7 +258,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
       setCart(new Map());
       setNote("");
       setScanMsg(null);
-      if (fromBranch) loadAvail(fromBranch);
+      if (fromBranch) loadAvail(fromBranch, statusesFor(txType));
       reload();
     } catch (e) {
       setError(errorMessage(e));
@@ -373,7 +385,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
           <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <label className="w-44 text-sm">
               <span className={lbl}>Төрөл</span>
-              <select value={txType} onChange={(e) => setTxType(e.target.value as TxType)} className={ctl}>
+              <select value={txType} onChange={(e) => selectType(e.target.value as TxType)} className={ctl}>
                 {allowedTypes.map((t) => (
                   <option key={t} value={t}>{TX_TYPE_LABEL[t]}</option>
                 ))}
@@ -505,7 +517,8 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
               <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
                 <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
                   <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Идэвхтэй EPC ({availLoading ? "…" : remaining.length.toLocaleString()})
+                    {txType === "return" ? "Буцаах боломжтой EPC" : "Идэвхтэй EPC"} (
+                    {availLoading ? "…" : remaining.length.toLocaleString()})
                   </span>
                   <input
                     value={availFilter}
@@ -519,7 +532,11 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                     <p className="px-3 py-8 text-center text-sm text-slate-400">Ачаалж байна…</p>
                   ) : remaining.length === 0 ? (
                     <p className="px-3 py-8 text-center text-sm text-slate-400">
-                      {(avail ?? []).length === 0 ? "Энэ салбарт идэвхтэй EPC алга." : "Тохирох EPC алга."}
+                      {(avail ?? []).length === 0
+                        ? txType === "return"
+                          ? "Энэ салбарт буцаах боломжтой (Борлуулсан/Бусад гүйлгээт) EPC алга."
+                          : "Энэ салбарт идэвхтэй EPC алга."
+                        : "Тохирох EPC алга."}
                     </p>
                   ) : (
                     <table className="min-w-full text-sm">

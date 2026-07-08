@@ -49,14 +49,19 @@ export async function generateEpcsForJob(
   const productIds = [...new Set(lines.map((l) => l.productId))];
   const { data: products, error: pErr } = await supabase
     .from("products")
-    .select("id, gtin, object_class")
+    .select("id, gtin, object_class, name, sku")
     .in("id", productIds);
   if (pErr) throw pErr;
   const prodById = new Map(
-    (products as { id: string; gtin: string | null; object_class: number | null }[]).map((p) => [
-      p.id,
-      p,
-    ])
+    (
+      products as {
+        id: string;
+        gtin: string | null;
+        object_class: number | null;
+        name: string | null;
+        sku: string | null;
+      }[]
+    ).map((p) => [p.id, p])
   );
 
   // 1) Бараа тус бүрийн НИЙТ тоог нэгтгэж, нэг round-trip-ээр serial захиална.
@@ -136,8 +141,25 @@ export async function generateEpcsForJob(
     if (iErr) throw iErr;
   }
 
-  await supabase.from("jobs").update({ status: "generated" }).eq("id", params.jobId);
-  await logAuditEvent(supabase, "generate", "job", params.jobId, { count: result.length });
+  // Статус шинэчлэхдээ ажлын дугаарыг буцааж аваад аудитад хамт бичнэ.
+  const { data: jobRow } = await supabase
+    .from("jobs")
+    .update({ status: "generated" })
+    .eq("id", params.jobId)
+    .select("job_number")
+    .maybeSingle();
+  // Аудитын дэлгэрэнгүйд "аль бараанд хэдэн EPC" гэдгийг бараагаар задална.
+  const byProduct: Record<string, number> = {};
+  for (const [pid, cnt] of totalByProduct) {
+    const p = prodById.get(pid);
+    const key = p?.name || p?.sku || "Нэргүй бараа";
+    byProduct[key] = (byProduct[key] ?? 0) + cnt;
+  }
+  await logAuditEvent(supabase, "generate", "job", params.jobId, {
+    count: result.length,
+    job_number: (jobRow as { job_number: string } | null)?.job_number ?? null,
+    byProduct,
+  });
 
   return result;
 }

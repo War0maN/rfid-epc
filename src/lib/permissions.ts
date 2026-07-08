@@ -22,6 +22,7 @@ export type Perm =
   | "act_sale"
   | "act_transfer"
   | "act_other"
+  | "act_return"
   | "act_receive"
   | "act_product_edit"
   | "act_catalog_edit"
@@ -50,6 +51,7 @@ export const PERM_GROUPS: { title: string; perms: { key: Perm; label: string }[]
       { key: "act_sale", label: "Борлуулалт хийх" },
       { key: "act_transfer", label: "Шилжүүлэг илгээх" },
       { key: "act_receive", label: "Шилжүүлэг хүлээн авах/цуцлах" },
+      { key: "act_return", label: "Буцаалт хийх" },
       { key: "act_other", label: "Бусад гүйлгээ хийх" },
       { key: "act_product_edit", label: "Бараа нэмэх/засах" },
       { key: "act_catalog_edit", label: "Ангилал/шинж чанар засах" },
