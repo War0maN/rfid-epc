@@ -24,6 +24,7 @@ export interface Member {
   role: Role;
   created_at: string;
   branch_ids: string[]; // хуваарилагдсан салбарууд (хоосон = бүгд/хязгааргүй)
+  perms: string[]; // олгосон эрхүүд (хоосон = бүрэн default)
 }
 
 export interface Invite {
@@ -86,24 +87,54 @@ export async function fetchMyProfile(): Promise<MyProfile | null> {
 
 // ---------- Admin: гишүүд ба урилга ----------
 
-/** Тенантын бүх гишүүн + салбарын хуваарилалт (RLS-ээр зөвхөн өөрийн тенант). */
+/** Тенантын бүх гишүүн + салбар/эрхийн тохиргоо (RLS-ээр зөвхөн өөрийн тенант). */
 export async function listMembers(): Promise<Member[]> {
-  const [{ data, error }, { data: ub, error: ubErr }] = await Promise.all([
+  const [{ data, error }, { data: ub, error: ubErr }, { data: up, error: upErr }] = await Promise.all([
     supabase.from("profiles").select("id, email, role, created_at").order("created_at", { ascending: true }),
     supabase.from("user_branches").select("user_id, branch_id"),
+    supabase.from("user_permissions").select("user_id, perm"),
   ]);
   if (error) throw error;
   if (ubErr) throw ubErr;
-  const byUser = new Map<string, string[]>();
+  if (upErr) throw upErr;
+  const branchByUser = new Map<string, string[]>();
   for (const r of (ub ?? []) as { user_id: string; branch_id: string }[]) {
-    const list = byUser.get(r.user_id) ?? [];
+    const list = branchByUser.get(r.user_id) ?? [];
     list.push(r.branch_id);
-    byUser.set(r.user_id, list);
+    branchByUser.set(r.user_id, list);
   }
-  return ((data ?? []) as Omit<Member, "branch_ids">[]).map((m) => ({
+  const permByUser = new Map<string, string[]>();
+  for (const r of (up ?? []) as { user_id: string; perm: string }[]) {
+    const list = permByUser.get(r.user_id) ?? [];
+    list.push(r.perm);
+    permByUser.set(r.user_id, list);
+  }
+  return ((data ?? []) as Omit<Member, "branch_ids" | "perms">[]).map((m) => ({
     ...m,
-    branch_ids: byUser.get(m.id) ?? [],
+    branch_ids: branchByUser.get(m.id) ?? [],
+    perms: permByUser.get(m.id) ?? [],
   }));
+}
+
+/** Гишүүний эрхүүдийг тохируулна (админ; атом replace, хоосон = бүрэн default). */
+export async function setMemberPerms(userId: string, perms: string[]): Promise<void> {
+  const { error } = await supabase.rpc("set_member_perms", {
+    p_user: userId,
+    p_perms: perms,
+  });
+  if (error) throw error;
+}
+
+/** Өөрийн эрхүүд (хоосон = бүрэн default). */
+export async function fetchMyPerms(): Promise<string[]> {
+  const uid = (await supabase.auth.getUser()).data.user?.id;
+  if (!uid) return [];
+  const { data, error } = await supabase
+    .from("user_permissions")
+    .select("perm")
+    .eq("user_id", uid);
+  if (error) throw error;
+  return ((data ?? []) as { perm: string }[]).map((r) => r.perm);
 }
 
 /** Гишүүний салбаруудыг тохируулна (админ; атом replace, хоосон = хязгааргүй). */

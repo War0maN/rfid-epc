@@ -1005,6 +1005,14 @@ begin
   if not has_branch_access(v_from) then
     raise exception 'Энэ салбарт гүйлгээ хийх эрхгүй.';
   end if;
+  -- Phase 2c: гүйлгээний төрлийн эрх.
+  if p_type = 'sale' and not has_perm('act_sale') then
+    raise exception 'Танд борлуулалт хийх эрх байхгүй.';
+  elsif p_type = 'transfer' and not has_perm('act_transfer') then
+    raise exception 'Танд шилжүүлэг хийх эрх байхгүй.';
+  elsif p_type = 'other' and not has_perm('act_other') then
+    raise exception 'Танд бусад гүйлгээ хийх эрх байхгүй.';
+  end if;
 
   -- Guard trigger (epc_guard_transferring)-ийг энэ transaction-д давах эрх.
   perform set_config('app.tx_rpc', '1', true);
@@ -1064,6 +1072,10 @@ begin
   if not has_branch_access(v_tx.to_branch) then
     raise exception 'Очих салбарт эрхгүй тул хүлээн авах боломжгүй.';
   end if;
+  -- Phase 2c: хүлээн авах эрх.
+  if not has_perm('act_receive') then
+    raise exception 'Танд шилжүүлэг хүлээн авах эрх байхгүй.';
+  end if;
 
   perform set_config('app.tx_rpc', '1', true);
   perform set_config('app.tx_id', p_tx::text, true);
@@ -1104,6 +1116,10 @@ begin
   -- Phase 2b: эх салбарт эрхтэй хүн л цуцална (буцаан авч байгаа тул).
   if not has_branch_access(v_tx.from_branch) then
     raise exception 'Эх салбарт эрхгүй тул цуцлах боломжгүй.';
+  end if;
+  -- Phase 2c: хүлээн авах/цуцлах эрх.
+  if not has_perm('act_receive') then
+    raise exception 'Танд шилжүүлэг цуцлах эрх байхгүй.';
   end if;
 
   perform set_config('app.tx_rpc', '1', true);
@@ -1491,3 +1507,146 @@ create policy "epc events read" on epc_events for select
     or (select not exists (select 1 from user_branches where user_id = auth.uid()))
     or coalesce(new_branch, old_branch) in (select branch_id from user_branches where user_id = auth.uid())
   ));
+
+-- ============================================================
+-- Phase 2c: Нарийвчилсан эрхийн систем (permissions).
+--   Оператор бүрд таб харах + үйлдлийн эрхийг checkbox-оор тохируулна.
+--   Хоёр давхарга: UI (таб/товч нуух) + DB (доорх policy/RPC — тойрч
+--   гарах боломжгүй). Тохиргоогүй (мөргүй) гишүүн = бүрэн эрх (одоогийн
+--   default, хэрэглэгчид эвдрэхгүй). Админ үргэлж бүрэн.
+-- ============================================================
+create table if not exists user_permissions (
+  tenant_id  uuid not null references tenants(id),
+  user_id    uuid not null references profiles(id) on delete cascade,
+  perm       text not null,
+  created_at timestamptz not null default now(),
+  primary key (user_id, perm)
+);
+create index if not exists user_permissions_tenant_idx on user_permissions (tenant_id, user_id);
+
+alter table user_permissions enable row level security;
+drop policy if exists "user permissions read" on user_permissions;
+create policy "user permissions read" on user_permissions
+  for select using (tenant_id = current_tenant_id());
+-- write policy байхгүй — зөвхөн set_member_perms RPC (security definer) бичнэ.
+
+-- Эрхийн шалгагч: админ / тохиргоогүй = бүрэн / эрх байвал true.
+create or replace function has_perm(p text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select is_tenant_admin()
+      or not exists (select 1 from user_permissions where user_id = auth.uid())
+      or exists (select 1 from user_permissions where user_id = auth.uid() and perm = p)
+$$;
+grant execute on function has_perm(text) to authenticated;
+
+-- Админ гишүүний эрхүүдийг тохируулна (атом replace; хоосон = бүрэн default).
+create or replace function set_member_perms(p_user uuid, p_perms text[])
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid := current_tenant_id();
+begin
+  if not is_tenant_admin() then
+    raise exception 'Зөвхөн админ эрх тохируулна.';
+  end if;
+  if not exists (select 1 from profiles where id = p_user and tenant_id = v_tenant) then
+    raise exception 'Гишүүн олдсонгүй.';
+  end if;
+  delete from user_permissions where user_id = p_user and tenant_id = v_tenant;
+  insert into user_permissions (tenant_id, user_id, perm)
+  select v_tenant, p_user, x.perm
+    from unnest(coalesce(p_perms, '{}'::text[])) as x(perm);
+end $$;
+grant execute on function set_member_perms(uuid, text[]) to authenticated;
+
+-- ---------- RLS: үйлдлийн эрхүүд ----------
+-- (select has_perm(...)) хэлбэр = InitPlan, нэг удаа тооцогдоно (2b сургамж).
+
+-- Ажил (импорт): insert/update = act_import; унших нээлттэй; delete хэвээр.
+drop policy if exists "tenant jobs" on jobs;
+drop policy if exists "jobs read"   on jobs;
+drop policy if exists "jobs insert" on jobs;
+drop policy if exists "jobs update" on jobs;
+drop policy if exists "jobs delete" on jobs;
+create policy "jobs read"   on jobs for select using (tenant_id = current_tenant_id());
+create policy "jobs insert" on jobs for insert
+  with check (tenant_id = current_tenant_id() and (select has_perm('act_import')));
+create policy "jobs update" on jobs for update
+  using (tenant_id = current_tenant_id() and (select has_perm('act_import')))
+  with check (tenant_id = current_tenant_id() and (select has_perm('act_import')));
+create policy "jobs delete" on jobs for delete using (tenant_id = current_tenant_id());
+
+-- EPC: insert = act_import, update = act_print (гүйлгээний RPC-ууд security
+-- definer тул эдгээрт хамаарахгүй). Салбарын scoping (2b) хэвээр давхар.
+drop policy if exists "epc insert" on epc_codes;
+create policy "epc insert" on epc_codes for insert
+  with check (tenant_id = current_tenant_id() and (select has_perm('act_import')) and (
+    branch_id is null
+    or (select is_tenant_admin())
+    or (select not exists (select 1 from user_branches where user_id = auth.uid()))
+    or branch_id in (select branch_id from user_branches where user_id = auth.uid())
+  ));
+drop policy if exists "epc update" on epc_codes;
+create policy "epc update" on epc_codes for update
+  using (tenant_id = current_tenant_id() and (select has_perm('act_print')) and (
+    branch_id is null
+    or (select is_tenant_admin())
+    or (select not exists (select 1 from user_branches where user_id = auth.uid()))
+    or branch_id in (select branch_id from user_branches where user_id = auth.uid())
+  ))
+  with check (tenant_id = current_tenant_id() and (
+    branch_id is null
+    or (select is_tenant_admin())
+    or (select not exists (select 1 from user_branches where user_id = auth.uid()))
+    or branch_id in (select branch_id from user_branches where user_id = auth.uid())
+  ));
+
+-- Бараа: нэмэх/засах = act_product_edit ЭСВЭЛ act_import (импорт авто-upsert).
+drop policy if exists "products insert" on products;
+create policy "products insert" on products for insert
+  with check (tenant_id = current_tenant_id()
+              and ((select has_perm('act_product_edit')) or (select has_perm('act_import'))));
+drop policy if exists "products update" on products;
+create policy "products update" on products for update
+  using (tenant_id = current_tenant_id()
+         and ((select has_perm('act_product_edit')) or (select has_perm('act_import'))))
+  with check (tenant_id = current_tenant_id()
+              and ((select has_perm('act_product_edit')) or (select has_perm('act_import'))));
+
+-- Ангилал/шинж чанар: бичих = act_catalog_edit ЭСВЭЛ act_import; унших нээлттэй.
+drop policy if exists "tenant categories" on categories;
+drop policy if exists "categories read"  on categories;
+drop policy if exists "categories write" on categories;
+create policy "categories read" on categories for select using (tenant_id = current_tenant_id());
+create policy "categories write" on categories for all
+  using (tenant_id = current_tenant_id()
+         and ((select has_perm('act_catalog_edit')) or (select has_perm('act_import'))))
+  with check (tenant_id = current_tenant_id()
+              and ((select has_perm('act_catalog_edit')) or (select has_perm('act_import'))));
+
+drop policy if exists "tenant attribute_defs" on attribute_defs;
+drop policy if exists "attribute_defs read"  on attribute_defs;
+drop policy if exists "attribute_defs write" on attribute_defs;
+create policy "attribute_defs read" on attribute_defs for select using (tenant_id = current_tenant_id());
+create policy "attribute_defs write" on attribute_defs for all
+  using (tenant_id = current_tenant_id()
+         and ((select has_perm('act_catalog_edit')) or (select has_perm('act_import'))))
+  with check (tenant_id = current_tenant_id()
+              and ((select has_perm('act_catalog_edit')) or (select has_perm('act_import'))));
+
+-- Салбар: унших нээлттэй (нэрс бүгдэд хэрэгтэй); бичих = act_branch_edit.
+drop policy if exists "tenant branches" on branches;
+drop policy if exists "branches read"  on branches;
+drop policy if exists "branches write" on branches;
+create policy "branches read" on branches for select using (tenant_id = current_tenant_id());
+create policy "branches write" on branches for all
+  using (tenant_id = current_tenant_id() and (select has_perm('act_branch_edit')))
+  with check (tenant_id = current_tenant_id() and (select has_perm('act_branch_edit')));

@@ -20,12 +20,21 @@ import {
 } from "../lib/transactions";
 import { toCsv, downloadCsv } from "../lib/exportCsv";
 import { errorMessage } from "../lib/errorMessage";
+import { makeCan, type Perm } from "../lib/permissions";
 
 interface Props {
   refreshKey?: number;
   /** Хуваарилагдсан салбарууд (null = хязгааргүй). Эх салбарын сонголтыг шүүнэ. */
   allowedBranches?: string[] | null;
+  /** Олгосон эрхүүд (null = бүрэн). Төрөл/товч нуухад — DB (RPC) давхар хамгаална. */
+  perms?: string[] | null;
 }
+
+const TYPE_PERM: Record<TxType, Perm> = {
+  sale: "act_sale",
+  transfer: "act_transfer",
+  other: "act_other",
+};
 
 // Дээд мөрийн бүх удирдлага нэг өндөртэй (h-9) — жигд харагдана.
 const ctl =
@@ -39,10 +48,13 @@ const AVAIL_RENDER_CAP = 300; // жагсаалтад нэг дор харуул
  * Урсгал: салбар сонгох → идэвхтэй EPC жагсаалт (доод) → скан/шивэлт/дарж
  * сагсанд (дээд) нэмэх → нийт дүнтэй баталгаажуулах.
  */
-export default function Transactions({ refreshKey = 0, allowedBranches = null }: Props) {
+export default function Transactions({ refreshKey = 0, allowedBranches = null, perms = null }: Props) {
   // Эх салбарын сонголт: хуваарилагдсан салбараар шүүнэ (очих салбар бүрэн үлдэнэ).
   const filterMine = (list: Branch[]) =>
     allowedBranches ? list.filter((b) => allowedBranches.includes(b.id)) : list;
+  const can = makeCan(perms);
+  // Эрхтэй гүйлгээний төрлүүд (dropdown-д зөвхөн эдгээр).
+  const allowedTypes = TX_TYPES.filter((t) => can(TYPE_PERM[t]));
   const [view, setView] = useState<"new" | "history">("new");
 
   const [rows, setRows] = useState<TxRow[]>([]);
@@ -53,7 +65,9 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null }:
   const [busy, setBusy] = useState(false);
 
   // Шинэ гүйлгээний төлөв
-  const [txType, setTxType] = useState<TxType>("sale");
+  const [txTypeState, setTxType] = useState<TxType>("sale");
+  // Сонгосон төрөл эрхгүй бол эхний эрхтэй төрөл рүү унана.
+  const txType: TxType = allowedTypes.includes(txTypeState) ? txTypeState : (allowedTypes[0] ?? "sale");
   const [fromBranch, setFromBranch] = useState("");
   const [toBranch, setToBranch] = useState("");
   const [note, setNote] = useState("");
@@ -348,14 +362,19 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null }:
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {info && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{info}</p>}
 
-      {view === "new" && (
+      {view === "new" && allowedTypes.length === 0 && (
+        <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-10 text-center text-sm text-slate-400">
+          Танд гүйлгээ хийх эрх байхгүй. Түүхийг "Гүйлгээний түүх" таб-аас харна уу.
+        </p>
+      )}
+      {view === "new" && allowedTypes.length > 0 && (
         <div className="space-y-3">
           {/* Тохиргооны мөр — бүх удирдлага нэг өндөртэй */}
           <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <label className="w-44 text-sm">
               <span className={lbl}>Төрөл</span>
               <select value={txType} onChange={(e) => setTxType(e.target.value as TxType)} className={ctl}>
-                {TX_TYPES.map((t) => (
+                {allowedTypes.map((t) => (
                   <option key={t} value={t}>{TX_TYPE_LABEL[t]}</option>
                 ))}
               </select>
@@ -585,7 +604,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null }:
                     <td className={td + " max-w-[220px] truncate"}>{tx.note || <span className="text-slate-300">—</span>}</td>
                     {pendingCount > 0 && (
                       <td className={td + " text-right"} onClick={(e) => e.stopPropagation()}>
-                        {tx.type === "transfer" && tx.status === "pending" && (
+                        {tx.type === "transfer" && tx.status === "pending" && can("act_receive") && (
                           <div className="flex justify-end gap-2">
                             <button onClick={() => handleReceive(tx)} disabled={busy} className="text-xs font-medium text-emerald-600 hover:underline disabled:opacity-50">Хүлээн авах</button>
                             <button onClick={() => handleCancel(tx)} disabled={busy} className="text-xs text-red-600 hover:underline disabled:opacity-50">Цуцлах</button>

@@ -32,7 +32,8 @@ const TYPE_LABEL: Record<AttrInputType, string> = {
 };
 
 /** Динамик каталог: ангиллын мод + шинж чанарын тодорхойлолт (Тохиргоо). */
-export default function Catalog() {
+/** canEdit=false бол зөвхөн харах горим (эрхийн систем — DB давхар хамгаална). */
+export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
   const [cats, setCats] = useState<Category[]>([]);
   const [attrs, setAttrs] = useState<AttributeDef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -141,7 +142,7 @@ export default function Catalog() {
                   {CATEGORY_LEVELS[depth] ?? ""}
                 </span>
               </span>
-              <div className="hidden gap-1 group-hover:flex">
+              <div className={canEdit ? "hidden gap-1 group-hover:flex" : "hidden"}>
                 {canAddChild && (
                   <button
                     onClick={() => startAdd(node.id, CATEGORY_LEVELS[depth + 1])}
@@ -202,9 +203,11 @@ export default function Catalog() {
         <div className="w-full shrink-0 rounded-xl border border-slate-200 bg-white p-3 lg:w-80">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-semibold text-slate-700">Ангилал</span>
-            <button onClick={() => startAdd(null, CATEGORY_LEVELS[0])} className={btn}>
-              + {CATEGORY_LEVELS[0]}
-            </button>
+            {canEdit && (
+              <button onClick={() => startAdd(null, CATEGORY_LEVELS[0])} className={btn}>
+                + {CATEGORY_LEVELS[0]}
+              </button>
+            )}
           </div>
 
           {addParent === null && (
@@ -243,6 +246,7 @@ export default function Catalog() {
           <AttrList
             attrs={globalAttrs}
             categoryId={null}
+            canEdit={canEdit}
             onChanged={reload}
             onError={(m) => setError(m)}
           />
@@ -257,11 +261,13 @@ export default function Catalog() {
 function AttrList({
   attrs,
   categoryId,
+  canEdit = true,
   onChanged,
   onError,
 }: {
   attrs: AttributeDef[];
   categoryId: string | null;
+  canEdit?: boolean;
   onChanged: () => void;
   onError: (m: string) => void;
 }) {
@@ -303,10 +309,12 @@ function AttrList({
             {a.input_type === "select" && a.options.length > 0 && (
               <span className="truncate text-xs text-slate-400">{a.options.join(", ")}</span>
             )}
-            <div className="ml-auto flex gap-2">
-              <button onClick={() => setEditing(a)} className="text-xs text-indigo-600 hover:underline">Засах</button>
-              <button onClick={() => remove(a)} className="text-xs text-red-600 hover:underline">Устгах</button>
-            </div>
+            {canEdit && (
+              <div className="ml-auto flex gap-2">
+                <button onClick={() => setEditing(a)} className="text-xs text-indigo-600 hover:underline">Засах</button>
+                <button onClick={() => remove(a)} className="text-xs text-red-600 hover:underline">Устгах</button>
+              </div>
+            )}
           </div>
         )
       )}
@@ -321,11 +329,11 @@ function AttrList({
           onCancel={() => setEditing(null)}
           onError={onError}
         />
-      ) : (
+      ) : canEdit ? (
         <button onClick={() => setEditing("new")} className={btn + " mt-1"}>
           + Шинж чанар нэмэх
         </button>
-      )}
+      ) : null}
     </div>
   );
 }

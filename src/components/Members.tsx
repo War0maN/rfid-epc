@@ -6,11 +6,13 @@ import {
   listInvites,
   listMembers,
   setMemberBranches,
+  setMemberPerms,
   type Invite,
   type Member,
   type Role,
 } from "../lib/tenantAuth";
 import { listBranches, type Branch } from "../lib/branches";
+import { ALL_PERMS, PERM_GROUPS } from "../lib/permissions";
 
 const inputCls =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
@@ -32,6 +34,11 @@ export default function Members() {
   const [branchModal, setBranchModal] = useState<Member | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [branchSaving, setBranchSaving] = useState(false);
+
+  // Эрхийн модал: гишүүн + түр сонголт.
+  const [permModal, setPermModal] = useState<Member | null>(null);
+  const [pickedPerms, setPickedPerms] = useState<Set<string>>(new Set());
+  const [permSaving, setPermSaving] = useState(false);
 
   const branchName = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
 
@@ -102,6 +109,38 @@ export default function Members() {
       setError(errorMessage(err));
     } finally {
       setBranchSaving(false);
+    }
+  }
+
+  function openPermModal(m: Member) {
+    // Тохиргоогүй (бүрэн эрх) бол бүгд чеклэгдсэн байдлаар харуулна.
+    setPickedPerms(new Set(m.perms.length > 0 ? m.perms : ALL_PERMS));
+    setPermModal(m);
+  }
+
+  function togglePerm(key: string) {
+    setPickedPerms((s) => {
+      const n = new Set(s);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
+  }
+
+  async function handleSavePerms() {
+    if (!permModal) return;
+    setPermSaving(true);
+    setError(null);
+    try {
+      // Бүгд чеклэгдсэн = бүрэн эрх (default) — хоосон болгож хадгална.
+      const perms = pickedPerms.size === ALL_PERMS.length ? [] : [...pickedPerms];
+      await setMemberPerms(permModal.id, perms);
+      setPermModal(null);
+      reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setPermSaving(false);
     }
   }
 
@@ -178,15 +217,31 @@ export default function Members() {
                 {m.role === "operator" ? (
                   <>
                     {branchChips(m)}
+                    <span
+                      className={
+                        "rounded px-2 py-0.5 text-xs " +
+                        (m.perms.length === 0
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-amber-50 text-amber-700")
+                      }
+                    >
+                      {m.perms.length === 0 ? "Бүрэн эрх" : `${m.perms.length} эрх`}
+                    </span>
                     <button
                       onClick={() => openBranchModal(m)}
                       className="ml-1 text-xs font-medium text-indigo-600 hover:underline"
                     >
                       Салбар
                     </button>
+                    <button
+                      onClick={() => openPermModal(m)}
+                      className="text-xs font-medium text-indigo-600 hover:underline"
+                    >
+                      Эрх
+                    </button>
                   </>
                 ) : (
-                  <span className="text-xs text-slate-400">Бүх салбар (админ)</span>
+                  <span className="text-xs text-slate-400">Бүрэн эрх (админ)</span>
                 )}
               </span>
             </li>
@@ -218,6 +273,66 @@ export default function Members() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Эрх тохируулах модал */}
+      {permModal && (
+        <div
+          className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4"
+          onClick={() => setPermModal(null)}
+        >
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-slate-900">Эрх тохируулах</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              {permModal.email} — сонгосон цэс/үйлдэл л зөвшөөрөгдөнө (UI + DB хоёуланд).
+              <strong> Бүгдийг чеклэвэл бүрэн эрх</strong> (default) болно.
+            </p>
+            <div className="mt-3 grid max-h-80 grid-cols-1 gap-4 overflow-auto sm:grid-cols-2">
+              {PERM_GROUPS.map((g) => (
+                <div key={g.title}>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{g.title}</p>
+                  <div className="space-y-0.5">
+                    {g.perms.map((p) => (
+                      <label
+                        key={p.key}
+                        className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={pickedPerms.has(p.key)}
+                          onChange={() => togglePerm(p.key)}
+                        />
+                        {p.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-2">
+              <span className="text-xs text-slate-500">
+                {pickedPerms.size === ALL_PERMS.length
+                  ? "Бүрэн эрх"
+                  : `${pickedPerms.size}/${ALL_PERMS.length} эрх`}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPermModal(null)}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Болих
+                </button>
+                <button
+                  disabled={permSaving}
+                  onClick={handleSavePerms}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {permSaving ? "Хадгалж байна…" : "Хадгалах"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

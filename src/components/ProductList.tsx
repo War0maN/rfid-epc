@@ -5,6 +5,7 @@ import { generateEpcsForProduct } from "../lib/createProduct";
 import { listAttributeDefs, dedupAttrs, type AttributeDef } from "../lib/catalog";
 import { listBranches, type Branch } from "../lib/branches";
 import { errorMessage } from "../lib/errorMessage";
+import { makeCan } from "../lib/permissions";
 import ProductForm from "./ProductForm";
 
 interface Props {
@@ -12,6 +13,8 @@ interface Props {
   onEpcsGenerated?: () => void;
   /** Хуваарилагдсан салбарууд (null = хязгааргүй). EPC үүсгэх сонголтыг шүүнэ. */
   allowedBranches?: string[] | null;
+  /** Олгосон эрхүүд (null = бүрэн). Товчнуудыг нуухад — DB давхар хамгаална. */
+  perms?: string[] | null;
 }
 
 interface ColDef {
@@ -44,7 +47,8 @@ function loadHidden(): Set<string> {
 }
 
 /** Бүтээгдэхүүн (master) таб — бүрэн боломжит хүснэгт (шүүлт/sort/хуудас/багана). */
-export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches = null }: Props) {
+export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches = null, perms = null }: Props) {
+  const can = makeCan(perms);
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [attrDefs, setAttrDefs] = useState<AttributeDef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -223,9 +227,11 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
             </>
           )}
         </div>
-        <button onClick={() => setForm("new")} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
-          + Бараа нэмэх
-        </button>
+        {can("act_product_edit") && (
+          <button onClick={() => setForm("new")} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
+            + Бараа нэмэх
+          </button>
+        )}
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -272,7 +278,9 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
                   })}
                   <td className="whitespace-nowrap border-b border-slate-100 bg-white px-3 py-2 text-right">
                     <div className="flex justify-end gap-2">
-                      <button onClick={() => { setGenFor(p); setGenQty("1"); }} className="text-xs font-medium text-indigo-600 hover:underline">EPC үүсгэх</button>
+                      {can("act_import") && (
+                        <button onClick={() => { setGenFor(p); setGenQty("1"); }} className="text-xs font-medium text-indigo-600 hover:underline">EPC үүсгэх</button>
+                      )}
                       {isAdmin && (
                         <>
                           <button onClick={() => setForm(p)} className="text-xs text-slate-500 hover:underline">Засах</button>

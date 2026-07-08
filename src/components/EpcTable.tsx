@@ -19,6 +19,7 @@ import {
   labelOf,
   type EpcStatus,
 } from "../lib/epcStatus";
+import { makeCan } from "../lib/permissions";
 // bwip-js (баркод) том тул хэвлэх диалогийг зөвхөн нээх үед ачаална.
 const PrintDialog = lazy(() => import("./PrintDialog"));
 
@@ -28,6 +29,8 @@ interface Props {
   isAdmin?: boolean; // гараар төлөв солих зөвхөн админд
   /** EPC дээр дарахад — Хайлт таб руу үсэрч түүхийг харуулна. */
   onLookup?: (epcHex: string) => void;
+  /** Олгосон эрхүүд (null = бүрэн). Хэвлэх товч нуухад — DB давхар хамгаална. */
+  perms?: string[] | null;
 }
 
 /** Хүснэгтийн багана бүрийн тодорхойлолт (толгой + утга авах). */
@@ -86,7 +89,8 @@ function safeTagUri(hex: string): string {
   }
 }
 
-export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup }: Props) {
+export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, perms = null }: Props) {
+  const can = makeCan(perms);
   const [pageRows, setPageRows] = useState<EpcRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -473,20 +477,24 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup }: 
         >
           CSV татах ({outCount.toLocaleString()})
         </button>
-        <button
-          onClick={handleExportZpl}
-          disabled={busy || outCount === 0}
-          className="rounded-lg bg-slate-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-        >
-          ZPL татах ({outCount.toLocaleString()})
-        </button>
-        <button
-          onClick={openPrint}
-          disabled={busy || outCount === 0}
-          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
-          🖨 Хэвлэх ({outCount.toLocaleString()})
-        </button>
+        {can("act_print") && (
+          <button
+            onClick={handleExportZpl}
+            disabled={busy || outCount === 0}
+            className="rounded-lg bg-slate-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+          >
+            ZPL татах ({outCount.toLocaleString()})
+          </button>
+        )}
+        {can("act_print") && (
+          <button
+            onClick={openPrint}
+            disabled={busy || outCount === 0}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            🖨 Хэвлэх ({outCount.toLocaleString()})
+          </button>
+        )}
         {isAdmin && (
           <select
             value=""

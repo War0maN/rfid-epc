@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./hooks/useSession";
-import { acceptInvite, fetchMyProfile, fetchMyBranchIds, type MyProfile } from "./lib/tenantAuth";
+import { acceptInvite, fetchMyProfile, fetchMyBranchIds, fetchMyPerms, type MyProfile } from "./lib/tenantAuth";
+import { makeCan, TAB_PERM } from "./lib/permissions";
 import Login from "./components/Login";
 import Onboarding from "./components/Onboarding";
 import CreateJobForm from "./components/CreateJobForm";
@@ -68,22 +69,38 @@ function App() {
   const [profileChecked, setProfileChecked] = useState(false);
   // Хуваарилагдсан салбарууд: null = хязгааргүй (админ эсвэл хуваарилалтгүй).
   const [allowedBranches, setAllowedBranches] = useState<string[] | null>(null);
+  // Олгосон эрхүүд: null = бүрэн (админ эсвэл тохиргоогүй).
+  const [myPerms, setMyPerms] = useState<string[] | null>(null);
 
   useEffect(() => {
     if (!profile) return;
     let active = true;
     void (async () => {
       try {
-        const ids = profile.role === "admin" ? [] : await fetchMyBranchIds();
-        if (active) setAllowedBranches(ids.length > 0 ? ids : null);
+        if (profile.role === "admin") {
+          if (active) {
+            setAllowedBranches(null);
+            setMyPerms(null);
+          }
+          return;
+        }
+        const [ids, perms] = await Promise.all([fetchMyBranchIds(), fetchMyPerms()]);
+        if (!active) return;
+        setAllowedBranches(ids.length > 0 ? ids : null);
+        setMyPerms(perms.length > 0 ? perms : null);
       } catch {
-        if (active) setAllowedBranches(null);
+        if (active) {
+          setAllowedBranches(null);
+          setMyPerms(null);
+        }
       }
     })();
     return () => {
       active = false;
     };
   }, [profile]);
+
+  const can = makeCan(myPerms);
 
   // Онбординг дууссаны дараа дахин татах (event — синхрон setState зүгээр).
   const loadProfile = useCallback(() => {
@@ -121,6 +138,14 @@ function App() {
   // Нэвтэрсэн ч тенантгүй бол байгууллагаа үүсгүүлнэ.
   if (!profile) return <Onboarding onDone={loadProfile} />;
 
+  // Эрхээр харагдах табууд; идэвхтэй таб нуугдсан бол эхний зөвшөөрөгдсөн рүү.
+  const visibleTabs = TABS.filter(
+    (t) => (!t.adminOnly || profile.role === "admin") && (!TAB_PERM[t.id] || can(TAB_PERM[t.id]))
+  );
+  const activeTab: Tab = visibleTabs.some((t) => t.id === tab)
+    ? tab
+    : (visibleTabs[0]?.id ?? "create");
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-slate-200 bg-white">
@@ -140,13 +165,13 @@ function App() {
         </div>
 
         <nav className="mx-auto flex max-w-6xl gap-1 px-4">
-          {TABS.filter((t) => !t.adminOnly || profile.role === "admin").map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               className={
                 "border-b-2 px-4 py-2 text-sm font-medium transition " +
-                (tab === t.id
+                (activeTab === t.id
                   ? "border-indigo-600 text-indigo-700"
                   : "border-transparent text-slate-500 hover:text-slate-700")
               }
@@ -158,7 +183,7 @@ function App() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6">
-        {tab === "create" && (
+        {activeTab === "create" && (
           <CreateJobForm
             allowedBranches={allowedBranches}
             onCreated={() => {
@@ -167,7 +192,7 @@ function App() {
             }}
           />
         )}
-        {tab === "products" && (
+        {activeTab === "products" && (
           <div className="space-y-4">
             <div className="flex gap-1 border-b border-slate-200">
               {(
@@ -194,23 +219,26 @@ function App() {
               <ProductList
                 isAdmin={profile.role === "admin"}
                 allowedBranches={allowedBranches}
+                perms={myPerms}
                 onEpcsGenerated={() => setRefreshKey((k) => k + 1)}
               />
             ) : (
-              <Catalog />
+              <Catalog canEdit={can("act_catalog_edit")} />
             )}
           </div>
         )}
-        {tab === "inventory" && <Inventory refreshKey={refreshKey} allowedBranches={allowedBranches} />}
-        {tab === "transactions" && <Transactions refreshKey={refreshKey} allowedBranches={allowedBranches} />}
-        {tab === "reports" && (
+        {activeTab === "inventory" && <Inventory refreshKey={refreshKey} allowedBranches={allowedBranches} />}
+        {activeTab === "transactions" && (
+          <Transactions refreshKey={refreshKey} allowedBranches={allowedBranches} perms={myPerms} />
+        )}
+        {activeTab === "reports" && (
           <Suspense
             fallback={<div className="py-10 text-center text-slate-400">Тайлан ачаалж байна…</div>}
           >
             <Reports />
           </Suspense>
         )}
-        {tab === "table" && (
+        {activeTab === "table" && (
           <div className="space-y-4">
             <div className="flex gap-1 border-b border-slate-200">
               {(
@@ -237,6 +265,7 @@ function App() {
               <EpcTable
                 refreshKey={refreshKey}
                 isAdmin={profile.role === "admin"}
+                perms={myPerms}
                 onLookup={(hex) => {
                   setLookupHex(hex);
                   setEpcView("lookup");
@@ -247,16 +276,24 @@ function App() {
             )}
           </div>
         )}
-        {tab === "labels" && (
+        {activeTab === "labels" && (
           <Suspense
             fallback={<div className="py-10 text-center text-slate-400">Дизайнер ачаалж байна…</div>}
           >
             <Labels />
           </Suspense>
         )}
-        {tab === "branches" && <Branches isAdmin={profile.role === "admin"} />}
-        {tab === "audit" && <AuditLog />}
-        {tab === "members" && profile.role === "admin" && <Members />}
+        {/* Салбар засах UI: админ, эсвэл тусгайлан act_branch_edit олгосон оператор
+            (default бүрэн эрхтэй оператор өмнөх шигээ зөвхөн харна). */}
+        {activeTab === "branches" && (
+          <Branches
+            isAdmin={
+              profile.role === "admin" || (myPerms !== null && myPerms.includes("act_branch_edit"))
+            }
+          />
+        )}
+        {activeTab === "audit" && <AuditLog />}
+        {activeTab === "members" && profile.role === "admin" && <Members />}
       </main>
     </div>
   );
