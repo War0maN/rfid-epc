@@ -1379,10 +1379,16 @@ select t.tenant_id, ti.epc_id,
 --   Борлуулсан болгосон ч бүгд орно. Үнэ: гүйлгээний snapshot; гар
 --   өөрчлөлтөд барааны одоогийн үнэ. security invoker тул RLS хэрэгжинэ.
 --   DB талд нэгтгэдэг тул сая мөр гүйлгээтэй ч payload жижиг.
+--   Буцаалт (net sales): 'returned' event-ийг БУЦААСАН ӨДРӨӨР нь тусад нь
+--   тоолж буцаана (ret_qty/ret_amount) — санхүүгийн стандарт; өдрийн цэвэр
+--   дүн сөрөг байж болно. Буцаалтын дүн = тухайн EPC-ийн ХАМГИЙН СҮҮЛИЙН
+--   борлуулалтын snapshot үнэ (үнэ хооронд өөрчлөгдсөн ч анх зарсан үнээр
+--   буцаана); олдохгүй бол буцаалтын гүйлгээний snapshot → барааны үнэ.
 -- ============================================================
 drop function if exists report_sales(date, date);
 create function report_sales(p_from date, p_to date)
-returns table (day date, branch_id uuid, product_id uuid, actor_id uuid, qty bigint, amount numeric)
+returns table (day date, branch_id uuid, product_id uuid, actor_id uuid,
+               qty bigint, amount numeric, ret_qty bigint, ret_amount numeric)
 language sql
 stable
 security invoker
@@ -1392,13 +1398,29 @@ as $$
          coalesce(ev.new_branch, ev.old_branch),
          e.product_id,
          ev.actor_id,
-         count(*),
-         sum(coalesce(ti.price, p.price, 0))
+         count(*) filter (where ev.event = 'sold'),
+         coalesce(sum(coalesce(ti.price, p.price, 0)) filter (where ev.event = 'sold'), 0),
+         count(*) filter (where ev.event = 'returned'),
+         coalesce(sum(coalesce(orig.price, ti.price, p.price, 0)) filter (where ev.event = 'returned'), 0)
     from epc_events ev
     join epc_codes e on e.id = ev.epc_id
     left join transaction_items ti on ti.transaction_id = ev.tx_id and ti.epc_id = ev.epc_id
     left join products p on p.id = e.product_id
-   where ev.event = 'sold'
+    -- Буцаалт бүрд: өмнөх хамгийн сүүлийн борлуулалтын үнэ (зөвхөн 'returned'
+    -- мөрөнд ажиллана — дотоод where нь 'sold' мөрөнд шууд хоосон буцаана).
+    left join lateral (
+      select ti2.price
+        from epc_events ev2
+        join transaction_items ti2 on ti2.transaction_id = ev2.tx_id and ti2.epc_id = ev2.epc_id
+       where ev.event = 'returned'
+         and ev2.tenant_id = ev.tenant_id
+         and ev2.epc_id = ev.epc_id
+         and ev2.event = 'sold'
+         and ev2.created_at <= ev.created_at
+       order by ev2.created_at desc
+       limit 1
+    ) orig on true
+   where ev.event in ('sold','returned')
      and ev.created_at >= p_from
      and ev.created_at < p_to + 1   -- p_to өдрийг дуустал
    group by 1, 2, 3, 4

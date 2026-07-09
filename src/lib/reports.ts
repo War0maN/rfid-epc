@@ -14,26 +14,44 @@ export interface SalesRow {
   actor_id: string | null; // хэн борлуулсан (гүйлгээ хийсэн/төлөв өөрчилсөн)
   qty: number;
   amount: number;
+  // Буцаалт — буцаасан өдрөөр нь (тухайн өдрийн цэвэр дүн сөрөг байж болно).
+  ret_qty: number;
+  ret_amount: number;
 }
 
-/** Интервалын борлуулалтын нэгтгэл (өдөр × салбар × бараа). from/to = 'YYYY-MM-DD'. */
+/** Интервалын борлуулалт+буцаалтын нэгтгэл (өдөр × салбар × бараа). from/to = 'YYYY-MM-DD'. */
 export async function fetchSalesReport(from: string, to: string): Promise<SalesRow[]> {
   const { data, error } = await supabase.rpc("report_sales", { p_from: from, p_to: to });
   if (error) throw error;
-  return ((data ?? []) as SalesRow[]).map((r) => ({ ...r, qty: Number(r.qty), amount: Number(r.amount) }));
+  return ((data ?? []) as SalesRow[]).map((r) => ({
+    ...r,
+    qty: Number(r.qty),
+    amount: Number(r.amount),
+    ret_qty: Number(r.ret_qty ?? 0),
+    ret_amount: Number(r.ret_amount ?? 0),
+  }));
 }
 
-/** Интервалын борлуулалтын ГҮЙЛГЭЭНИЙ тоо (нийлбэр картад). */
-export async function fetchSalesTxCount(from: string, to: string): Promise<number> {
-  const { count, error } = await supabase
-    .from("transactions")
-    .select("id", { count: "exact", head: true })
-    .eq("type", "sale")
-    .eq("status", "done")
-    .gte("created_at", from)
-    .lt("created_at", nextDay(to));
-  if (error) throw error;
-  return count ?? 0;
+export interface TxCounts {
+  sale: number;
+  ret: number;
+}
+
+/** Интервалын борлуулалт/буцаалтын ГҮЙЛГЭЭНИЙ тоо (нийлбэр картад). */
+export async function fetchSalesTxCounts(from: string, to: string): Promise<TxCounts> {
+  const countOf = async (type: string) => {
+    const { count, error } = await supabase
+      .from("transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("type", type)
+      .eq("status", "done")
+      .gte("created_at", from)
+      .lt("created_at", nextDay(to));
+    if (error) throw error;
+    return count ?? 0;
+  };
+  const [sale, ret] = await Promise.all([countOf("sale"), countOf("return")]);
+  return { sale, ret };
 }
 
 function nextDay(d: string): string {
@@ -58,6 +76,10 @@ export interface GroupedSales {
   sub: string | null; // бараагаар үед SKU
   qty: number;
   amount: number;
+  retQty: number;
+  retAmount: number;
+  netQty: number; // qty - retQty
+  netAmount: number; // amount - retAmount
 }
 
 export interface NameMaps {
@@ -101,13 +123,29 @@ export function groupSales(rows: SalesRow[], group: SalesGroup, maps: NameMaps):
     if (cur) {
       cur.qty += r.qty;
       cur.amount += r.amount;
+      cur.retQty += r.ret_qty;
+      cur.retAmount += r.ret_amount;
     } else {
-      acc.set(key, { key, label, sub, qty: r.qty, amount: r.amount });
+      acc.set(key, {
+        key,
+        label,
+        sub,
+        qty: r.qty,
+        amount: r.amount,
+        retQty: r.ret_qty,
+        retAmount: r.ret_amount,
+        netQty: 0,
+        netAmount: 0,
+      });
     }
   }
   const out = [...acc.values()];
-  // Он цагийн бүлэглэлт — хугацааны дараалал; бусад нь — дүнгээр буурах.
+  for (const g of out) {
+    g.netQty = g.qty - g.retQty;
+    g.netAmount = g.amount - g.retAmount;
+  }
+  // Он цагийн бүлэглэлт — хугацааны дараалал; бусад нь — цэвэр дүнгээр буурах.
   if (group === "day" || group === "month") out.sort((a, b) => a.key.localeCompare(b.key));
-  else out.sort((a, b) => b.amount - a.amount);
+  else out.sort((a, b) => b.netAmount - a.netAmount);
   return out;
 }

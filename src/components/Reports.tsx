@@ -14,12 +14,13 @@ import { listBranches } from "../lib/branches";
 import { listProducts } from "../lib/products";
 import {
   fetchSalesReport,
-  fetchSalesTxCount,
+  fetchSalesTxCounts,
   groupSales,
   GROUP_LABEL,
   type SalesRow,
   type SalesGroup,
   type NameMaps,
+  type TxCounts,
 } from "../lib/reports";
 import { toCsv, downloadCsv } from "../lib/exportCsv";
 import { logAuditEvent } from "../lib/audit";
@@ -48,7 +49,7 @@ export default function Reports() {
   const [group, setGroup] = useState<SalesGroup>("day");
 
   const [rows, setRows] = useState<SalesRow[]>([]);
-  const [txCount, setTxCount] = useState(0);
+  const [txCounts, setTxCounts] = useState<TxCounts>({ sale: 0, ret: 0 });
   const [maps, setMaps] = useState<NameMaps>({
     branchName: new Map(),
     productName: new Map(),
@@ -60,7 +61,7 @@ export default function Reports() {
   async function fetchAll(f: string, t: string) {
     const [sales, cnt, brs, prods, profs] = await Promise.all([
       fetchSalesReport(f, t),
-      fetchSalesTxCount(f, t),
+      fetchSalesTxCounts(f, t),
       listBranches(),
       listProducts(),
       supabase.from("profiles").select("id, email"),
@@ -88,7 +89,7 @@ export default function Reports() {
       .then((res) => {
         if (req.current !== r) return;
         setRows(res.sales);
-        setTxCount(res.cnt);
+        setTxCounts(res.cnt);
         setMaps(res.maps);
         setError(null);
       })
@@ -104,7 +105,7 @@ export default function Reports() {
       .then((res) => {
         if (!active || req.current !== r) return;
         setRows(res.sales);
-        setTxCount(res.cnt);
+        setTxCounts(res.cnt);
         setMaps(res.maps);
       })
       .catch((e) => active && req.current === r && setError(errorMessage(e)))
@@ -129,39 +130,68 @@ export default function Reports() {
   }
 
   const grouped = useMemo(() => groupSales(rows, group, maps), [rows, group, maps]);
-  const totalQty = useMemo(() => grouped.reduce((s, g) => s + g.qty, 0), [grouped]);
-  const totalAmount = useMemo(() => grouped.reduce((s, g) => s + g.amount, 0), [grouped]);
+  const totals = useMemo(
+    () =>
+      grouped.reduce(
+        (s, g) => ({
+          qty: s.qty + g.qty,
+          amount: s.amount + g.amount,
+          retQty: s.retQty + g.retQty,
+          retAmount: s.retAmount + g.retAmount,
+        }),
+        { qty: 0, amount: 0, retQty: 0, retAmount: 0 }
+      ),
+    [grouped]
+  );
+  const netQty = totals.qty - totals.retQty;
+  const netAmount = totals.amount - totals.retAmount;
 
-  // Графикийн цуврал нэрс (tooltip/legend-д харагдана) — идэвхтэй хэлээр.
-  const amountKey = t("reports.chartAmount");
-  const qtyKey = t("reports.chartQty");
+  // Графикийн цуврал нэр (tooltip-д харагдана) — идэвхтэй хэлээр. Бар = цэвэр дүн.
+  const netKey = t("reports.netAmount");
   const chartData = useMemo(
     () =>
       (group === "day" || group === "month" ? grouped : grouped.slice(0, CHART_CAP)).map((g) => ({
         name: g.label.length > 16 ? g.label.slice(0, 15) + "…" : g.label,
-        [amountKey]: g.amount,
-        [qtyKey]: g.qty,
+        [netKey]: g.netAmount,
       })),
-    [grouped, group, amountKey, qtyKey]
+    [grouped, group, netKey]
   );
 
   function handleExport() {
+    const row = (g: { label: string; sub?: string | null; qty: number; retQty: number; netQty: number; amount: number; retAmount: number; netAmount: number }) => ({
+      label: g.label,
+      sku: g.sub ?? "",
+      qty: g.qty,
+      retQty: g.retQty,
+      netQty: g.netQty,
+      amount: g.amount,
+      retAmount: g.retAmount,
+      netAmount: g.netAmount,
+      avg: g.qty ? Math.round(g.amount / g.qty) : 0,
+    });
     const csv = toCsv(
       [
-        ...grouped.map((g) => ({
-          label: g.label,
-          sku: g.sub ?? "",
-          qty: g.qty,
-          amount: g.amount,
-          avg: g.qty ? Math.round(g.amount / g.qty) : 0,
-        })),
-        { label: t("reports.grandTotal"), sku: "", qty: totalQty, amount: totalAmount, avg: totalQty ? Math.round(totalAmount / totalQty) : 0 },
+        ...grouped.map(row),
+        row({
+          label: t("reports.grandTotal"),
+          sub: "",
+          qty: totals.qty,
+          retQty: totals.retQty,
+          netQty,
+          amount: totals.amount,
+          retAmount: totals.retAmount,
+          netAmount,
+        }),
       ],
       [
         { key: "label", label: GROUP_LABEL[group] },
         { key: "sku", label: "SKU" },
         { key: "qty", label: t("reports.qtyHeader") },
+        { key: "retQty", label: t("reports.retQtyHeader") },
+        { key: "netQty", label: t("reports.netQtyHeader") },
         { key: "amount", label: t("reports.totalAmount") },
+        { key: "retAmount", label: t("reports.retAmountHeader") },
+        { key: "netAmount", label: t("reports.netAmount") },
         { key: "avg", label: t("reports.avgPrice") },
       ]
     );
@@ -235,16 +265,40 @@ export default function Reports() {
         </button>
       </div>
 
-      {/* Нийлбэр картууд */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* Нийлбэр картууд — цэвэр дүн = борлуулалт − буцаалт (буцаасан өдрөөр нь) */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { label: t("reports.totalAmount"), value: t("reports.amountCurrency", { amount: totalAmount.toLocaleString() }) },
-          { label: t("reports.totalQty"), value: t("reports.qtyPieces", { qty: totalQty.toLocaleString() }) },
-          { label: t("reports.txCount"), value: txCount.toLocaleString() },
+          {
+            label: t("reports.netAmount"),
+            value: t("reports.amountCurrency", { amount: netAmount.toLocaleString() }),
+            sub: t("reports.qtyPieces", { qty: netQty.toLocaleString() }),
+            cls: "text-slate-900",
+          },
+          {
+            label: t("reports.grossSales"),
+            value: t("reports.amountCurrency", { amount: totals.amount.toLocaleString() }),
+            sub: t("reports.qtyPieces", { qty: totals.qty.toLocaleString() }),
+            cls: "text-slate-900",
+          },
+          {
+            label: t("reports.returns"),
+            value:
+              (totals.retAmount > 0 ? "−" : "") +
+              t("reports.amountCurrency", { amount: totals.retAmount.toLocaleString() }),
+            sub: t("reports.qtyPieces", { qty: totals.retQty.toLocaleString() }),
+            cls: totals.retAmount > 0 ? "text-rose-600" : "text-slate-900",
+          },
+          {
+            label: t("reports.txCount"),
+            value: txCounts.sale.toLocaleString(),
+            sub: t("reports.retTxCount", { n: txCounts.ret.toLocaleString() }),
+            cls: "text-slate-900",
+          },
         ].map((c) => (
           <div key={c.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{c.label}</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{loading ? "…" : c.value}</p>
+            <p className={"mt-1 text-2xl font-semibold tabular-nums " + c.cls}>{loading ? "…" : c.value}</p>
+            <p className="mt-0.5 text-xs tabular-nums text-slate-400">{loading ? "" : c.sub}</p>
           </div>
         ))}
       </div>
@@ -264,12 +318,11 @@ export default function Reports() {
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => v.toLocaleString()} width={72} />
                 <Tooltip
                   formatter={(value, name) => [
-                    Number(value ?? 0).toLocaleString() +
-                      (name === amountKey ? t("reports.currencySuffix") : t("reports.pcsSuffix")),
+                    Number(value ?? 0).toLocaleString() + t("reports.currencySuffix"),
                     String(name),
                   ]}
                 />
-                <Bar dataKey={amountKey} fill="#6366f1" radius={[3, 3, 0, 0]} />
+                <Bar dataKey={netKey} fill="#6366f1" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -287,15 +340,19 @@ export default function Reports() {
               <th className={th}>{GROUP_LABEL[group]}</th>
               {group === "product" && <th className={th}>SKU</th>}
               <th className={th + " text-right"}>{t("reports.qtyHeader")}</th>
+              <th className={th + " text-right"}>{t("reports.retQtyHeader")}</th>
+              <th className={th + " text-right"}>{t("reports.netQtyHeader")}</th>
               <th className={th + " text-right"}>{t("reports.totalAmount")}</th>
+              <th className={th + " text-right"}>{t("reports.retAmountHeader")}</th>
+              <th className={th + " text-right"}>{t("reports.netAmount")}</th>
               <th className={th + " text-right"}>{t("reports.avgPrice")}</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</td></tr>
+              <tr><td colSpan={group === "product" ? 9 : 8} className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</td></tr>
             ) : grouped.length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">{t("reports.noSales")}</td></tr>
+              <tr><td colSpan={group === "product" ? 9 : 8} className="px-4 py-10 text-center text-slate-400">{t("reports.noSales")}</td></tr>
             ) : (
               <>
                 {grouped.map((g) => (
@@ -305,8 +362,19 @@ export default function Reports() {
                       <td className={td + " font-mono"}>{g.sub || <span className="text-slate-300">—</span>}</td>
                     )}
                     <td className={td + " text-right tabular-nums"}>{g.qty.toLocaleString()}</td>
+                    <td className={td + " text-right tabular-nums" + (g.retQty > 0 ? " text-rose-600" : "")}>
+                      {g.retQty.toLocaleString()}
+                    </td>
+                    <td className={td + " text-right tabular-nums"}>{g.netQty.toLocaleString()}</td>
                     <td className={td + " text-right tabular-nums"}>
                       {t("reports.amountCurrency", { amount: g.amount.toLocaleString() })}
+                    </td>
+                    <td className={td + " text-right tabular-nums" + (g.retAmount > 0 ? " text-rose-600" : "")}>
+                      {(g.retAmount > 0 ? "−" : "") +
+                        t("reports.amountCurrency", { amount: g.retAmount.toLocaleString() })}
+                    </td>
+                    <td className={td + " text-right font-semibold tabular-nums" + (g.netAmount < 0 ? " text-rose-600" : "")}>
+                      {t("reports.amountCurrency", { amount: g.netAmount.toLocaleString() })}
                     </td>
                     <td className={td + " text-right tabular-nums"}>
                       {g.qty
@@ -318,13 +386,24 @@ export default function Reports() {
                 <tr className="bg-slate-50 font-semibold">
                   <td className={td}>{t("reports.grandTotal")}</td>
                   {group === "product" && <td className={td} />}
-                  <td className={td + " text-right tabular-nums"}>{totalQty.toLocaleString()}</td>
+                  <td className={td + " text-right tabular-nums"}>{totals.qty.toLocaleString()}</td>
+                  <td className={td + " text-right tabular-nums" + (totals.retQty > 0 ? " text-rose-600" : "")}>
+                    {totals.retQty.toLocaleString()}
+                  </td>
+                  <td className={td + " text-right tabular-nums"}>{netQty.toLocaleString()}</td>
                   <td className={td + " text-right tabular-nums"}>
-                    {t("reports.amountCurrency", { amount: totalAmount.toLocaleString() })}
+                    {t("reports.amountCurrency", { amount: totals.amount.toLocaleString() })}
+                  </td>
+                  <td className={td + " text-right tabular-nums" + (totals.retAmount > 0 ? " text-rose-600" : "")}>
+                    {(totals.retAmount > 0 ? "−" : "") +
+                      t("reports.amountCurrency", { amount: totals.retAmount.toLocaleString() })}
+                  </td>
+                  <td className={td + " text-right tabular-nums" + (netAmount < 0 ? " text-rose-600" : "")}>
+                    {t("reports.amountCurrency", { amount: netAmount.toLocaleString() })}
                   </td>
                   <td className={td + " text-right tabular-nums"}>
-                    {totalQty
-                      ? t("reports.amountCurrency", { amount: Math.round(totalAmount / totalQty).toLocaleString() })
+                    {totals.qty
+                      ? t("reports.amountCurrency", { amount: Math.round(totals.amount / totals.qty).toLocaleString() })
                       : "—"}
                   </td>
                 </tr>
