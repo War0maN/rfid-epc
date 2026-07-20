@@ -41,6 +41,24 @@ export async function loginWithEmail(email: string, password: string): Promise<v
 }
 
 /**
+ * Нууц үг сэргээх холбоос бүртгэлтэй имэйл рүү илгээнэ.
+ * Хэрэглэгч холбоос дээр дарахад апп руу recovery session-тэй буцаж ирнэ
+ * (useSession → PASSWORD_RECOVERY → шинэ нууц үг тавих дэлгэц).
+ */
+export async function sendPasswordReset(email: string): Promise<void> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: window.location.origin,
+  });
+  if (error) throw error;
+}
+
+/** Нэвтэрсэн (recovery session-тэй) хэрэглэгчийн нууц үгийг солино. */
+export async function updatePassword(newPassword: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
+/**
  * Зөвхөн auth акаунт үүсгэнэ (имэйл + нууц үг). Тенант энд үүсгэхгүй —
  * нэвтэрсний дараа урилга байвал тенантад нэгдэнэ, эс бөгөөс онбординг
  * дэлгэцээр өөрийн тенантаа үүсгэнэ.

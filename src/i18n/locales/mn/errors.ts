@@ -5,4 +5,7 @@ export default {
   supabaseConfigMissing:
     "Supabase тохиргоо дутуу байна. Төслийн язгуурт .env файл үүсгээд " +
     "VITE_SUPABASE_URL ба VITE_SUPABASE_ANON_KEY-г бөглөнө үү (.env.example-г харна уу).",
+  emailRateLimit:
+    "Имэйл илгээх цагийн хязгаарт хүрлээ. Хэсэг хугацааны дараа (~1 цаг) дахин оролдоно уу.",
+  invalidCredentials: "Имэйл эсвэл нууц үг буруу байна.",
 };

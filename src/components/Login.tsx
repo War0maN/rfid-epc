@@ -1,7 +1,8 @@
 import { errorMessage } from "../lib/errorMessage";
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { loginWithEmail, signUpUser } from "../lib/tenantAuth";
+import { loginWithEmail, signUpUser, sendPasswordReset } from "../lib/tenantAuth";
+import { getRemember, setRemember } from "../lib/supabaseClient";
 import { LANGS, setLang, type Lang } from "../i18n";
 
 type Mode = "login" | "signup";
@@ -20,13 +21,34 @@ export default function Login() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // "Намайг сана" — session localStorage-д үлдэх эсэх (default: сануулна).
+  const [remember, setRememberState] = useState(getRemember);
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
+      setRemember(remember); // нэвтрэхийн өмнө — token хаана хадгалагдахыг шийднэ
       await loginWithEmail(email, password);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    setError(null);
+    setInfo(null);
+    if (!email.trim()) {
+      setError(t("auth.enterEmailFirst"));
+      return;
+    }
+    setLoading(true);
+    try {
+      await sendPasswordReset(email);
+      setInfo(t("auth.resetEmailSent", { email: email.trim() }));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -57,7 +79,7 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-1 flex items-start justify-between gap-2">
-          <h1 className="text-2xl font-semibold text-slate-900">RFID EPC Generator</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Chipmo Inventory</h1>
           <select
             value={i18n.language}
             onChange={(e) => setLang(e.target.value as Lang)}
@@ -127,6 +149,28 @@ export default function Login() {
             className={inputCls + " mb-4"}
             placeholder="••••••••"
           />
+
+          {mode === "login" && (
+            <div className="mb-4 flex items-center justify-between text-sm">
+              <label className="flex cursor-pointer items-center gap-2 text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRememberState(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                {t("auth.rememberMe")}
+              </label>
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                disabled={loading}
+                className="text-indigo-600 hover:underline disabled:opacity-60"
+              >
+                {t("auth.forgotPassword")}
+              </button>
+            </div>
+          )}
 
           <button
             type="submit"

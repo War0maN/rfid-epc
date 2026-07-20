@@ -1,5 +1,5 @@
 -- ============================================================
--- RFID EPC Generator — Supabase / Postgres schema
+-- Chipmo Inventory — Supabase / Postgres schema
 -- Multi-tenant + RLS + atomic serial allocation
 -- Supabase SQL Editor дотор бүхэлд нь ажиллуулна.
 -- ============================================================

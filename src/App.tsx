@@ -6,6 +6,7 @@ import { useSession } from "./hooks/useSession";
 import { acceptInvite, fetchMyProfile, fetchMyBranchIds, fetchMyPerms, type MyProfile } from "./lib/tenantAuth";
 import { makeCan, TAB_PERM } from "./lib/permissions";
 import Login from "./components/Login";
+import ResetPassword from "./components/ResetPassword";
 import Onboarding from "./components/Onboarding";
 import CreateJobForm from "./components/CreateJobForm";
 import EpcTable from "./components/EpcTable";
@@ -58,7 +59,7 @@ async function loadProfileOrAcceptInvite(): Promise<MyProfile | null> {
 
 function App() {
   const { t, i18n } = useTranslation();
-  const { session, loading } = useSession();
+  const { session, loading, recovery, clearRecovery } = useSession();
   const [tab, setTab] = useState<Tab>("create");
   // Бүтээгдэхүүн табын дэд таб: жагсаалт | ангилал (каталог).
   const [productsView, setProductsView] = useState<"list" | "catalog">("list");
@@ -139,6 +140,9 @@ function App() {
 
   if (!session) return <Login />;
 
+  // Нууц үг сэргээх холбоосоор орж ирсэн — эхлээд шинэ нууц үг тавиулна.
+  if (recovery) return <ResetPassword onDone={clearRecovery} />;
+
   // Нэвтэрсэн ч тенантгүй бол байгууллагаа үүсгүүлнэ.
   if (!profile) return <Onboarding onDone={loadProfile} />;
 
@@ -155,7 +159,7 @@ function App() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="text-lg font-semibold text-slate-900">RFID EPC Generator</span>
+            <span className="text-lg font-semibold text-slate-900">Chipmo Inventory</span>
           </div>
           <div className="flex items-center gap-3">
             <select
