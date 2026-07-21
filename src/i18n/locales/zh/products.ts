@@ -52,4 +52,5 @@ export default {
   // lib/createProduct.ts
   nameRequired: "请输入产品名称。",
   qtyMin: "数量不得小于 1。",
+  jobNumberBusy: "分配任务编号时发生冲突，请重试。",
 };

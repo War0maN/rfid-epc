@@ -54,4 +54,5 @@ export default {
   // lib/createProduct.ts
   nameRequired: "Барааны нэр оруулна уу.",
   qtyMin: "Тоо ширхэг 1-ээс багагүй байх ёстой.",
+  jobNumberBusy: "Ажлын дугаар олгоход зөрчил гарлаа — дахин оролдоно уу.",
 };

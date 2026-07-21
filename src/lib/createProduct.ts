@@ -78,6 +78,25 @@ export async function upsertCatalogProduct(
   return (prod as { id: string }).id;
 }
 
+/**
+ * Дараагийн каталог-ажлын дугаар: БАР-0001, БАР-0002… (одоо байгаа хамгийн
+ * их дэс + 1). Хуучин timestamp-хэлбэрийн БАР- дугаарууд тоон биш тул
+ * тооцогдохгүй — түүхэндээ хэвээр үлдэнэ.
+ */
+async function nextCatalogJobNumber(supabase: SupabaseClient): Promise<string> {
+  const { data, error } = await supabase
+    .from("jobs")
+    .select("job_number")
+    .like("job_number", "БАР-%");
+  if (error) throw error;
+  let max = 0;
+  for (const r of (data ?? []) as { job_number: string }[]) {
+    const m = /^БАР-(\d+)$/.exec(r.job_number);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `БАР-${String(max + 1).padStart(4, "0")}`;
+}
+
 /** Тухайн бараанаас quantity ширхэг EPC үүсгэнэ (serial үргэлжилнэ).
  *  supplier нь үүсэх ажилд (jobs.supplier) бичигдэнэ — EPC хүснэгтийн
  *  "Нийлүүлэгч" багана эндээс харагдана. */
@@ -95,24 +114,34 @@ export async function generateEpcsForProduct(
   if (tErr) throw tErr;
   const tenantId = (tenant as { id: string }).id;
 
+  // Дэс дугаар олгож ажил үүсгэнэ; зэрэг үүсгэлт давхцвал (unique
+  // tenant_id+job_number) дараагийн дугаараар дахин оролдоно.
   const now = new Date();
-  const jobNumber = `БАР-${now.getTime().toString(36).toUpperCase()}`;
-  const { data: job, error: jErr } = await supabase
-    .from("jobs")
-    .insert({
-      tenant_id: tenantId,
-      job_number: jobNumber,
-      arrival_date: now.toISOString().slice(0, 10),
-      supplier: supplier?.trim() || null,
-      note: "Каталог бараа",
-      status: "draft",
-    })
-    .select("id")
-    .single();
-  if (jErr) throw jErr;
+  let job: { id: string } | null = null;
+  for (let attempt = 0; attempt < 3 && !job; attempt++) {
+    const jobNumber = await nextCatalogJobNumber(supabase);
+    const { data, error: jErr } = await supabase
+      .from("jobs")
+      .insert({
+        tenant_id: tenantId,
+        job_number: jobNumber,
+        arrival_date: now.toISOString().slice(0, 10),
+        supplier: supplier?.trim() || null,
+        note: "Каталог бараа",
+        status: "draft",
+      })
+      .select("id")
+      .single();
+    if (jErr) {
+      if ((jErr as { code?: string }).code === "23505") continue;
+      throw jErr;
+    }
+    job = data as { id: string };
+  }
+  if (!job) throw new Error(i18n.t("products.jobNumberBusy"));
 
   const epcs = await generateEpcsForJob(supabase, {
-    jobId: (job as { id: string }).id,
+    jobId: job.id,
     lines: [{ productId, count: quantity }],
     branchId,
   });

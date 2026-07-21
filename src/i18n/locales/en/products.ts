@@ -54,4 +54,5 @@ export default {
   // lib/createProduct.ts
   nameRequired: "Enter a product name.",
   qtyMin: "Quantity must be at least 1.",
+  jobNumberBusy: "Could not allocate a job number — please try again.",
 };
