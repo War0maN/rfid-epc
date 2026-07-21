@@ -21,7 +21,6 @@ export default {
   visibleColumns: "Visible columns",
   clearFilters: "Clear filters",
   exportCsvN: "Export CSV ({{n}})",
-  exportZplN: "Export ZPL ({{n}})",
   printN: "Print ({{n}})",
   changeStatusTitle: "Change status of the selected (or all filtered) EPCs",
   changeStatusN: "Change status ({{n}})…",
@@ -43,17 +42,19 @@ export default {
   // Errors / notices
   noRowsToChange: "No rows to change status for.",
   noRowsToPrint: "No rows to print.",
-  deletedProtected:
-    "Deleted {{deleted}} EPCs. {{kept}} were kept because they have transaction history (historical data is never deleted).",
+  deleteResult:
+    "Deleted {{deleted}} EPCs. Skipped: {{hist}} with transaction history, {{status}} not Unprinted (protected).",
   deleteFkProtected:
     "Some EPCs cannot be deleted because they have transaction history or a protected status.",
 
-  // Delete confirmation modal
+  // Delete confirmation modal — only Unprinted can be deleted
   deleteTitle: "Delete EPCs",
   deleteBody:
-    "Of the <b>{{selected}}</b> selected EPCs, <r>{{deletable}}</r> (Unprinted/Active) will be deleted.",
+    "Of the <b>{{selected}}</b> selected EPCs, <r>{{deletable}}</r> (Unprinted) will be deleted.",
+  deleteBodyFiltered:
+    "Of the <b>{{n}}</b> EPCs matching the filter, only those with <r>Unprinted</r> status will be deleted.",
   deleteProtectedNote:
-    "{{n}} with Sold/Transferring/Other status are historical data and protected — they will not be deleted.",
+    "{{n}} with a status other than Unprinted are protected — they will not be deleted. (An activated EPC counts as having movement; to really delete it, set it back to Unprinted first.)",
   deleteSkipNote:
     "Note: EPCs with transaction history (e.g. previously sold) are skipped automatically.",
   deleteConfirm: "Are you sure? This cannot be undone.",

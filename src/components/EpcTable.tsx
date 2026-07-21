@@ -9,7 +9,6 @@ import {
 } from "../lib/queries";
 import { listAttributeDefs, dedupAttrs, type AttributeDef } from "../lib/catalog";
 import { downloadCsv, toCsv } from "../lib/exportCsv";
-import { buildZplBatch, downloadZpl } from "../lib/exportZpl";
 import { epcHexToUri, epcHexToTagUri } from "../lib/epc";
 import { supabase } from "../lib/supabaseClient";
 import { logAuditEvent, epcBulkMeta } from "../lib/audit";
@@ -387,30 +386,6 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
     }
   }
 
-  async function handleExportZpl() {
-    setBusy(true);
-    setError(null);
-    try {
-      const rows = await resolveRows();
-      const zpl = buildZplBatch(
-        rows.map((r) => ({
-          epcHex: r.epc_hex,
-          name: r.name,
-          gtin: r.gtin,
-          sku: r.sku,
-          boxNo: r.box_no,
-          serial: r.serial,
-        }))
-      );
-      downloadZpl(`epc-labels-${new Date().toISOString().slice(0, 10)}.zpl`, zpl);
-      void logAuditEvent(supabase, "export_zpl", "epc", null, { count: rows.length });
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function openPrint() {
     setBusy(true);
     setError(null);
@@ -429,19 +404,23 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
   }
 
   /**
-   * Сонгосон Хэвлээгүй/Идэвхтэй EPC-үүдийг устгана. Борлуулсан/Шилжүүлж буй/
-   * Бусад гүйлгээт DB trigger-ээр, ГҮЙЛГЭЭНИЙ ТҮҮХТЭЙ нь transaction_items-ийн
-   * FK-ээр хамгаалагдана — түүхтэйг урьдчилан шалгаж алгасна (түүх тасрахгүй).
-   * Зөвхөн checkbox сонголтод үйлчилнэ (шүүлт-бүхэлд нь биш — аюулгүй тал).
+   * ЗӨВХӨН Хэвлээгүй EPC-үүдийг устгана (DB trigger давхар хориглоно —
+   * Идэвхтэй болсон EPC "хөдөлгөөнтэй" тул эргүүлж Хэвлээгүй болгосны дараа л
+   * устгагдана). ГҮЙЛГЭЭНИЙ ТҮҮХТЭЙ нь transaction_items FK-ээр хамгаалагдана —
+   * урьдчилан шалгаж алгасна (түүх тасрахгүй). Бусад бөөн үйлдлүүдтэй ижил:
+   * сонголт байвал сонголтод, үгүй бол шүүлтэд тохирох бүх мөрөнд үйлчилнэ.
    */
   async function handleDelete() {
-    const deletable = [...selected.values()].filter(
-      (r) => r.status === "unprinted" || r.status === "active"
-    );
-    if (deletable.length === 0) return;
     setBusy(true);
     setError(null);
     try {
+      const base = selected.size > 0 ? [...selected.values()] : await resolveRows();
+      const deletable = base.filter((r) => r.status === "unprinted");
+      if (deletable.length === 0) {
+        setError(t("epcTable.nothingDeletable"));
+        return;
+      }
+      const skippedStatus = base.length - deletable.length;
       const candidateIds = deletable.map((r) => r.id);
       // Гүйлгээний түүхтэй EPC-үүдийг олж алгасна (устгавал түүх тасарна).
       const withHistory = new Set<string>();
@@ -475,9 +454,13 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
         const deletedRows = deletable.filter((r) => idSet.has(r.id));
         void logAuditEvent(supabase, "delete", "epc", null, epcBulkMeta(deletedRows));
       }
-      if (withHistory.size > 0) {
+      if (withHistory.size > 0 || skippedStatus > 0) {
         setError(
-          t("epcTable.deletedProtected", { deleted: ids.length, kept: withHistory.size })
+          t("epcTable.deleteResult", {
+            deleted: ids.length,
+            hist: withHistory.size,
+            status: skippedStatus,
+          })
         );
       }
     } catch (e) {
@@ -495,10 +478,8 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
 
   // Export/print товчны тоо: сонгосон байвал сонголтын тоо, эс бөгөөс нийт (шүүсэн).
   const outCount = selected.size > 0 ? selected.size : total;
-  // Устгалын тойм: сонголтоос устгаж болох (Хэвлээгүй/Идэвхтэй) хэд, хамгаалагдсан хэд.
-  const selDeletableCount = [...selected.values()].filter(
-    (r) => r.status === "unprinted" || r.status === "active"
-  ).length;
+  // Устгалын тойм (сонголттой үед): зөвхөн Хэвлээгүй устгагдана, бусад нь хамгаалагдсан.
+  const selDeletableCount = [...selected.values()].filter((r) => r.status === "unprinted").length;
   const selProtectedCount = selected.size - selDeletableCount;
 
   return (
@@ -560,15 +541,6 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
         </button>
         {can("act_print") && (
           <button
-            onClick={handleExportZpl}
-            disabled={busy || outCount === 0}
-            className="rounded-lg bg-slate-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-          >
-            {t("epcTable.exportZplN", { n: outCount.toLocaleString() })}
-          </button>
-        )}
-        {can("act_print") && (
-          <button
             onClick={openPrint}
             disabled={busy || outCount === 0}
             className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
@@ -600,13 +572,13 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
             ))}
           </select>
         )}
-        {isAdmin && selected.size > 0 && (
+        {isAdmin && (
           <button
             onClick={() => setDeleteModal(true)}
-            disabled={busy}
+            disabled={busy || outCount === 0}
             className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
           >
-            {t("epcTable.deleteN", { n: selected.size })}
+            {t("epcTable.deleteN", { n: outCount.toLocaleString() })}
           </button>
         )}
         {selected.size > 0 && (
@@ -805,23 +777,33 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold text-slate-900">{t("epcTable.deleteTitle")}</h3>
             <p className="mt-2 text-sm text-slate-600">
-              <Trans
-                i18nKey="epcTable.deleteBody"
-                values={{
-                  selected: selected.size.toLocaleString(),
-                  deletable: selDeletableCount.toLocaleString(),
-                }}
-                components={{ b: <strong />, r: <strong className="text-red-700" /> }}
-              />
+              {selected.size > 0 ? (
+                <Trans
+                  i18nKey="epcTable.deleteBody"
+                  values={{
+                    selected: selected.size.toLocaleString(),
+                    deletable: selDeletableCount.toLocaleString(),
+                  }}
+                  components={{ b: <strong />, r: <strong className="text-red-700" /> }}
+                />
+              ) : (
+                <Trans
+                  i18nKey="epcTable.deleteBodyFiltered"
+                  values={{ n: total.toLocaleString() }}
+                  components={{ b: <strong />, r: <strong className="text-red-700" /> }}
+                />
+              )}
             </p>
-            {selProtectedCount > 0 && (
+            {selected.size > 0 && selProtectedCount > 0 && (
               <p className="mt-1 text-xs text-amber-700">
                 {t("epcTable.deleteProtectedNote", { n: selProtectedCount.toLocaleString() })}
               </p>
             )}
             <p className="mt-1 text-xs text-slate-500">{t("epcTable.deleteSkipNote")}</p>
             <p className="mt-2 text-sm font-medium text-slate-800">
-              {selDeletableCount > 0 ? t("epcTable.deleteConfirm") : t("epcTable.nothingDeletable")}
+              {selected.size === 0 || selDeletableCount > 0
+                ? t("epcTable.deleteConfirm")
+                : t("epcTable.nothingDeletable")}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -831,14 +813,16 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                 {t("epcTable.dismiss")}
               </button>
               <button
-                disabled={busy || selDeletableCount === 0}
+                disabled={busy || (selected.size > 0 && selDeletableCount === 0)}
                 onClick={() => {
                   setDeleteModal(false);
                   void handleDelete();
                 }}
                 className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
               >
-                {t("epcTable.deleteN", { n: selDeletableCount.toLocaleString() })}
+                {t("epcTable.deleteN", {
+                  n: (selected.size > 0 ? selDeletableCount : total).toLocaleString(),
+                })}
               </button>
             </div>
           </div>

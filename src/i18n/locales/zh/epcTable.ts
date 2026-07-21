@@ -21,7 +21,6 @@ export default {
   visibleColumns: "显示的列",
   clearFilters: "清除筛选",
   exportCsvN: "导出 CSV（{{n}}）",
-  exportZplN: "导出 ZPL（{{n}}）",
   printN: "打印（{{n}}）",
   changeStatusTitle: "更改所选（或所有符合筛选条件的）EPC 的状态",
   changeStatusN: "更改状态（{{n}}）…",
@@ -43,14 +42,16 @@ export default {
   // 错误 / 提示
   noRowsToChange: "没有可更改状态的行。",
   noRowsToPrint: "没有可打印的行。",
-  deletedProtected:
-    "已删除 {{deleted}} 个 EPC。{{kept}} 个因有交易记录而受保护，未被删除（历史数据不会被删除）。",
+  deleteResult:
+    "已删除 {{deleted}} 个 EPC。已跳过：{{hist}} 个有交易记录、{{status}} 个非未打印状态（受保护）。",
   deleteFkProtected: "部分 EPC 因有交易记录或处于受保护状态而无法删除。",
 
-  // 删除确认弹窗
+  // 删除确认弹窗——仅可删除未打印状态
   deleteTitle: "删除 EPC",
-  deleteBody: "所选 <b>{{selected}}</b> 个 EPC 中，将删除 <r>{{deletable}}</r> 个（未打印/有效）。",
-  deleteProtectedNote: "{{n}} 个处于已售/调拨中/其他状态，属于历史数据受保护——不会被删除。",
+  deleteBody: "所选 <b>{{selected}}</b> 个 EPC 中，将删除 <r>{{deletable}}</r> 个（未打印）。",
+  deleteBodyFiltered: "符合筛选的 <b>{{n}}</b> 个 EPC 中，仅<r>未打印</r>状态的会被删除。",
+  deleteProtectedNote:
+    "{{n}} 个非未打印状态受保护——不会被删除。（已激活的 EPC 视为有流转记录；如确需删除，请先将其改回未打印。）",
   deleteSkipNote: "注：有交易记录的 EPC（例如曾被售出）会被自动跳过。",
   deleteConfirm: "确定吗？此操作无法撤销。",
   nothingDeletable: "没有可删除的 EPC。",
