@@ -280,8 +280,12 @@ export async function fetchEpcPage(params: {
   const filtered = applyEpcFilters(epcBase(true), params.filters);
   const sortDb = params.sort ? colToDb(params.sort.key) : null;
   const asc = params.sort?.dir === "asc";
-  let q = filtered.order(sortDb ?? "id", { ascending: sortDb ? asc : true });
-  if (sortDb && sortDb !== "id") q = q.order("id", { ascending: true }); // тогтвортой tiebreak
+  // Анхдагч: сүүлд үүссэн нь эхэндээ, нэг ажлын дотор serial өсөхөөр
+  // (id нь uuid тул утгагүй — зөвхөн тогтвортой tiebreak).
+  let q = sortDb
+    ? filtered.order(sortDb, { ascending: asc })
+    : filtered.order("created_at", { ascending: false }).order("serial", { ascending: true });
+  if (sortDb !== "id") q = q.order("id", { ascending: true }); // тогтвортой tiebreak
   const from = params.page * params.pageSize;
   const { data, error, count } = await q.range(from, from + params.pageSize - 1);
   if (error) throw error;
@@ -300,8 +304,11 @@ export async function fetchEpcAllMatching(
   const out: EpcRow[] = [];
   for (let from = 0; from < cap; from += PAGE) {
     const filtered = applyEpcFilters(epcBase(false), filters);
-    let q = filtered.order(sortDb ?? "id", { ascending: sortDb ? asc : true });
-    if (sortDb && sortDb !== "id") q = q.order("id", { ascending: true });
+    // fetchEpcPage-тэй ижил анхдагч эрэмбэ (export дэлгэцтэй ижил дараалалтай).
+    let q = sortDb
+      ? filtered.order(sortDb, { ascending: asc })
+      : filtered.order("created_at", { ascending: false }).order("serial", { ascending: true });
+    if (sortDb !== "id") q = q.order("id", { ascending: true });
     const { data, error } = await q.range(from, from + PAGE - 1);
     if (error) throw error;
     const rows = (data ?? []) as EpcRow[];
