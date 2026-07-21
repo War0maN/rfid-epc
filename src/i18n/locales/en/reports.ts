@@ -28,7 +28,9 @@ export default {
   amountCurrency: "{{amount}}₮",
   noSales: "No sales in this interval.",
   currencySuffix: "₮",
-  chartCapNote: "Chart shows the top {{n}} items (by amount) — all are in the table.",
+  chartCapNote:
+    'Chart shows the top {{n}} by net amount — the rest are aggregated into the "Others" bar. The full list is in the table and CSV.',
+  othersBar: "Others ({{n}})",
   qtyHeader: "Quantity",
   avgPrice: "Average price",
   grandTotal: "TOTAL",

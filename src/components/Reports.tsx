@@ -148,14 +148,21 @@ export default function Reports() {
 
   // Графикийн цуврал нэр (tooltip-д харагдана) — идэвхтэй хэлээр. Бар = цэвэр дүн.
   const netKey = t("reports.netAmount");
-  const chartData = useMemo(
-    () =>
-      (group === "day" || group === "month" ? grouped : grouped.slice(0, CHART_CAP)).map((g) => ({
-        name: g.label.length > 16 ? g.label.slice(0, 15) + "…" : g.label,
-        [netKey]: g.netAmount,
-      })),
-    [grouped, group, netKey]
-  );
+  const isTimeGroup = group === "day" || group === "month";
+  const chartData = useMemo(() => {
+    const trunc = (s: string) => (s.length > 18 ? s.slice(0, 17) + "…" : s);
+    const rows = isTimeGroup ? grouped : grouped.slice(0, CHART_CAP);
+    const data = rows.map((g) => ({ name: trunc(g.label), [netKey]: g.netAmount }));
+    // Стандарт практик: топ-N + үлдсэнийг "Бусад" болгож нэгтгэнэ (нийлбэр бүрэн таарна).
+    if (!isTimeGroup && grouped.length > CHART_CAP) {
+      const rest = grouped.slice(CHART_CAP);
+      data.push({
+        name: t("reports.othersBar", { n: rest.length }),
+        [netKey]: rest.reduce((s, g) => s + g.netAmount, 0),
+      });
+    }
+    return data;
+  }, [grouped, isTimeGroup, netKey, t]);
 
   function handleExport() {
     const row = (g: { label: string; sub?: string | null; qty: number; retQty: number; netQty: number; amount: number; retAmount: number; netAmount: number }) => ({
@@ -310,11 +317,21 @@ export default function Reports() {
         ) : chartData.length === 0 ? (
           <p className="py-16 text-center text-sm text-slate-400">{t("reports.noSales")}</p>
         ) : (
-          <div className="h-72 w-full">
+          <div className={(isTimeGroup ? "h-72" : "h-96") + " w-full"}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                {/* Категорийн бүлэглэлтэд нэрс босоо (доороос дээш) — урт нэр уншигдана. */}
+                {isTimeGroup ? (
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                ) : (
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: 10, angle: -90, textAnchor: "end" }}
+                    interval={0}
+                    height={120}
+                  />
+                )}
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => v.toLocaleString()} width={72} />
                 <Tooltip
                   formatter={(value, name) => [
@@ -327,7 +344,7 @@ export default function Reports() {
             </ResponsiveContainer>
           </div>
         )}
-        {!loading && group === "product" && grouped.length > CHART_CAP && (
+        {!loading && !isTimeGroup && grouped.length > CHART_CAP && (
           <p className="mt-1 text-center text-xs text-slate-400">{t("reports.chartCapNote", { n: CHART_CAP })}</p>
         )}
       </div>

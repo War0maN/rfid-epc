@@ -28,7 +28,9 @@ export default {
   amountCurrency: "{{amount}}₮",
   noSales: "Энэ интервалд борлуулалт алга.",
   currencySuffix: "₮",
-  chartCapNote: "Графикт эхний {{n}} бараа (дүнгээр) — бүгд хүснэгтэд.",
+  chartCapNote:
+    'Графикт цэвэр дүнгээр эхний {{n}} — үлдсэн нь "Бусад" баганад нэгтгэгдсэн. Бүрэн жагсаалт хүснэгт болон CSV-д.',
+  othersBar: "Бусад ({{n}})",
   qtyHeader: "Тоо ширхэг",
   avgPrice: "Дундаж үнэ",
   grandTotal: "НИЙТ",
