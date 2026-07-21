@@ -78,12 +78,15 @@ export async function upsertCatalogProduct(
   return (prod as { id: string }).id;
 }
 
-/** Тухайн бараанаас quantity ширхэг EPC үүсгэнэ (serial үргэлжилнэ). */
+/** Тухайн бараанаас quantity ширхэг EPC үүсгэнэ (serial үргэлжилнэ).
+ *  supplier нь үүсэх ажилд (jobs.supplier) бичигдэнэ — EPC хүснэгтийн
+ *  "Нийлүүлэгч" багана эндээс харагдана. */
 export async function generateEpcsForProduct(
   supabase: SupabaseClient,
   productId: string,
   quantity: number,
-  branchId: string | null = null
+  branchId: string | null = null,
+  supplier: string | null = null
 ): Promise<number> {
   if (!Number.isFinite(quantity) || quantity < 1) {
     throw new Error(i18n.t("products.qtyMin"));
@@ -100,6 +103,7 @@ export async function generateEpcsForProduct(
       tenant_id: tenantId,
       job_number: jobNumber,
       arrival_date: now.toISOString().slice(0, 10),
+      supplier: supplier?.trim() || null,
       note: "Каталог бараа",
       status: "draft",
     })

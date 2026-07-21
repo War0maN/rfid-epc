@@ -71,6 +71,8 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
   const [genFor, setGenFor] = useState<ProductRow | null>(null);
   const [genQty, setGenQty] = useState("1");
   const [genBranch, setGenBranch] = useState<string>("");
+  // Нийлүүлэгч — үүсэх ажилд бичигдэнэ (заавал биш).
+  const [genSupplier, setGenSupplier] = useState("");
   const [genBusy, setGenBusy] = useState(false);
 
   function reload() {
@@ -184,10 +186,17 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
     setGenBusy(true);
     setError(null);
     try {
-      const count = await generateEpcsForProduct(supabase, genFor.id, qty, genBranch || null);
+      const count = await generateEpcsForProduct(
+        supabase,
+        genFor.id,
+        qty,
+        genBranch || null,
+        genSupplier.trim() || null
+      );
       setInfo(t("products.generatedInfo", { name: genFor.name, epcCount: count }));
       setGenFor(null);
       setGenQty("1");
+      setGenSupplier("");
       reload();
       onEpcsGenerated?.();
     } catch (e) {
@@ -334,6 +343,15 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
                 </select>
               </div>
             )}
+            <div className="mb-3">
+              <label className="mb-1 block text-xs font-medium text-slate-600">{t("createJob.supplier")}</label>
+              <input
+                value={genSupplier}
+                onChange={(e) => setGenSupplier(e.target.value)}
+                placeholder={t("createJob.supplierPlaceholder")}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
             <label className="mb-1 block text-xs font-medium text-slate-600">{t("products.quantity")}</label>
             <input
               type="number"
