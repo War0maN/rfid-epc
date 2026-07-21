@@ -79,22 +79,23 @@ export async function upsertCatalogProduct(
 }
 
 /**
- * Дараагийн каталог-ажлын дугаар: БАР-0001, БАР-0002… (одоо байгаа хамгийн
- * их дэс + 1). Хуучин timestamp-хэлбэрийн БАР- дугаарууд тоон биш тул
- * тооцогдохгүй — түүхэндээ хэвээр үлдэнэ.
+ * Дараагийн каталог-ажлын дугаар: JOB-0001, JOB-0002… (одоо байгаа хамгийн
+ * их дэс + 1). Latin prefix — 3 хэлний аль ч фонтод асуудалгүй. Зөвхөн
+ * "JOB-<тоо>" хэлбэрт тааруулна: гараар өгсөн JOB-2026-001 маягийн болон
+ * хуучин БАР- дугаарууд тооцогдохгүй, түүхэндээ хэвээр үлдэнэ.
  */
 async function nextCatalogJobNumber(supabase: SupabaseClient): Promise<string> {
   const { data, error } = await supabase
     .from("jobs")
     .select("job_number")
-    .like("job_number", "БАР-%");
+    .like("job_number", "JOB-%");
   if (error) throw error;
   let max = 0;
   for (const r of (data ?? []) as { job_number: string }[]) {
-    const m = /^БАР-(\d+)$/.exec(r.job_number);
+    const m = /^JOB-(\d+)$/.exec(r.job_number);
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
-  return `БАР-${String(max + 1).padStart(4, "0")}`;
+  return `JOB-${String(max + 1).padStart(4, "0")}`;
 }
 
 /** Тухайн бараанаас quantity ширхэг EPC үүсгэнэ (serial үргэлжилнэ).
