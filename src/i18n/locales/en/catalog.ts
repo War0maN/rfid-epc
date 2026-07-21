@@ -18,6 +18,10 @@ export default {
   renameTitle: "Rename",
   levelNamePlaceholder: "{{level}} name",
   noCategories: 'No categories yet. Click "+ {{level}}" to start.',
+  searchPlaceholder: "Search categories…",
+  expandAll: "Expand all",
+  collapseAll: "Collapse all",
+  noMatches: "No categories match your search.",
 
   // Шинж чанарын хэсэг
   attrsGlobalTitle: "Attributes (global)",

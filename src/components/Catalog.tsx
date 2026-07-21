@@ -49,12 +49,23 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameName, setRenameName] = useState("");
 
+  // Модны хайлт + эвхэлт. expanded=null — анхны утга хараахан тавигдаагүй
+  // (эхний ачааллын дараа тооноос хамааран дэлгээтэй/хумигдсанаар эхэлнэ).
+  const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState<Set<string> | null>(null);
+
+  // Цөөн ангилалтай үед бүгд дэлгээтэй, олон болохоор хумигдсанаар эхэлнэ.
+  function defaultExpanded(c: Category[]): Set<string> {
+    return c.length <= 30 ? new Set(c.map((x) => x.id)) : new Set();
+  }
+
   function reload() {
     setLoading(true);
     Promise.all([listCategories(), listAttributeDefs()])
       .then(([c, a]) => {
         setCats(c);
         setAttrs(a);
+        setExpanded((prev) => prev ?? defaultExpanded(c));
         setError(null);
       })
       .catch((e) => setError(errorMessage(e)))
@@ -68,6 +79,7 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
         if (!active) return;
         setCats(c);
         setAttrs(a);
+        setExpanded((prev) => prev ?? defaultExpanded(c));
       })
       .catch((e) => active && setError(errorMessage(e)))
       .finally(() => active && setLoading(false));
@@ -80,11 +92,56 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
   // Шинж чанар нэг л глобал жагсаалт (давхардлыг арилгасан).
   const globalAttrs = useMemo(() => dedupAttrs(attrs), [attrs]);
 
+  // Хайлт: нэр нь таарсан зангилаа (дэд модтойгоо) эсвэл таарсан үр удамтай
+  // өвөг дээдэс үлдэнэ. Хайлтын үед бүгд албадан дэлгээтэй харагдана.
+  const query = search.trim().toLowerCase();
+  const visibleTree = useMemo(() => {
+    if (!query) return tree;
+    function filter(nodes: CategoryNode[]): CategoryNode[] {
+      const out: CategoryNode[] = [];
+      for (const n of nodes) {
+        if (n.name.toLowerCase().includes(query)) {
+          out.push(n); // өөрөө таарвал дэд мод нь бүтнээрээ
+        } else {
+          const kids = filter(n.children);
+          if (kids.length) out.push({ ...n, children: kids });
+        }
+      }
+      return out;
+    }
+    return filter(tree);
+  }, [tree, query]);
+
+  function toggleNode(id: string) {
+    setExpanded((prev) => {
+      const s = new Set(prev ?? []);
+      if (s.has(id)) s.delete(id);
+      else s.add(id);
+      return s;
+    });
+  }
+
+  /** Хайлтын үгийг нэрэн дотор тодруулна. */
+  function highlight(name: string): React.ReactNode {
+    if (!query) return name;
+    const i = name.toLowerCase().indexOf(query);
+    if (i < 0) return name;
+    return (
+      <>
+        {name.slice(0, i)}
+        <mark className="rounded bg-amber-100 px-0.5">{name.slice(i, i + query.length)}</mark>
+        {name.slice(i + query.length)}
+      </>
+    );
+  }
+
   // ----- Ангилал үйлдлүүд -----
   function startAdd(parentId: string | null, levelName: string) {
     setAddParent(parentId);
     setAddLevel(levelName);
     setAddName("");
+    // Оруулах талбар нь хумигдсан зангилааны дор нуугдахгүйн тулд дэлгэнэ.
+    if (parentId) setExpanded((prev) => new Set(prev ?? []).add(parentId));
   }
   function saveAdd() {
     if (addParent === false) return;
@@ -119,12 +176,26 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
 
   function renderNode(node: CategoryNode, depth: number): React.ReactNode {
     const canAddChild = depth < MAX_CATEGORY_DEPTH - 1; // 3 түвшнээс хэтрэхгүй
+    const hasKids = node.children.length > 0;
+    // Хайлтын үед шүүгдсэн мод жижиг тул бүгдийг албадан дэлгэнэ.
+    const isOpen = query ? true : (expanded?.has(node.id) ?? false);
     return (
       <div key={node.id}>
         <div
           className="group flex items-center gap-1 rounded px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
           style={{ paddingLeft: depth * 16 + 8 }}
         >
+          {hasKids ? (
+            <button
+              onClick={() => toggleNode(node.id)}
+              className="w-4 shrink-0 text-left text-slate-400 hover:text-slate-700"
+              aria-label={isOpen ? "collapse" : "expand"}
+            >
+              {isOpen ? "▾" : "▸"}
+            </button>
+          ) : (
+            <span className="w-4 shrink-0" />
+          )}
           {renameId === node.id ? (
             <>
               <input
@@ -139,10 +210,14 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
             </>
           ) : (
             <>
-              <span className="flex-1 font-medium">
-                {node.name}
+              <span
+                className={"flex-1 font-medium" + (hasKids ? " cursor-pointer select-none" : "")}
+                onClick={hasKids ? () => toggleNode(node.id) : undefined}
+              >
+                {highlight(node.name)}
                 <span className="ml-1.5 text-[10px] font-normal text-slate-400">
                   {CATEGORY_LEVELS[depth] ?? ""}
+                  {hasKids && <span className="ml-1">({node.children.length})</span>}
                 </span>
               </span>
               <div className={canEdit ? "hidden gap-1 group-hover:flex" : "hidden"}>
@@ -184,7 +259,7 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
             <button onClick={() => setAddParent(false)} className="text-xs text-slate-400">✕</button>
           </div>
         )}
-        {node.children.map((ch) => renderNode(ch, depth + 1))}
+        {isOpen && node.children.map((ch) => renderNode(ch, depth + 1))}
       </div>
     );
   }
@@ -201,8 +276,8 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       <div className="flex flex-col gap-4 lg:flex-row">
-        {/* Зүүн: ангиллын мод */}
-        <div className="w-full shrink-0 rounded-xl border border-slate-200 bg-white p-3 lg:w-80">
+        {/* Зүүн: ангиллын мод — хайлт + эвхэлт (олон ангилалтай үед удирдахад амар) */}
+        <div className="w-full shrink-0 rounded-xl border border-slate-200 bg-white p-3 lg:w-96">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-semibold text-slate-700">{t("common.category")}</span>
             {canEdit && (
@@ -211,6 +286,27 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
               </button>
             )}
           </div>
+
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t("catalog.searchPlaceholder")}
+            className={inp + " mb-2 h-8"}
+          />
+
+          {!query && cats.length > 0 && (
+            <div className="mb-1 flex gap-3 px-1 text-xs text-slate-400">
+              <button
+                onClick={() => setExpanded(new Set(cats.map((c) => c.id)))}
+                className="hover:text-indigo-600"
+              >
+                {t("catalog.expandAll")}
+              </button>
+              <button onClick={() => setExpanded(new Set())} className="hover:text-indigo-600">
+                {t("catalog.collapseAll")}
+              </button>
+            </div>
+          )}
 
           {addParent === null && (
             <div className="mb-2 flex items-center gap-1">
@@ -231,8 +327,10 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
             <p className="px-2 py-4 text-sm text-slate-400">{t("common.loading")}</p>
           ) : tree.length === 0 ? (
             <p className="px-2 py-4 text-sm text-slate-400">{t("catalog.noCategories", { level: CATEGORY_LEVELS[0] })}</p>
+          ) : visibleTree.length === 0 ? (
+            <p className="px-2 py-4 text-sm text-slate-400">{t("catalog.noMatches")}</p>
           ) : (
-            <div>{tree.map((n) => renderNode(n, 0))}</div>
+            <div className="max-h-[60vh] overflow-y-auto">{visibleTree.map((n) => renderNode(n, 0))}</div>
           )}
         </div>
 

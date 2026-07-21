@@ -18,6 +18,10 @@ export default {
   renameTitle: "Нэр солих",
   levelNamePlaceholder: "{{level}} нэр",
   noCategories: 'Ангилал алга. "+ {{level}}" дарж эхэл.',
+  searchPlaceholder: "Ангилал хайх…",
+  expandAll: "Бүгдийг дэлгэх",
+  collapseAll: "Бүгдийг хумих",
+  noMatches: "Хайлтад тохирох ангилал олдсонгүй.",
 
   // Шинж чанарын хэсэг
   attrsGlobalTitle: "Шинж чанар (глобал)",

@@ -16,6 +16,10 @@ export default {
   renameTitle: "重命名",
   levelNamePlaceholder: "{{level}}名称",
   noCategories: "暂无分类。点击“+ {{level}}”开始。",
+  searchPlaceholder: "搜索分类…",
+  expandAll: "全部展开",
+  collapseAll: "全部收起",
+  noMatches: "没有匹配的分类。",
 
   // Шинж чанарын хэсэг
   attrsGlobalTitle: "属性（全局）",
