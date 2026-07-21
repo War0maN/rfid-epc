@@ -25,10 +25,12 @@ export function errorMessage(e: unknown): string {
   return String(e);
 }
 
-/** Supabase Auth-ын түгээмэл англи мессежүүдийг идэвхтэй хэлээр найрсаг болгоно. */
+/** Supabase/Postgres-ийн түгээмэл түүхий мессежүүдийг идэвхтэй хэлээр найрсаг болгоно. */
 function friendly(msg: string): string {
   const m = msg.toLowerCase();
   if (m.includes("email rate limit exceeded")) return i18n.t("errors.emailRateLimit");
   if (m.includes("invalid login credentials")) return i18n.t("errors.invalidCredentials");
+  // Ажлын дугаар давхцсан (unique tenant_id+job_number) — constraint нэрээр танина.
+  if (m.includes("jobs_tenant_id_job_number_key")) return i18n.t("errors.jobNumberDuplicate");
   return msg;
 }

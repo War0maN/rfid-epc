@@ -7,4 +7,5 @@ export default {
     "fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY (see .env.example).",
   emailRateLimit: "Email sending rate limit reached. Please try again later (~1 hour).",
   invalidCredentials: "Incorrect email or password.",
+  jobNumberDuplicate: "This job number is already registered. Please use a different one.",
 };
