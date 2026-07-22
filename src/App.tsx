@@ -186,13 +186,14 @@ function App() {
           </div>
         </div>
 
-        <nav className="mx-auto flex max-w-6xl gap-1 px-4">
+        {/* Жижиг дэлгэцэнд табууд хэвтээ гүйлгэгдэнэ (C5 г.м.) — таслагдахгүй. */}
+        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 [scrollbar-width:thin]">
           {visibleTabs.map((tb) => (
             <button
               key={tb.id}
               onClick={() => setTab(tb.id)}
               className={
-                "border-b-2 px-4 py-2 text-sm font-medium transition " +
+                "whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition " +
                 (activeTab === tb.id
                   ? "border-indigo-600 text-indigo-700"
                   : "border-transparent text-slate-500 hover:text-slate-700")
