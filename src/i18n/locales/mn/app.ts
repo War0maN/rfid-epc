@@ -4,6 +4,7 @@ export default {
   tabReceiving: "Хүлээн авалт",
   tabProducts: "Бүтээгдэхүүн",
   tabInventory: "Үлдэгдэл",
+  tabStocktake: "Тооллого",
   tabTransactions: "Гүйлгээ",
   tabReports: "Тайлан",
   tabEpc: "Бараа (EPC)",

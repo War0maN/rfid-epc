@@ -12,6 +12,7 @@ export type Perm =
   | "tab_receiving"
   | "tab_products"
   | "tab_inventory"
+  | "tab_stocktake"
   | "tab_transactions"
   | "tab_reports"
   | "tab_epc"
@@ -27,6 +28,7 @@ export type Perm =
   | "act_return"
   | "act_receive"
   | "act_receiving"
+  | "act_stocktake"
   | "act_product_edit"
   | "act_catalog_edit"
   | "act_branch_edit";
@@ -39,6 +41,7 @@ export const PERM_GROUPS: { title: string; perms: { key: Perm; label: string }[]
       { key: "tab_receiving", label: "permissions.tab_receiving" },
       { key: "tab_products", label: "permissions.tab_products" },
       { key: "tab_inventory", label: "permissions.tab_inventory" },
+      { key: "tab_stocktake", label: "permissions.tab_stocktake" },
       { key: "tab_transactions", label: "permissions.tab_transactions" },
       { key: "tab_reports", label: "permissions.tab_reports" },
       { key: "tab_epc", label: "permissions.tab_epc" },
@@ -56,6 +59,7 @@ export const PERM_GROUPS: { title: string; perms: { key: Perm; label: string }[]
       { key: "act_transfer", label: "permissions.act_transfer" },
       { key: "act_receive", label: "permissions.act_receive" },
       { key: "act_receiving", label: "permissions.act_receiving" },
+      { key: "act_stocktake", label: "permissions.act_stocktake" },
       { key: "act_return", label: "permissions.act_return" },
       { key: "act_other", label: "permissions.act_other" },
       { key: "act_product_edit", label: "permissions.act_product_edit" },
@@ -74,6 +78,7 @@ export const TAB_PERM: Record<string, Perm> = {
   receiving: "tab_receiving",
   products: "tab_products",
   inventory: "tab_inventory",
+  stocktake: "tab_stocktake",
   transactions: "tab_transactions",
   reports: "tab_reports",
   table: "tab_epc",

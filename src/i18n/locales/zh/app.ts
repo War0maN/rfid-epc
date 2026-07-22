@@ -3,6 +3,7 @@ export default {
   tabReceiving: "收货",
   tabProducts: "产品",
   tabInventory: "库存",
+  tabStocktake: "盘点",
   tabTransactions: "交易",
   tabReports: "报表",
   tabEpc: "商品 (EPC)",

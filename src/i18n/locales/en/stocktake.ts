@@ -1,0 +1,54 @@
+export default {
+  title: "Stocktake",
+  subtitle:
+    "Reconcile a branch's Active items against reality. The register is frozen (snapshot) at start and stays fixed while counting.",
+  newBtn: "Start stocktake",
+  empty: "No stocktakes yet. Pick a branch to start.",
+  colNumber: "Number",
+  statusOpen: "Open",
+  statusClosed: "Closed",
+
+  branchSelect: "Select branch…",
+  branchRequired: "Select the branch to count.",
+  createHint:
+    "At start, all Active EPCs of the branch are frozen as the expected list. Only one open stocktake per branch.",
+  createBtn: "Start",
+  creating: "Starting…",
+  createdInfo: "Stocktake started — begin scanning.",
+
+  backToList: "Back to list",
+  cardExpected: "Expected",
+  cardFound: "Counted",
+  cardMissing: "Missing",
+  scanLabel: "Scan EPC (reader or type + Enter; paste multiple at once)",
+  scanBtn: "Submit",
+  scanInvalid: "Invalid EPC: {{token}}",
+  colExpected: "Expected",
+  colFound: "Counted",
+  colMissing: "Missing",
+  total: "TOTAL",
+
+  resFound: "Counted: {{n}}",
+  resNotExpected: "Unexpected (not in this branch's register): {{n}}",
+  resUnknown: "Unknown tag: {{n}}",
+  resSkipped: "Previously submitted: {{n}}",
+  resNothing: "No new scans.",
+  outcome: {
+    not_expected: "registered in the system but not expected here (other branch or not Active)",
+    unknown: "not registered in the system",
+  },
+
+  missingTitle: "Missing EPCs ({{n}})",
+  extrasTitle: "Unexpected / unknown ({{n}})",
+
+  closeBtn: "Close",
+  closeConfirmText: "Close this stocktake? No more scans can be added afterwards.",
+  closedInfo: "Stocktake closed. Review the missing items and write them off if needed.",
+
+  writeOffBtn: "Write off missing ({{n}})",
+  writeOffHint:
+    "Write-off sets the missing EPCs to 'Other' (a real transaction is recorded with a note — nothing is deleted). Admin only.",
+  writeOffConfirm: "Write off {{n}} missing EPCs as 'Other'? This is recorded in history.",
+  writeOffReason: "Stocktake {{number}}: shortage",
+  writeOffDone: "{{n}} EPCs written off (Other).",
+};

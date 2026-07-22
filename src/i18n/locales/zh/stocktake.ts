@@ -1,0 +1,51 @@
+export default {
+  title: "盘点",
+  subtitle: "将分店的有效商品与实际情况核对。开始时登记册被冻结（快照），盘点期间不变。",
+  newBtn: "开始盘点",
+  empty: "暂无盘点。请选择分店开始。",
+  colNumber: "编号",
+  statusOpen: "进行中",
+  statusClosed: "已关闭",
+
+  branchSelect: "选择分店…",
+  branchRequired: "请选择要盘点的分店。",
+  createHint: "开始时该分店的所有有效 EPC 将被冻结为应盘清单。每个分店同时只能有一个进行中的盘点。",
+  createBtn: "开始",
+  creating: "开始中…",
+  createdInfo: "盘点已开始——请开始扫描。",
+
+  backToList: "返回列表",
+  cardExpected: "应盘",
+  cardFound: "已盘",
+  cardMissing: "短缺",
+  scanLabel: "扫描 EPC（扫描枪或输入后回车；可一次粘贴多个）",
+  scanBtn: "提交",
+  scanInvalid: "无效 EPC：{{token}}",
+  colExpected: "应盘",
+  colFound: "已盘",
+  colMissing: "短缺",
+  total: "合计",
+
+  resFound: "已盘点：{{n}}",
+  resNotExpected: "多出（不在本分店登记册中）：{{n}}",
+  resUnknown: "未知标签：{{n}}",
+  resSkipped: "此前已提交：{{n}}",
+  resNothing: "没有新的扫描。",
+  outcome: {
+    not_expected: "已在系统登记但不在本次盘点范围（其他分店或非有效状态）",
+    unknown: "系统中未登记",
+  },
+
+  missingTitle: "短缺 EPC（{{n}}）",
+  extrasTitle: "多出 / 未知（{{n}}）",
+
+  closeBtn: "关闭",
+  closeConfirmText: "关闭本次盘点？关闭后无法再添加扫描。",
+  closedInfo: "盘点已关闭。请核查短缺商品，必要时进行核销。",
+
+  writeOffBtn: "核销短缺（{{n}}）",
+  writeOffHint: "核销会将短缺 EPC 置为“其他”状态（记录真实交易并附备注——不会删除任何数据）。仅管理员可操作。",
+  writeOffConfirm: "将 {{n}} 个短缺 EPC 核销为“其他”？此操作将记入历史。",
+  writeOffReason: "盘点 {{number}}：短缺",
+  writeOffDone: "已核销 {{n}} 个 EPC（其他）。",
+};

@@ -8,6 +8,7 @@ import epcHistory from "./epcHistory";
 import audit from "./audit";
 import members from "./members";
 import permissions from "./permissions";
+import stocktake from "./stocktake";
 import transactions from "./transactions";
 import inventory from "./inventory";
 import receiving from "./receiving";
@@ -31,6 +32,7 @@ export default {
   audit,
   members,
   permissions,
+  stocktake,
   transactions,
   inventory,
   receiving,

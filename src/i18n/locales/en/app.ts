@@ -3,6 +3,7 @@ export default {
   tabReceiving: "Receiving",
   tabProducts: "Products",
   tabInventory: "Stock",
+  tabStocktake: "Stocktake",
   tabTransactions: "Transactions",
   tabReports: "Reports",
   tabEpc: "Items (EPC)",

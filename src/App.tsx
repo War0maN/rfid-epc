@@ -10,6 +10,7 @@ import ResetPassword from "./components/ResetPassword";
 import Onboarding from "./components/Onboarding";
 import CreateJobForm from "./components/CreateJobForm";
 import Receiving from "./components/Receiving";
+import Stocktake from "./components/Stocktake";
 import EpcTable from "./components/EpcTable";
 import EpcLookup from "./components/EpcLookup";
 import AuditLog from "./components/AuditLog";
@@ -25,7 +26,7 @@ const Labels = lazy(() => import("./components/Labels"));
 // Тайлан (recharts том) — зөвхөн нээх үед ачаална.
 const Reports = lazy(() => import("./components/Reports"));
 
-type Tab = "create" | "receiving" | "products" | "inventory" | "transactions" | "reports" | "table" | "labels" | "branches" | "audit" | "members";
+type Tab = "create" | "receiving" | "products" | "inventory" | "stocktake" | "transactions" | "reports" | "table" | "labels" | "branches" | "audit" | "members";
 
 // label = орчуулгын түлхүүр (render дээр t()-ээр уншина).
 const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
@@ -33,6 +34,7 @@ const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "receiving", label: "app.tabReceiving" },
   { id: "products", label: "app.tabProducts" },
   { id: "inventory", label: "app.tabInventory" },
+  { id: "stocktake", label: "app.tabStocktake" },
   { id: "transactions", label: "app.tabTransactions" },
   { id: "reports", label: "app.tabReports" },
   { id: "table", label: "app.tabEpc" },
@@ -254,6 +256,13 @@ function App() {
           </div>
         )}
         {activeTab === "inventory" && <Inventory refreshKey={refreshKey} allowedBranches={allowedBranches} />}
+        {activeTab === "stocktake" && (
+          <Stocktake
+            isAdmin={profile.role === "admin"}
+            allowedBranches={allowedBranches}
+            perms={myPerms}
+          />
+        )}
         {activeTab === "transactions" && (
           <Transactions refreshKey={refreshKey} allowedBranches={allowedBranches} perms={myPerms} />
         )}
