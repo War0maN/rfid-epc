@@ -2091,3 +2091,251 @@ left join (
   group by r.id, e.product_id
 ) g on g.receipt_id = rl.receipt_id and g.product_id = rl.product_id
 group by rl.receipt_id, rl.product_id;
+
+-- ============================================================
+-- Ү3: ТООЛЛОГО (stocktake) — салбарын Идэвхтэй EPC-г бодит байдалтай тулгах.
+--   Үүсгэх мөчид салбарын Идэвхтэй EPC-үүдийн SNAPSHOT хөлдөнө (тоолж
+--   байх хооронд борлуулалт хийгдсэн ч суурь өөрчлөгдөхгүй, маргаангүй).
+--   Уншилт hex-ээр ШУУД тулгагдана (задлагч хэрэггүй — GID-96 ч хамрагдана):
+--     found        — snapshot-д бий (тоологдлоо)
+--     not_expected — системд бүртгэлтэй ч энэ snapshot-д алга
+--                    (өөр салбарын / Идэвхтэй биш) — илүү олдсон
+--     unknown      — системд огт бүртгэлгүй таг
+--   Idempotent: (stocktake_id, epc_hex) PK — дахин илгээхэд алгасна;
+--   олон уншигч зэрэг тоолж болно. Тооллого юуг ч ӨӨРЧЛӨХГҮЙ — зөвхөн
+--   ажиглана; залруулга (дутууг актлах г.м.) хаасны дараа одоо байгаа
+--   хэрэгслээр (change_epc_status тэмдэглэлтэй) хийгдэнэ.
+-- ============================================================
+
+create table if not exists stocktakes (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid not null references tenants(id) default current_tenant_id(),
+  number     text not null,
+  branch_id  uuid not null references branches(id),
+  status     text not null default 'open' check (status in ('open','closed')),
+  note       text,
+  created_by uuid default auth.uid() references profiles(id),
+  created_at timestamptz not null default now(),
+  closed_at  timestamptz,
+  unique (tenant_id, number)
+);
+
+-- Snapshot: тооллого үүсэх мөчид байсан Идэвхтэй EPC-үүд (өөрчлөгдөшгүй).
+-- epc_id FK (RESTRICT) — тооллогод орсон EPC-ийн түүх хамгаалагдана.
+create table if not exists stocktake_items (
+  stocktake_id uuid not null references stocktakes(id),
+  epc_id       uuid not null references epc_codes(id),
+  tenant_id    uuid not null references tenants(id),
+  epc_hex      char(24) not null,
+  product_id   uuid not null references products(id),
+  primary key (stocktake_id, epc_id)
+);
+create index if not exists stocktake_items_hex_idx on stocktake_items (stocktake_id, epc_hex);
+create index if not exists stocktake_items_product_idx on stocktake_items (stocktake_id, product_id);
+
+create table if not exists stocktake_scans (
+  stocktake_id uuid not null references stocktakes(id),
+  epc_hex      char(24) not null,
+  tenant_id    uuid not null references tenants(id) default current_tenant_id(),
+  outcome      text not null check (outcome in ('found','not_expected','unknown')),
+  epc_id       uuid references epc_codes(id),
+  product_id   uuid references products(id),
+  scanned_by   uuid default auth.uid() references profiles(id),
+  scanned_at   timestamptz not null default now(),
+  primary key (stocktake_id, epc_hex)
+);
+create index if not exists stocktake_scans_outcome_idx on stocktake_scans (stocktake_id, outcome);
+
+alter table stocktakes enable row level security;
+alter table stocktake_items enable row level security;
+alter table stocktake_scans enable row level security;
+
+-- Унших: салбарын scoping (receipts-тэй ижил хэлбэр). Бичилт зөвхөн RPC-ээр.
+drop policy if exists "stocktakes read" on stocktakes;
+create policy "stocktakes read" on stocktakes for select
+  using (tenant_id = current_tenant_id() and (
+    (select is_tenant_admin())
+    or (select not exists (select 1 from user_branches where user_id = auth.uid()))
+    or branch_id in (select branch_id from user_branches where user_id = auth.uid())
+  ));
+drop policy if exists "stocktake items read" on stocktake_items;
+create policy "stocktake items read" on stocktake_items for select
+  using (tenant_id = current_tenant_id() and stocktake_id in (select id from stocktakes));
+drop policy if exists "stocktake scans read" on stocktake_scans;
+create policy "stocktake scans read" on stocktake_scans for select
+  using (tenant_id = current_tenant_id() and stocktake_id in (select id from stocktakes));
+
+-- ---------- RPC: Тооллого үүсгэх (snapshot-тойгоо, атом) ----------
+create or replace function create_stocktake(p_branch uuid, p_note text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid := current_tenant_id();
+  v_number text;
+  v_id     uuid;
+  v_cnt    int;
+begin
+  if v_tenant is null then raise exception 'Нэвтрээгүй байна.'; end if;
+  if not (is_tenant_admin() or has_perm('act_stocktake')) then
+    raise exception 'Танд тооллого хийх эрх байхгүй.';
+  end if;
+  if p_branch is null then raise exception 'Тооллого хийх салбараа сонгоно уу.'; end if;
+  if not has_branch_access(p_branch) then
+    raise exception 'Энэ салбарт тооллого хийх эрхгүй.';
+  end if;
+  -- Нэг салбарт зэрэг хоёр нээлттэй тооллого явуулахгүй (эргэлзээ үүсгэнэ).
+  if exists (select 1 from stocktakes
+             where tenant_id = v_tenant and branch_id = p_branch and status = 'open') then
+    raise exception 'Энэ салбарт нээлттэй тооллого аль хэдийн байна — эхлээд түүнийг хаана уу.';
+  end if;
+
+  for i in 1..3 loop
+    v_number := (
+      select 'ST-' || lpad((coalesce(max((regexp_match(number, '^ST-(\d+)$'))[1]::int), 0) + 1)::text, 4, '0')
+      from stocktakes where tenant_id = v_tenant
+    );
+    begin
+      insert into stocktakes (tenant_id, number, branch_id, note)
+      values (v_tenant, v_number, p_branch, nullif(btrim(coalesce(p_note, '')), ''))
+      returning id into v_id;
+      exit;
+    exception when unique_violation then
+      -- зэрэг үүсгэлт — дараагийн дугаараар дахин оролдоно
+    end;
+  end loop;
+  if v_id is null then
+    raise exception 'Тооллогын дугаар олгоход зөрчил гарлаа — дахин оролдоно уу.';
+  end if;
+
+  -- Snapshot: энэ мөчийн Идэвхтэй EPC-үүд.
+  insert into stocktake_items (stocktake_id, tenant_id, epc_id, epc_hex, product_id)
+  select v_id, v_tenant, e.id, e.epc_hex, e.product_id
+    from epc_codes e
+   where e.tenant_id = v_tenant and e.branch_id = p_branch and e.status = 'active';
+  get diagnostics v_cnt = row_count;
+  if v_cnt = 0 then
+    raise exception 'Энэ салбарт Идэвхтэй EPC алга — тоолох зүйлгүй.';
+  end if;
+
+  return v_id;
+end $$;
+grant execute on function create_stocktake(uuid, text) to authenticated;
+
+-- ---------- RPC: Тооллогын уншилт хүлээн авах (idempotent, багцаар) ----------
+create or replace function stocktake_scan(p_stocktake uuid, p_hexes text[])
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant  uuid := current_tenant_id();
+  v_st      stocktakes%rowtype;
+  v_hex     text;
+  v_epc     uuid;
+  v_prod    uuid;
+  v_outcome text;
+  v_counts  jsonb := '{}'::jsonb;
+  v_skipped int := 0;
+begin
+  if v_tenant is null then raise exception 'Нэвтрээгүй байна.'; end if;
+  select * into v_st from stocktakes where id = p_stocktake and tenant_id = v_tenant;
+  if not found then raise exception 'Тооллого олдсонгүй.'; end if;
+  if v_st.status <> 'open' then
+    raise exception 'Энэ тооллого хаагдсан тул уншилт нэмэх боломжгүй.';
+  end if;
+  if not (is_tenant_admin() or has_perm('act_stocktake')) then
+    raise exception 'Танд тооллого хийх эрх байхгүй.';
+  end if;
+  if not has_branch_access(v_st.branch_id) then
+    raise exception 'Энэ салбарт тооллого хийх эрхгүй.';
+  end if;
+  if coalesce(array_length(p_hexes, 1), 0) < 1 then
+    return jsonb_build_object('skipped', 0);
+  end if;
+  if array_length(p_hexes, 1) > 2000 then
+    raise exception 'Нэг илгээлтэд дээд тал нь 2000 уншилт (багцалж илгээнэ үү).';
+  end if;
+
+  for v_hex in (select distinct upper(btrim(h)) from unnest(p_hexes) h
+                where btrim(coalesce(h, '')) <> '')
+  loop
+    if exists (select 1 from stocktake_scans
+               where stocktake_id = p_stocktake and epc_hex = v_hex) then
+      v_skipped := v_skipped + 1;
+      continue;
+    end if;
+
+    v_epc := null; v_prod := null;
+    if v_hex !~ '^[0-9A-F]{24}$' then
+      v_outcome := 'unknown';
+    else
+      select i.epc_id, i.product_id into v_epc, v_prod
+        from stocktake_items i
+       where i.stocktake_id = p_stocktake and i.epc_hex = v_hex;
+      if v_epc is not null then
+        v_outcome := 'found';
+      else
+        select e.id, e.product_id into v_epc, v_prod
+          from epc_codes e
+         where e.tenant_id = v_tenant and e.epc_hex = v_hex;
+        v_outcome := case when v_epc is null then 'unknown' else 'not_expected' end;
+      end if;
+    end if;
+
+    insert into stocktake_scans (stocktake_id, tenant_id, epc_hex, outcome, epc_id, product_id)
+    values (p_stocktake, v_tenant, v_hex, v_outcome, v_epc, v_prod);
+    v_counts := jsonb_set(v_counts, array[v_outcome],
+                          to_jsonb(coalesce((v_counts ->> v_outcome)::int, 0) + 1));
+  end loop;
+
+  return v_counts || jsonb_build_object('skipped', v_skipped);
+end $$;
+grant execute on function stocktake_scan(uuid, text[]) to authenticated;
+
+-- ---------- RPC: Тооллого хаах ----------
+create or replace function close_stocktake(p_stocktake uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid := current_tenant_id();
+  v_st     stocktakes%rowtype;
+begin
+  if v_tenant is null then raise exception 'Нэвтрээгүй байна.'; end if;
+  select * into v_st from stocktakes
+   where id = p_stocktake and tenant_id = v_tenant for update;
+  if not found then raise exception 'Тооллого олдсонгүй.'; end if;
+  if v_st.status <> 'open' then raise exception 'Аль хэдийн хаагдсан.'; end if;
+  if not (is_tenant_admin() or has_perm('act_stocktake')) then
+    raise exception 'Танд тооллого хийх эрх байхгүй.';
+  end if;
+  if not has_branch_access(v_st.branch_id) then
+    raise exception 'Энэ салбарт тооллого хийх эрхгүй.';
+  end if;
+  update stocktakes set status = 'closed', closed_at = now() where id = p_stocktake;
+end $$;
+grant execute on function close_stocktake(uuid) to authenticated;
+
+-- ---------- View-үүд: явц (бараагаар) ба дутуу жагсаалт ----------
+create or replace view stocktake_progress with (security_invoker = true) as
+select i.stocktake_id,
+       i.product_id,
+       count(*)::int as expected,
+       count(s.epc_hex)::int as found
+from stocktake_items i
+left join stocktake_scans s
+  on s.stocktake_id = i.stocktake_id and s.epc_hex = i.epc_hex and s.outcome = 'found'
+group by i.stocktake_id, i.product_id;
+
+create or replace view stocktake_missing with (security_invoker = true) as
+select i.stocktake_id, i.product_id, i.epc_id, i.epc_hex
+from stocktake_items i
+where not exists (select 1 from stocktake_scans s
+                  where s.stocktake_id = i.stocktake_id
+                    and s.epc_hex = i.epc_hex and s.outcome = 'found');
