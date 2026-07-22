@@ -10,6 +10,7 @@ import members from "./members";
 import permissions from "./permissions";
 import transactions from "./transactions";
 import inventory from "./inventory";
+import receiving from "./receiving";
 import reports from "./reports";
 import labels from "./labels";
 import products from "./products";
@@ -32,6 +33,7 @@ export default {
   permissions,
   transactions,
   inventory,
+  receiving,
   reports,
   labels,
   products,

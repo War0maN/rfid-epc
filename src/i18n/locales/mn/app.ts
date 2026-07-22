@@ -1,6 +1,7 @@
 // App.tsx — үндсэн табууд, header, дэд таб шошгууд.
 export default {
   tabCreate: "Шинэ ажил",
+  tabReceiving: "Хүлээн авалт",
   tabProducts: "Бүтээгдэхүүн",
   tabInventory: "Үлдэгдэл",
   tabTransactions: "Гүйлгээ",

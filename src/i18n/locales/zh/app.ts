@@ -1,5 +1,6 @@
 export default {
   tabCreate: "新任务",
+  tabReceiving: "收货",
   tabProducts: "产品",
   tabInventory: "库存",
   tabTransactions: "交易",

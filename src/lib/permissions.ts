@@ -9,6 +9,7 @@
 export type Perm =
   // Цэс харах
   | "tab_create"
+  | "tab_receiving"
   | "tab_products"
   | "tab_inventory"
   | "tab_transactions"
@@ -25,6 +26,7 @@ export type Perm =
   | "act_other"
   | "act_return"
   | "act_receive"
+  | "act_receiving"
   | "act_product_edit"
   | "act_catalog_edit"
   | "act_branch_edit";
@@ -34,6 +36,7 @@ export const PERM_GROUPS: { title: string; perms: { key: Perm; label: string }[]
     title: "permissions.groupTabs",
     perms: [
       { key: "tab_create", label: "permissions.tab_create" },
+      { key: "tab_receiving", label: "permissions.tab_receiving" },
       { key: "tab_products", label: "permissions.tab_products" },
       { key: "tab_inventory", label: "permissions.tab_inventory" },
       { key: "tab_transactions", label: "permissions.tab_transactions" },
@@ -52,6 +55,7 @@ export const PERM_GROUPS: { title: string; perms: { key: Perm; label: string }[]
       { key: "act_sale", label: "permissions.act_sale" },
       { key: "act_transfer", label: "permissions.act_transfer" },
       { key: "act_receive", label: "permissions.act_receive" },
+      { key: "act_receiving", label: "permissions.act_receiving" },
       { key: "act_return", label: "permissions.act_return" },
       { key: "act_other", label: "permissions.act_other" },
       { key: "act_product_edit", label: "permissions.act_product_edit" },
@@ -67,6 +71,7 @@ export const ALL_PERMS: Perm[] = PERM_GROUPS.flatMap((g) => g.perms.map((p) => p
 /** Таб id ↔ эрхийн түлхүүр (App-ийн таб шүүлтэд). Жагсаалтад байхгүй таб нээлттэй. */
 export const TAB_PERM: Record<string, Perm> = {
   create: "tab_create",
+  receiving: "tab_receiving",
   products: "tab_products",
   inventory: "tab_inventory",
   transactions: "tab_transactions",

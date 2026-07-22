@@ -191,13 +191,20 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
   return { rows: out, skipped };
 }
 
-/** Excel-ийг импортлож, бараа (ангилал+шинж чанар) upsert, Job үүсгэж EPC генерацлэнэ. */
-export async function importPackingListXlsx(
+/** Задалсан мөр + бүртгэгдсэн барааны id (хүлээн авалт/импорт хоёул ашиглана). */
+export interface ParsedProductRow extends CleanRow {
+  productId: string;
+}
+
+/**
+ * Excel-ийг уншиж, бараануудыг (ангилал + шинж чанартай нь) upsert хийгээд
+ * мөр бүрийг productId-тай буцаана. EPC/ажил ҮҮСГЭХГҮЙ — импорт (генерац)
+ * болон хүлээн авалт (гадны EPC) хоёулаа энэ суурийг хуваалцана.
+ */
+export async function parseAndUpsertProducts(
   supabase: SupabaseClient,
-  file: Blob,
-  job: ImportJobInput,
-  branchId: string | null = null
-) {
+  file: Blob
+): Promise<{ rows: ParsedProductRow[]; skipped: string[]; productCount: number; categoryCount: number }> {
   const { rows, skipped } = await parseFile(file);
 
   const { data: tenant, error: tErr } = await supabase.from("tenants").select("id").single();
@@ -212,17 +219,6 @@ export async function importPackingListXlsx(
   for (const r of rows) for (const k of Object.keys(r.attributes)) attrLabels.add(k);
   await ensureAttributeDefs([...attrLabels]);
   const catId = (r: CleanRow) => (r.categoryPath ? catMap.get(r.categoryPath) ?? null : null);
-
-  // Салбарыг код эсвэл нэрээр таних (Excel-ийн branch баганаас). Олдоогүй/хоосон
-  // бол формоос сонгосон default branchId-г ашиглана.
-  const { data: brs } = await supabase.from("branches").select("id, name, code");
-  const branchByKey = new Map<string, string>();
-  for (const b of (brs ?? []) as { id: string; name: string; code: string | null }[]) {
-    if (b.code) branchByKey.set(b.code.trim().toLowerCase(), b.id);
-    branchByKey.set(b.name.trim().toLowerCase(), b.id);
-  }
-  const resolveBranch = (r: CleanRow): string | null =>
-    (r.branchValue ? branchByKey.get(r.branchValue.trim().toLowerCase()) : null) ?? branchId;
 
   // 1) Бараа upsert — хоёр салаагаар (давхцалгүй).
   const idByGtin = new Map<string, string>();
@@ -274,21 +270,58 @@ export async function importPackingListXlsx(
     for (const p of data as { id: string; ext_key: string }[]) idByExtKey.set(p.ext_key, p.id);
   }
 
-  // 2) (product, box, branch) бүрээр тоог нэгтгэх
-  const lineMap = new Map<string, JobLine>();
-  for (const r of rows) {
+  // 2) Мөр бүрд productId оноох
+  const outRows: ParsedProductRow[] = rows.map((r) => {
     const productId = r.gtin ? idByGtin.get(r.gtin) : r.extKey ? idByExtKey.get(r.extKey) : undefined;
     if (!productId) {
       throw new Error(i18n.t("importer.productMissing", { key: r.gtin ?? r.extKey ?? "?" }));
     }
+    return { ...r, productId };
+  });
+
+  return {
+    rows: outRows,
+    skipped,
+    productCount: byGtin.size + byExtKey.size,
+    categoryCount: catMap.size,
+  };
+}
+
+/** Excel-ийг импортлож, бараа (ангилал+шинж чанар) upsert, Job үүсгэж EPC генерацлэнэ. */
+export async function importPackingListXlsx(
+  supabase: SupabaseClient,
+  file: Blob,
+  job: ImportJobInput,
+  branchId: string | null = null
+) {
+  const { rows, skipped, productCount, categoryCount } = await parseAndUpsertProducts(supabase, file);
+
+  const { data: tenant, error: tErr } = await supabase.from("tenants").select("id").single();
+  if (tErr) throw tErr;
+  const tenantId = tenant.id as string;
+
+  // Салбарыг код эсвэл нэрээр таних (Excel-ийн branch баганаас). Олдоогүй/хоосон
+  // бол формоос сонгосон default branchId-г ашиглана.
+  const { data: brs } = await supabase.from("branches").select("id, name, code");
+  const branchByKey = new Map<string, string>();
+  for (const b of (brs ?? []) as { id: string; name: string; code: string | null }[]) {
+    if (b.code) branchByKey.set(b.code.trim().toLowerCase(), b.id);
+    branchByKey.set(b.name.trim().toLowerCase(), b.id);
+  }
+  const resolveBranch = (r: ParsedProductRow): string | null =>
+    (r.branchValue ? branchByKey.get(r.branchValue.trim().toLowerCase()) : null) ?? branchId;
+
+  // (product, box, branch) бүрээр тоог нэгтгэх
+  const lineMap = new Map<string, JobLine>();
+  for (const r of rows) {
     const brId = resolveBranch(r);
-    const key = `${productId}|${r.boxNo ?? ""}|${brId ?? ""}`;
+    const key = `${r.productId}|${r.boxNo ?? ""}|${brId ?? ""}`;
     const existing = lineMap.get(key);
     if (existing) existing.count += r.piece;
-    else lineMap.set(key, { productId, count: r.piece, boxNo: r.boxNo, branchId: brId });
+    else lineMap.set(key, { productId: r.productId, count: r.piece, boxNo: r.boxNo, branchId: brId });
   }
 
-  // 3) Job үүсгэх
+  // Job үүсгэх
   const { data: jobRow, error: jErr } = await supabase
     .from("jobs")
     .insert({
@@ -303,7 +336,7 @@ export async function importPackingListXlsx(
     .single();
   if (jErr) throw jErr;
 
-  // 4) EPC генерац (allocate -> encode -> insert)
+  // EPC генерац (allocate -> encode -> insert)
   const epcs = await generateEpcsForJob(supabase, {
     jobId: jobRow.id,
     lines: [...lineMap.values()],
@@ -313,9 +346,9 @@ export async function importPackingListXlsx(
   return {
     jobId: jobRow.id as string,
     totalEpcs: epcs.length,
-    productCount: byGtin.size + byExtKey.size,
+    productCount,
     boxCount: new Set(rows.map((r) => r.boxNo ?? "")).size,
-    categoryCount: catMap.size,
+    categoryCount,
     skippedCount: skipped.length,
     skippedSample: skipped.slice(0, 5),
   };

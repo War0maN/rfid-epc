@@ -1,5 +1,6 @@
 export default {
   tabCreate: "New job",
+  tabReceiving: "Receiving",
   tabProducts: "Products",
   tabInventory: "Stock",
   tabTransactions: "Transactions",
