@@ -2018,12 +2018,11 @@ begin
           insert into epc_codes (tenant_id, job_id, product_id, serial, epc_hex, status, branch_id)
           values (v_tenant, v_rc.job_id, v_prod, v_serial, v_hex, 'active', v_rc.branch_id);
           v_outcome := 'matched';
-          -- Тоолуурыг урагшлуулна: ирээдүйн өөрийн генерац үйлдвэрийн
-          -- serial-тай мөргөлдөхгүй.
-          insert into serial_counters (tenant_id, product_id, last_serial)
-          values (v_tenant, v_prod, v_serial)
-          on conflict (tenant_id, product_id)
-            do update set last_serial = greatest(serial_counters.last_serial, excluded.last_serial);
+          -- ЗОРИУД: тоолуурт ГАР ХҮРЭХГҮЙ. Системийн үүсгэдэг serial өөрийн
+          -- 1,2,3… дэсээ явна — үйлдвэрийн (ихэвчлэн том) дугаараас хараат
+          -- бус. Үйлдвэрийн дараагийн ачааны дугаартай "үргэлжлүүлж"
+          -- мөргөлдөхөөс сэргийлнэ; ховор давхцлыг unique + serial_conflict
+          -- сануулга барина.
         exception when unique_violation then
           -- (tenant, product, serial) давхцал — hex өөр ч serial ижил.
           v_outcome := 'serial_conflict';
