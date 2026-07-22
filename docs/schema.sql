@@ -1700,13 +1700,14 @@ alter table epc_events drop constraint if exists epc_events_epc_id_fkey;
 alter table epc_events add constraint epc_events_epc_id_fkey
   foreign key (epc_id) references epc_codes(id) on delete cascade;
 
--- Устгалын дүрэм (шинэчилсэн): Хэвлээгүй + Идэвхтэй устгаж болно;
--- Борлуулсан/Шилжүүлж буй/Бусад гүйлгээ хамгаалагдана. Гүйлгээний түүхтэй
--- EPC-г transaction_items-ийн FK (RESTRICT) төлөв хамаагүй хамгаална.
+-- Устгалын дүрэм (2026-07-21 шинэчилсэн): ЗӨВХӨН Хэвлээгүй устгагдана.
+-- Идэвхтэй болсон EPC "хөдөлгөөнтэй" тул хамгаалагдана — үнэхээр устгах бол
+-- эхлээд Хэвлээгүй болгоно (бөөнөөр андуурч устгахаас сэргийлнэ). Гүйлгээний
+-- түүхтэй EPC-г transaction_items-ийн FK (RESTRICT) төлөв хамаагүй хамгаална.
 create or replace function epc_block_active_delete() returns trigger as $$
 begin
-  if old.status in ('sold', 'transferring', 'other') then
-    raise exception 'EPC-г устгах боломжгүй: % төлөвтэй (зөвхөн Хэвлээгүй/Идэвхтэйг устгана).', old.status
+  if old.status <> 'unprinted' then
+    raise exception 'EPC-г устгах боломжгүй: % төлөвтэй (зөвхөн Хэвлээгүй EPC устгана).', old.status
       using errcode = '23503';
   end if;
   return old;
@@ -1724,3 +1725,370 @@ alter table epc_events drop constraint if exists epc_events_event_check;
 alter table epc_events add constraint epc_events_event_check
   check (event in ('created','printed','status_change','transfer_out','transfer_in',
                    'transfer_cancel','sold','other','returned'));
+
+-- ============================================================
+-- Ү2: ХҮЛЭЭН АВАЛТ — үйлдвэрээс RFID таг-тай ирсэн барааг бүртгэх.
+--   Packing list → хүлээн авах ажил (receipts + receipt_lines) → уншсан
+--   EPC-г задалж (SGTIN-96 → GTIN-14 + serial) тулгаж бүртгэнэ.
+--   Зарчмууд:
+--   * Ажил бүр jobs мөртэй (RCV-0001 дэс дугаар) — бүртгэгдсэн EPC тэр
+--     job_id-тай тул "Ажлын №"/Нийлүүлэгч баганууд хэвийн ажиллана; таг-гүй
+--     үлдэгдэлд EPC үүсгэхдээ мөн ижил job ашиглана (client generateEpcsForJob).
+--   * Idempotent: (receipt_id, epc_hex) PK — дахин илгээхэд алгасна.
+--   * Аль хэдийн бүртгэлтэй EPC (агуулахын хажуугийн бараа) = үл тооцно.
+--   * Бичилт зөвхөн RPC-ээр (client write policy байхгүй), унших нь
+--     салбарын scoping-тэй (InitPlan + hashed IN хэлбэр).
+-- ============================================================
+
+create table if not exists receipts (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid not null references tenants(id) default current_tenant_id(),
+  job_id     uuid not null references jobs(id),
+  branch_id  uuid not null references branches(id),
+  status     text not null default 'open' check (status in ('open','closed')),
+  created_by uuid default auth.uid() references profiles(id),
+  created_at timestamptz not null default now(),
+  closed_at  timestamptz,
+  unique (job_id)
+);
+
+create table if not exists receipt_lines (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid not null references tenants(id) default current_tenant_id(),
+  receipt_id uuid not null references receipts(id),
+  product_id uuid not null references products(id),
+  expected   int not null check (expected >= 1),
+  box_no     text
+);
+create unique index if not exists receipt_lines_uniq
+  on receipt_lines (receipt_id, product_id, (coalesce(box_no, '')));
+
+create table if not exists receipt_scans (
+  receipt_id uuid not null references receipts(id),
+  epc_hex    char(24) not null,
+  tenant_id  uuid not null references tenants(id) default current_tenant_id(),
+  product_id uuid references products(id),
+  outcome    text not null check (outcome in
+    ('matched','already_registered','unknown_gtin','not_on_list','undecodable','serial_conflict')),
+  scanned_by uuid default auth.uid() references profiles(id),
+  scanned_at timestamptz not null default now(),
+  primary key (receipt_id, epc_hex)
+);
+create index if not exists receipt_scans_product_idx on receipt_scans (receipt_id, product_id, outcome);
+
+alter table receipts enable row level security;
+alter table receipt_lines enable row level security;
+alter table receipt_scans enable row level security;
+
+-- Унших: салбарын scoping (epc_codes-той ижил хэлбэр). Бичилт RPC-ээр л.
+drop policy if exists "receipts read" on receipts;
+create policy "receipts read" on receipts for select
+  using (tenant_id = current_tenant_id() and (
+    (select is_tenant_admin())
+    or (select not exists (select 1 from user_branches where user_id = auth.uid()))
+    or branch_id in (select branch_id from user_branches where user_id = auth.uid())
+  ));
+-- Мөрүүд/уншилтууд: харагдах receipts-ээр дамжин scoping-оо авна.
+drop policy if exists "receipt lines read" on receipt_lines;
+create policy "receipt lines read" on receipt_lines for select
+  using (tenant_id = current_tenant_id() and receipt_id in (select id from receipts));
+drop policy if exists "receipt scans read" on receipt_scans;
+create policy "receipt scans read" on receipt_scans for select
+  using (tenant_id = current_tenant_id() and receipt_id in (select id from receipts));
+
+-- ---------- SGTIN-96 задлагч (GS1 TDS 1.13 §14.5) ----------
+-- bit(96)-ээс [p_from..p_from+p_len) битийг bigint болгоно (1-based, MSB эхэлж).
+create or replace function varbit_slice_bigint(p bit(96), p_from int, p_len int)
+returns bigint
+language sql immutable as
+$$ select lpad(substring(p from p_from for p_len)::text, 64, '0')::bit(64)::bigint $$;
+
+-- GTIN check digit (баруунаас 3,1,3,1… жинтэй) — client epc.ts-тэй ижил алгоритм.
+create or replace function gtin_check_digit(p_digits text)
+returns int
+language plpgsql immutable as $$
+declare
+  v_sum int := 0;
+  v_len int := length(p_digits);
+begin
+  for i in 1..v_len loop
+    v_sum := v_sum + substr(p_digits, v_len - i + 1, 1)::int
+                     * (case when (i - 1) % 2 = 0 then 3 else 1 end);
+  end loop;
+  return (10 - (v_sum % 10)) % 10;
+end $$;
+
+-- SGTIN-96 hex → GTIN-14 (products.gtin-ий формат: 14 оронтой, indicator-тэй)
+-- + serial. Задарч чадахгүй бол мөр буцаахгүй (хоосон).
+create or replace function sgtin96_decode(p_hex text)
+returns table (gtin14 text, serial bigint)
+language plpgsql immutable as $$
+declare
+  v_bits      bit(96);
+  v_partition int;
+  v_cp_bits   int; v_cp_digits int;
+  v_ir_bits   int; v_ir_digits int;
+  v_company   bigint;
+  v_ir        bigint;
+  v_company_s text;
+  v_ir_s      text;
+  v_g13       text;
+begin
+  if p_hex is null or p_hex !~* '^[0-9A-F]{24}$' then return; end if;
+  if upper(left(p_hex, 2)) <> '30' then return; end if; -- SGTIN-96 header 0x30
+  v_bits := ('x' || lower(p_hex))::bit(96);
+  v_partition := varbit_slice_bigint(v_bits, 12, 3)::int;
+  select t.cp_bits, t.cp_digits, t.ir_bits, t.ir_digits
+    into v_cp_bits, v_cp_digits, v_ir_bits, v_ir_digits
+  from (values (0,40,12,4,1),(1,37,11,7,2),(2,34,10,10,3),(3,30,9,14,4),
+               (4,27,8,17,5),(5,24,7,20,6),(6,20,6,24,7))
+       as t(p, cp_bits, cp_digits, ir_bits, ir_digits)
+  where t.p = v_partition;
+  if v_cp_bits is null then return; end if; -- буруу partition (стандарт бус)
+
+  v_company := varbit_slice_bigint(v_bits, 15, v_cp_bits);
+  v_ir      := varbit_slice_bigint(v_bits, 15 + v_cp_bits, v_ir_bits);
+  serial    := varbit_slice_bigint(v_bits, 15 + v_cp_bits + v_ir_bits, 38);
+
+  v_company_s := lpad(v_company::text, v_cp_digits, '0');
+  v_ir_s      := lpad(v_ir::text, v_ir_digits, '0');
+  -- Бит утга нь орны тооноос хэтэрсэн бол стандарт бус кодчилол.
+  if length(v_company_s) > v_cp_digits or length(v_ir_s) > v_ir_digits then return; end if;
+
+  -- GTIN-14 = indicator (item ref-ийн эхний орон) + company + item ref body + check
+  v_g13  := substr(v_ir_s, 1, 1) || v_company_s || substr(v_ir_s, 2);
+  gtin14 := v_g13 || gtin_check_digit(v_g13)::text;
+  return next;
+end $$;
+grant execute on function sgtin96_decode(text) to authenticated;
+
+-- ---------- RPC: Хүлээн авах ажил үүсгэх ----------
+-- p_lines: [{product_id, expected, box_no}] — бараанууд өмнө нь client талд
+-- packing list-ээс upsert хийгдсэн байна (одоогийн импортын логик).
+-- p_number null бол RCV-0001 дэс дугаар автоматаар.
+create or replace function create_receipt(
+  p_branch uuid, p_arrival date, p_supplier text, p_note text,
+  p_number text, p_lines jsonb
+) returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant  uuid := current_tenant_id();
+  v_number  text;
+  v_job     uuid;
+  v_receipt uuid;
+  v_cnt     int;
+begin
+  if v_tenant is null then raise exception 'Нэвтрээгүй байна.'; end if;
+  if not (is_tenant_admin() or has_perm('act_receiving')) then
+    raise exception 'Танд хүлээн авалт хийх эрх байхгүй.';
+  end if;
+  if p_branch is null then raise exception 'Хүлээн авах салбараа сонгоно уу.'; end if;
+  if not has_branch_access(p_branch) then
+    raise exception 'Энэ салбарт хүлээн авалт хийх эрхгүй.';
+  end if;
+
+  select count(*) into v_cnt
+    from jsonb_to_recordset(p_lines) as x(product_id uuid, expected int, box_no text);
+  if coalesce(v_cnt, 0) < 1 then raise exception 'Хүлээн авах мөр алга.'; end if;
+  -- Бүх бараа тухайн тенантынх байх ёстой (security definer тул заавал шалгана).
+  if exists (
+    select 1 from jsonb_to_recordset(p_lines) as x(product_id uuid, expected int, box_no text)
+    left join products p on p.id = x.product_id and p.tenant_id = v_tenant
+    where p.id is null
+  ) then
+    raise exception 'Барааны мэдээлэл буруу (өөр байгууллагын эсвэл устсан бараа).';
+  end if;
+
+  -- Ажлын мөр + дугаар (өгөөгүй бол RCV-дэс; давхцвал 3 удаа дахин оролдоно).
+  for i in 1..3 loop
+    v_number := coalesce(nullif(btrim(coalesce(p_number, '')), ''), (
+      select 'RCV-' || lpad((coalesce(max((regexp_match(job_number, '^RCV-(\d+)$'))[1]::int), 0) + 1)::text, 4, '0')
+      from jobs where tenant_id = v_tenant and job_number like 'RCV-%'
+    ));
+    begin
+      insert into jobs (tenant_id, job_number, arrival_date, supplier, note, status)
+      values (v_tenant, v_number, coalesce(p_arrival, current_date),
+              nullif(btrim(coalesce(p_supplier, '')), ''),
+              nullif(btrim(coalesce(p_note, '')), ''), 'draft')
+      returning id into v_job;
+      exit;
+    exception when unique_violation then
+      if nullif(btrim(coalesce(p_number, '')), '') is not null then
+        raise exception 'Энэ ажлын дугаар аль хэдийн бүртгэлтэй байна. Өөр дугаар оруулна уу.';
+      end if;
+    end;
+  end loop;
+  if v_job is null then
+    raise exception 'Ажлын дугаар олгоход зөрчил гарлаа — дахин оролдоно уу.';
+  end if;
+
+  insert into receipts (tenant_id, job_id, branch_id)
+  values (v_tenant, v_job, p_branch)
+  returning id into v_receipt;
+
+  insert into receipt_lines (tenant_id, receipt_id, product_id, expected, box_no)
+  select v_tenant, v_receipt, x.product_id, x.expected, nullif(btrim(coalesce(x.box_no, '')), '')
+  from jsonb_to_recordset(p_lines) as x(product_id uuid, expected int, box_no text);
+
+  return v_receipt;
+end $$;
+grant execute on function create_receipt(uuid, date, text, text, text, jsonb) to authenticated;
+
+-- ---------- RPC: Уншилт хүлээн авах (idempotent, багцаар) ----------
+-- Уншсан hex бүрийг ангилна:
+--   matched            — задарч, жагсаалтын бараатай таарч, epc_codes-д бүртгэгдэв
+--   already_registered — системд аль хэдийн бүртгэлтэй (хажуугийн бараа) → үл тооцно
+--   unknown_gtin       — GTIN нь каталогийн ямар ч бараатай таарахгүй
+--   not_on_list        — каталогт бий ч ЭНЭ ажлын жагсаалтад алга (илүү ирсэн)
+--   undecodable        — SGTIN-96 биш / задрахгүй
+--   serial_conflict    — өөр hex-тэй ч (tenant, product, serial) давхцав (сануулга)
+-- Өмнө нь илгээгдсэн hex дахин ирвэл юу ч хийхгүй алгасна (skipped).
+create or replace function receive_scans(p_receipt uuid, p_hexes text[])
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant  uuid := current_tenant_id();
+  v_rc      receipts%rowtype;
+  v_number  text;
+  v_hex     text;
+  v_g14     text;
+  v_serial  bigint;
+  v_prod    uuid;
+  v_outcome text;
+  v_counts  jsonb := '{}'::jsonb;
+  v_skipped int := 0;
+begin
+  if v_tenant is null then raise exception 'Нэвтрээгүй байна.'; end if;
+  select * into v_rc from receipts where id = p_receipt and tenant_id = v_tenant;
+  if not found then raise exception 'Хүлээн авалт олдсонгүй.'; end if;
+  if v_rc.status <> 'open' then
+    raise exception 'Энэ хүлээн авалт хаагдсан тул уншилт нэмэх боломжгүй.';
+  end if;
+  if not (is_tenant_admin() or has_perm('act_receiving')) then
+    raise exception 'Танд хүлээн авалт хийх эрх байхгүй.';
+  end if;
+  if not has_branch_access(v_rc.branch_id) then
+    raise exception 'Энэ салбарт хүлээн авалт хийх эрхгүй.';
+  end if;
+  if coalesce(array_length(p_hexes, 1), 0) < 1 then
+    return jsonb_build_object('skipped', 0);
+  end if;
+  if array_length(p_hexes, 1) > 2000 then
+    raise exception 'Нэг илгээлтэд дээд тал нь 2000 уншилт (багцалж илгээнэ үү).';
+  end if;
+
+  select job_number into v_number from jobs where id = v_rc.job_id;
+  -- Timeline-д "Үүссэн" бичлэгийн хамт шалтгаан харагдана.
+  perform set_config('app.reason', 'Хүлээн авалт ' || coalesce(v_number, ''), true);
+
+  for v_hex in (select distinct upper(btrim(h)) from unnest(p_hexes) h
+                where btrim(coalesce(h, '')) <> '')
+  loop
+    if exists (select 1 from receipt_scans
+               where receipt_id = p_receipt and epc_hex = v_hex) then
+      v_skipped := v_skipped + 1;
+      continue; -- idempotent: өмнө нь илгээгдсэн
+    end if;
+
+    v_g14 := null; v_serial := null; v_prod := null;
+    select d.gtin14, d.serial into v_g14, v_serial from sgtin96_decode(v_hex) d;
+
+    if v_g14 is null then
+      v_outcome := 'undecodable';
+    elsif exists (select 1 from epc_codes where tenant_id = v_tenant and epc_hex = v_hex) then
+      v_outcome := 'already_registered';
+      select product_id into v_prod from epc_codes
+       where tenant_id = v_tenant and epc_hex = v_hex;
+    else
+      select id into v_prod from products
+       where tenant_id = v_tenant and gtin = v_g14;
+      if v_prod is null then
+        v_outcome := 'unknown_gtin';
+      elsif not exists (select 1 from receipt_lines
+                        where receipt_id = p_receipt and product_id = v_prod) then
+        v_outcome := 'not_on_list';
+      else
+        begin
+          insert into epc_codes (tenant_id, job_id, product_id, serial, epc_hex, status, branch_id)
+          values (v_tenant, v_rc.job_id, v_prod, v_serial, v_hex, 'active', v_rc.branch_id);
+          v_outcome := 'matched';
+          -- Тоолуурыг урагшлуулна: ирээдүйн өөрийн генерац үйлдвэрийн
+          -- serial-тай мөргөлдөхгүй.
+          insert into serial_counters (tenant_id, product_id, last_serial)
+          values (v_tenant, v_prod, v_serial)
+          on conflict (tenant_id, product_id)
+            do update set last_serial = greatest(serial_counters.last_serial, excluded.last_serial);
+        exception when unique_violation then
+          -- (tenant, product, serial) давхцал — hex өөр ч serial ижил.
+          v_outcome := 'serial_conflict';
+        end;
+      end if;
+    end if;
+
+    insert into receipt_scans (receipt_id, tenant_id, epc_hex, product_id, outcome)
+    values (p_receipt, v_tenant, v_hex, v_prod, v_outcome);
+    v_counts := jsonb_set(v_counts, array[v_outcome],
+                          to_jsonb(coalesce((v_counts ->> v_outcome)::int, 0) + 1));
+  end loop;
+
+  return v_counts || jsonb_build_object('skipped', v_skipped);
+end $$;
+grant execute on function receive_scans(uuid, text[]) to authenticated;
+
+-- ---------- RPC: Хүлээн авалт хаах ----------
+-- Таг-гүй үлдэгдэлд EPC үүсгэх бол ХААХААС ӨМНӨ client талаас
+-- generateEpcsForJob(receipts.job_id)-оор үүсгэнэ (ижил ажилд бүлэглэгдэнэ).
+create or replace function close_receipt(p_receipt uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid := current_tenant_id();
+  v_rc     receipts%rowtype;
+begin
+  if v_tenant is null then raise exception 'Нэвтрээгүй байна.'; end if;
+  select * into v_rc from receipts
+   where id = p_receipt and tenant_id = v_tenant for update;
+  if not found then raise exception 'Хүлээн авалт олдсонгүй.'; end if;
+  if v_rc.status <> 'open' then raise exception 'Аль хэдийн хаагдсан.'; end if;
+  if not (is_tenant_admin() or has_perm('act_receiving')) then
+    raise exception 'Танд хүлээн авалт хийх эрх байхгүй.';
+  end if;
+  if not has_branch_access(v_rc.branch_id) then
+    raise exception 'Энэ салбарт хүлээн авалт хийх эрхгүй.';
+  end if;
+  update receipts set status = 'closed', closed_at = now() where id = p_receipt;
+end $$;
+grant execute on function close_receipt(uuid) to authenticated;
+
+-- ---------- View: явцын тойм (бараагаар нэгтгэсэн) ----------
+-- generated = энэ ажилд ҮҮСГЭГДСЭН (уншилтаар бүртгэгдээгүй) EPC-ийн тоо.
+create or replace view receipt_progress with (security_invoker = true) as
+select rl.receipt_id,
+       rl.product_id,
+       sum(rl.expected)::int          as expected,
+       coalesce(min(s.matched), 0)    as scanned,
+       coalesce(min(g.generated), 0)  as generated
+from receipt_lines rl
+left join (
+  select receipt_id, product_id, count(*)::int as matched
+  from receipt_scans where outcome = 'matched'
+  group by receipt_id, product_id
+) s on s.receipt_id = rl.receipt_id and s.product_id = rl.product_id
+left join (
+  select r.id as receipt_id, e.product_id, count(*)::int as generated
+  from receipts r
+  join epc_codes e on e.job_id = r.job_id
+  where not exists (select 1 from receipt_scans sc
+                    where sc.receipt_id = r.id and sc.epc_hex = e.epc_hex)
+  group by r.id, e.product_id
+) g on g.receipt_id = rl.receipt_id and g.product_id = rl.product_id
+group by rl.receipt_id, rl.product_id;
