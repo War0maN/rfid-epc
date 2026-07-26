@@ -100,3 +100,35 @@ View: `epc_full · products_full · stock_by_branch` (бүгд security_invoker 
 ## 12. Үе шатын түүх (товч)
 
 Phase 0 EPC/шошго/каталог → 1 Бүтээгдэхүүн master → 2 Салбар → 3 Төлөвийн мөчлөг → 4 Үлдэгдэл → 5 Гүйлгээ + EPC түүх → 6 Тайлан → 2b Салбар scoping → 2c Эрхийн систем → UX багц (таслал, аудит дэлгэрэнгүй, EPC устгах, Буцаалт). Хийгдээгүй: i18n (3 хэл), тооллого, deploy, имэйл урилга.
+
+## 13. Хүлээн авалт (receiving, Ү2 — 2026-07)
+
+Үйлдвэрээс RFID таг-тай ирсэн барааг бүртгэх урсгал. Packing list (Excel) →
+`create_receipt` (jobs мөр RCV-0001 дэсээр + receipt_lines хүлээгдэх тоо) →
+уншсан EPC-г `receive_scans` RPC задалж (`sgtin96_decode`: hex → GTIN-14 +
+serial, GS1 TDS партишн хүснэгт) тулгаж ангилна: matched (epc_codes-д
+Идэвхтэй болж бүртгэгдэнэ) / already_registered (хажуугийн бараа — үл тооцно) /
+unknown_gtin / not_on_list / undecodable / serial_conflict (сануулга).
+(receipt_id, epc_hex) PK тул idempotent — дахин илгээхэд аюулгүй. Хаахдаа
+таг-гүй үлдэгдэлд ижил job дээр EPC үүсгэж (Хэвлээгүй) хэвлэнэ, эсвэл дутуу
+гэж хаана. Системийн serial үйлдвэрийнхээс хараат бус өөрийн дэсээ явна.
+
+## 14. Тооллого (stocktake, Ү3 — 2026-07)
+
+Салбарын Идэвхтэй EPC-г бодит байдалтай тулгана. `create_stocktake` (ST-0001
+дэс, нэг салбарт нэг нээлттэй) үүсэх МӨЧИД stocktake_items snapshot хөлддөг —
+тоолж байхад борлуулалт суурийг өөрчлөхгүй. `stocktake_scan` hex-ээр ШУУД
+тулгана (задлахгүй тул GID-96 ч хамрагдана): found / not_expected (илүү —
+төлөв/салбар нь яагаад гэдгийг тайлбарлана) / unknown (системд бүртгэлгүй —
+UI-д огт харагдахгүй). Тооллого юуг ч өөрчилдөггүй; хаасны дараа дутууг
+checkbox-оор сонгож, заавал тайлбартайгаар `change_epc_status`-аар актална
+("Тооллого ST-XXXX: тайлбар" түүхэнд). Явц/дутуу/илүү CSV-ээр татагдана.
+
+## 15. Төхөөрөмж (Chainway C5) стратеги
+
+Бүх логик DB талд (RPC+RLS) тул C5 = бас нэг клиент, sync давхарга хэрэггүй.
+Одоо: C5-ийн Chrome + keyboard-wedge (уншигч гар шиг бичдэг) горимоор
+vercel дээрх апп шууд ажиллана. Дараа (Ү5-Ү6): EpcBarcodeApp (Kotlin+Compose,
+Chainway DeviceAPI, github War0maN/EpcBarcodeApp) Supabase-т холбогдож bulk
+уншилт (хүлээн авалт, тооллого), дутуу барааг Geiger/Gen2 Select-ээр хайх,
+скангийн эх сурвалж (device/manual) ялгах.

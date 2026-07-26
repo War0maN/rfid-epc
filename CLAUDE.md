@@ -28,7 +28,9 @@ RFID EPC Generator: Vite + React 19 + TS + Tailwind + Supabase (Postgres/RLS/Aut
 ## Client хэв маягууд (src/)
 
 - **i18n (MN/EN/ZH):** react-i18next; толь = `src/i18n/locales/{mn,en,zh}/<секц>.ts` (нэг секц = нэг домэйн, aggregator index.ts). Компонентод `useTranslation()` + `t("секц.түлхүүр")`; lib-д алдааны мессежийг **функц дотор** `i18n.t(...)` (module-level const-д хэзээ ч биш); `Record<код, нэр>` label map-уудыг `labelMap()` (src/i18n/labelMap.ts) — утга нь түлхүүр, уншилт бүрд идэвхтэй хэлээр, дуудагч талын API өөрчлөгдөхгүй. Хэл солигч header + Login (localStorage `lang`, default mn). Орчуулахгүй: DB raise exception passthrough, DB-д хадгалагддаг утга, Excel толгойн synonym, шошгон дээр хэвлэгдэх текст, динамик attribute баганын нэр, комментууд. Шинэ UI текст нэмэхдээ 3 хэлэнд зэрэг нэм (түлхүүрийн олонлог ижил байх ёстой).
-- **lib/ = логик, components/ = UI.** Нэг ойлголт = нэг эх сурвалж: `epcStatus.ts` (статус код↔нэр↔badge), `transactions.ts` (TX_TYPE_LABEL...), `permissions.ts` (эрхийн каталог + makeCan), `epcHistory.ts` (EVENT_META), `format.ts` (formatMoney/parseMoney).
+- **lib/ = логик, components/ = UI.** Нэг ойлголт = нэг эх сурвалж: `epcStatus.ts` (статус код↔нэр↔badge), `transactions.ts` (TX_TYPE_LABEL...), `permissions.ts` (эрхийн каталог + makeCan), `epcHistory.ts` (EVENT_META), `format.ts` (formatMoney/parseMoney), `receiving.ts` (хүлээн авалт), `stocktake.ts` (тооллого).
+- **Баталгаажуулалт ҮРГЭЛЖ `ConfirmDialog` компонентоор** — `window.confirm` ХОРИОТОЙ (Chrome чимээгүй хаадаг тул товч "ажиллахгүй" мэт болдог; 2026-07-26-нд бүгдийг сольсон).
+- **Скан урсгалын хэв маяг (Хүлээн авалт + Тооллого, ирээдүйн C5 native апп ч ижил):** сервер талд idempotent scans хүснэгт (ажил+epc_hex PK — дахин илгээхэд алгасна, олон уншигч зэрэг болно) + ангилдаг RPC + progress view; клиент 500-аар багцалж илгээнэ. Тооллого hex-ээр шууд тулгана (задлахгүй — GID ч хамрагдана), хүлээн авалт `sgtin96_decode`-оор GTIN болгож тулгана. Системд бүртгэлгүй таг тооллогод огт харагдахгүй (DB-д бичигдэвч нуугдана). Системийн үүсгэх serial үйлдвэрийнхээс ХАРААТ БУС өөрийн дэсээ явна (тоолуур гадны serial-аар урагшлахгүй).
 - **Тоо харуулах:** үнэ/тоо мянгатын таслалтай (`formatMoney`) — гэхдээ column `get()` ТҮҮХИЙ утга буцаана (эрэмбэ/шүүлт эвдрэхгүй), форматыг render дээр. **CSV export үргэлж түүхий тоо** (Excel-д танигдана).
 - **Хүснэгтийн загвар** (ProductList/Inventory/EpcTable): ColDef массив, client-side шүүлт/эрэмбэ/хуудас (EpcTable нь server-side: `epc_full` view + `fetchEpcPage`), багана нуух localStorage, толгойн шошго тогтмол өндөр (min-h-[32px]) + баганын босоо зааг.
 - **Дэд таб хэв маяг:** App.tsx (Бүтээгдэхүүн=жагсаалт/ангилал, Бараа(EPC)=жагсаалт/хайлт), Transactions (гүйлгээ/түүх) — ижил border-b-2 таб бар.
@@ -39,5 +41,7 @@ RFID EPC Generator: Vite + React 19 + TS + Tailwind + Supabase (Postgres/RLS/Aut
 
 ## Хийгдээгүй / мэдэгдэж буй хязгаарлалт
 
-- Урилга имэйл илгээдэггүй (уригдсан хүн өөрөө бүртгүүлдэг); deploy хийгдээгүй (localhost).
-- Тооллого (stocktake) хийгдээгүй.
+- Deploy: **https://rfid-epc.vercel.app** (Vercel team "chipmo", main push бүрт авто-deploy; заавар docs/deploy.md). Resend SMTP тохируулаагүй — built-in имэйл цагт ~2-4 хязгаартай.
+- Урилга имэйл илгээдэггүй (уригдсан хүн өөрөө бүртгүүлдэг).
+- C5 гар уншигч: browser + keyboard-wedge горимоор ажиллаж байгаа; native апп (github War0maN/EpcBarcodeApp, Kotlin+Compose+Chainway SDK) Supabase-т ХАРААХАН холбогдоогүй (Ү5).
+- Тооллогын скан "гараар/төхөөрөмжөөр" эх сурвалжийн ялгаа алга (Ү6-д stocktake_scans.source нэмнэ — залилангаас сэргийлнэ).
