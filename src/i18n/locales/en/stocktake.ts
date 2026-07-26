@@ -45,6 +45,9 @@ export default {
   writeOffHint:
     "Write-off sets the missing EPCs to 'Other' (a real transaction is recorded with a note — nothing is deleted). Admin only.",
   writeOffConfirm: "Write off {{n}} missing EPCs as 'Other'? This is recorded in history.",
-  writeOffReason: "Stocktake {{number}}: shortage",
+  writeOffPrefix: "Stocktake {{number}}",
+  writeOffReasonLabel: "Write-off reason (required)",
+  writeOffReasonPlaceholder: "E.g. lost, damaged, not found…",
+  openExists: "This branch already has an open stocktake ({{number}}) — close it first.",
   writeOffDone: "{{n}} EPCs written off (Other).",
 };

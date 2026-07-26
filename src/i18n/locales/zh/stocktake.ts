@@ -42,6 +42,9 @@ export default {
   writeOffBtn: "核销短缺（{{n}}）",
   writeOffHint: "核销会将短缺 EPC 置为“其他”状态（记录真实交易并附备注——不会删除任何数据）。仅管理员可操作。",
   writeOffConfirm: "将 {{n}} 个短缺 EPC 核销为“其他”？此操作将记入历史。",
-  writeOffReason: "盘点 {{number}}：短缺",
+  writeOffPrefix: "盘点 {{number}}",
+  writeOffReasonLabel: "核销原因（必填）",
+  writeOffReasonPlaceholder: "例如：丢失、损坏、未找到…",
+  openExists: "该分店已有进行中的盘点（{{number}}）——请先关闭。",
   writeOffDone: "已核销 {{n}} 个 EPC（其他）。",
 };

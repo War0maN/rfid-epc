@@ -6,6 +6,9 @@ import { errorMessage } from "../lib/errorMessage";
 import { normalizeEpc } from "../lib/epc";
 import { STATUS_LABEL, badgeOf } from "../lib/epcStatus";
 import ConfirmDialog from "./ConfirmDialog";
+import { supabase } from "../lib/supabaseClient";
+import { toCsv, downloadCsv } from "../lib/exportCsv";
+import { logAuditEvent } from "../lib/audit";
 import {
   listStocktakes,
   createStocktake,
@@ -53,6 +56,9 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
   const [missing, setMissing] = useState<MissingEpc[]>([]);
   // Дутуу/Илүү картын тоон дээр дарахад нээгдэх дэлгэрэнгүй модал
   const [detailModal, setDetailModal] = useState<"missing" | "extras" | null>(null);
+  // Актлах сонголт (epc_id) + заавал бичих тайлбар
+  const [woChecked, setWoChecked] = useState<Set<string>>(new Set());
+  const [woReason, setWoReason] = useState("");
   // Баталгаажуулах модал (window.confirm найдваргүй — ConfirmDialog ашиглана)
   const [confirmDlg, setConfirmDlg] = useState<{
     message: string;
@@ -127,6 +133,12 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
       setError(t("stocktake.branchRequired"));
       return;
     }
+    // Нэг салбарт нэг л нээлттэй тооллого — DB ч хориглоно, энд найрсаг сануулна.
+    const openSame = items.find((s) => s.branch_id === branchId && s.status === "open");
+    if (openSame) {
+      setError(t("stocktake.openExists", { number: openSame.number }));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -192,21 +204,26 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
   }
 
   function handleWriteOff() {
-    if (!current || missing.length === 0) return;
+    if (!current) return;
     const cur = current;
+    const ids = missing.filter((m) => woChecked.has(m.epc_id)).map((m) => m.epc_id);
+    const reason = woReason.trim();
+    if (ids.length === 0 || !reason) return; // товч ч идэвхгүй байдаг
     setConfirmDlg({
-      message: t("stocktake.writeOffConfirm", { n: missing.length }),
+      message: t("stocktake.writeOffConfirm", { n: ids.length }),
       danger: true,
       action: async () => {
         setBusy(true);
         setError(null);
         try {
+          // Түүхэнд: "Тооллого ST-0001: <хэрэглэгчийн тайлбар>"
           const n = await writeOffMissing(
-            missing.map((m) => m.epc_id),
-            t("stocktake.writeOffReason", { number: cur.number })
+            ids,
+            `${t("stocktake.writeOffPrefix", { number: cur.number })}: ${reason}`
           );
           setInfo(t("stocktake.writeOffDone", { n }));
           setDetailModal(null);
+          setWoReason("");
           loadDetail(cur.id);
         } catch (e) {
           setError(errorMessage(e));
@@ -214,6 +231,87 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
           setBusy(false);
         }
       },
+    });
+  }
+
+  // ----- CSV татах (түүхий утгууд — Excel-д танигдана) -----
+  function exportProgress() {
+    if (!current) return;
+    const csv = toCsv(
+      progress.map((p) => ({
+        name: p.name ?? "",
+        sku: p.sku ?? "",
+        barcode: p.gtin ?? "",
+        expected: p.expected,
+        found: p.found,
+        missing: p.expected - p.found,
+      })),
+      [
+        { key: "name", label: t("common.product") },
+        { key: "sku", label: "SKU" },
+        { key: "barcode", label: t("common.barcode") },
+        { key: "expected", label: t("stocktake.colExpected") },
+        { key: "found", label: t("stocktake.colFound") },
+        { key: "missing", label: t("stocktake.colMissing") },
+      ]
+    );
+    downloadCsv(`stocktake-${current.number}.csv`, csv);
+    void logAuditEvent(supabase, "export_csv", "report", null, {
+      report: "stocktake",
+      number: current.number,
+    });
+  }
+
+  function exportMissing() {
+    if (!current) return;
+    const csv = toCsv(
+      missing.map((m) => {
+        const p = productInfo.get(m.product_id);
+        return {
+          name: p?.name ?? "",
+          sku: p?.sku ?? "",
+          barcode: p?.gtin ?? "",
+          epc: m.epc_hex,
+        };
+      }),
+      [
+        { key: "name", label: t("common.product") },
+        { key: "sku", label: "SKU" },
+        { key: "barcode", label: t("common.barcode") },
+        { key: "epc", label: "EPC" },
+      ]
+    );
+    downloadCsv(`stocktake-${current.number}-missing.csv`, csv);
+    void logAuditEvent(supabase, "export_csv", "report", null, {
+      report: "stocktake_missing",
+      number: current.number,
+    });
+  }
+
+  function exportExtras() {
+    if (!current) return;
+    const csv = toCsv(
+      extras.map((s) => ({
+        name: s.name ?? "",
+        sku: s.sku ?? "",
+        barcode: s.gtin ?? "",
+        epc: s.epc_hex,
+        status: s.status ? (STATUS_LABEL[s.status as keyof typeof STATUS_LABEL] ?? s.status) : "",
+        branch: s.status ? branchName(s.branch_id) : "",
+      })),
+      [
+        { key: "name", label: t("common.product") },
+        { key: "sku", label: "SKU" },
+        { key: "barcode", label: t("common.barcode") },
+        { key: "epc", label: "EPC" },
+        { key: "status", label: t("common.status") },
+        { key: "branch", label: t("common.branch") },
+      ]
+    );
+    downloadCsv(`stocktake-${current.number}-extra.csv`, csv);
+    void logAuditEvent(supabase, "export_csv", "report", null, {
+      report: "stocktake_extra",
+      number: current.number,
     });
   }
 
@@ -231,18 +329,14 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
   );
 
   // Дутуу жагсаалтын бараа мэдээлэл — snapshot-ын бүх бараа progress-д бий.
-  const productInfo = useMemo(
-    () => new Map(progress.map((p) => [p.product_id, p])),
-    [progress]
-  );
-  const branchName = useCallback(
-    (id: string | null) => branches.find((b) => b.id === id)?.name ?? "—",
-    [branches]
-  );
+  // (Жижиг тул memo хэрэггүй — React Compiler өөрөө оновчилно.)
+  const productInfo = new Map(progress.map((p) => [p.product_id, p]));
+  const branchName = (id: string | null) => branches.find((b) => b.id === id)?.name ?? "—";
 
   // ============ Дэлгэрэнгүй ============
   if (current) {
     const missingTotal = totals.expected - totals.found;
+    const canWriteOff = current.status === "closed" && isAdmin;
     return (
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -269,6 +363,9 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
             </p>
           </div>
           <div className="flex-1" />
+          <button onClick={exportProgress} disabled={progress.length === 0} className={btn}>
+            {t("common.exportCsv")}
+          </button>
           {current.status === "open" && canAct && (
             <button onClick={handleClose} disabled={busy} className={primaryBtn}>
               {t("stocktake.closeBtn")}
@@ -293,7 +390,13 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
             </p>
           </div>
           <button
-            onClick={() => missingTotal > 0 && setDetailModal("missing")}
+            onClick={() => {
+              if (missingTotal === 0) return;
+              // Актлах сонголт: анхдагчаар бүгд чеклэгдсэн, тайлбар хоосон.
+              setWoChecked(new Set(missing.map((m) => m.epc_id)));
+              setWoReason("");
+              setDetailModal("missing");
+            }}
             disabled={missingTotal === 0}
             className={
               "rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm " +
@@ -418,6 +521,19 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr>
+                      {canWriteOff && (
+                        <th className={th + " w-8"}>
+                          <input
+                            type="checkbox"
+                            checked={woChecked.size === missing.length && missing.length > 0}
+                            onChange={(e) =>
+                              setWoChecked(
+                                e.target.checked ? new Set(missing.map((m) => m.epc_id)) : new Set()
+                              )
+                            }
+                          />
+                        </th>
+                      )}
                       <th className={th}>{t("common.product")}</th>
                       <th className={th}>SKU</th>
                       <th className={th}>{t("common.barcode")}</th>
@@ -429,6 +545,22 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
                       const p = productInfo.get(m.product_id);
                       return (
                         <tr key={m.epc_id} className="hover:bg-slate-50">
+                          {canWriteOff && (
+                            <td className={td}>
+                              <input
+                                type="checkbox"
+                                checked={woChecked.has(m.epc_id)}
+                                onChange={(e) =>
+                                  setWoChecked((s) => {
+                                    const n = new Set(s);
+                                    if (e.target.checked) n.add(m.epc_id);
+                                    else n.delete(m.epc_id);
+                                    return n;
+                                  })
+                                }
+                              />
+                            </td>
+                          )}
                           <td className={td}>{p?.name || "—"}</td>
                           <td className={td + " font-mono"}>{p?.sku || "—"}</td>
                           <td className={td + " font-mono"}>{p?.gtin || "—"}</td>
@@ -439,20 +571,32 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
                   </tbody>
                 </table>
               </div>
-              {current.status === "closed" && isAdmin && (
-                <p className="mt-2 text-xs text-amber-700">{t("stocktake.writeOffHint")}</p>
+              {canWriteOff && (
+                <div className="mt-3">
+                  <label className={lbl}>{t("stocktake.writeOffReasonLabel")}</label>
+                  <input
+                    value={woReason}
+                    onChange={(e) => setWoReason(e.target.value)}
+                    placeholder={t("stocktake.writeOffReasonPlaceholder")}
+                    className={ctl + " w-full"}
+                  />
+                  <p className="mt-1 text-xs text-amber-700">{t("stocktake.writeOffHint")}</p>
+                </div>
               )}
-              <div className="mt-3 flex justify-end gap-2">
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                <button onClick={exportMissing} className={btn}>
+                  {t("common.exportCsv")}
+                </button>
                 <button onClick={() => setDetailModal(null)} className={btn}>
                   {t("common.close")}
                 </button>
-                {current.status === "closed" && isAdmin && missing.length > 0 && (
+                {canWriteOff && (
                   <button
                     onClick={handleWriteOff}
-                    disabled={busy}
+                    disabled={busy || woChecked.size === 0 || !woReason.trim()}
                     className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
                   >
-                    {t("stocktake.writeOffBtn", { n: missing.length })}
+                    {t("stocktake.writeOffBtn", { n: woChecked.size })}
                   </button>
                 )}
               </div>
@@ -507,7 +651,10 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
                   </tbody>
                 </table>
               </div>
-              <div className="mt-3 flex justify-end">
+              <div className="mt-3 flex justify-end gap-2">
+                <button onClick={exportExtras} className={btn}>
+                  {t("common.exportCsv")}
+                </button>
                 <button onClick={() => setDetailModal(null)} className={btn}>
                   {t("common.close")}
                 </button>
