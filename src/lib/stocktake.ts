@@ -32,13 +32,20 @@ export interface StocktakeProgressRow {
   found: number;
   name: string | null;
   sku: string | null;
+  gtin: string | null;
 }
 
-export interface StocktakeExtra {
+/** Илүү олдсон/танигдаагүй уншилт — барааны мэдээлэл + одоогийн төлөвтэй нь.
+ *  Төлөв нь ЯАГААД илүү болохыг тайлбарлана: Борлуулсан (шошго хаягдсан),
+ *  Бусад гүйлгээ (актлаад хадгалсан), өөр салбарын Идэвхтэй г.м. */
+export interface StocktakeExtraDetail {
   epc_hex: string;
   outcome: StocktakeOutcome;
-  product_id: string | null;
-  scanned_at: string;
+  name: string | null;
+  sku: string | null;
+  gtin: string | null;
+  status: string | null; // epcStatus код (unknown таг-д null)
+  branch_id: string | null;
 }
 
 export interface MissingEpc {
@@ -101,31 +108,77 @@ export async function fetchStocktakeProgress(stocktakeId: string): Promise<Stock
 
   const { data: prods, error: pErr } = await supabase
     .from("products")
-    .select("id, name, sku")
+    .select("id, name, sku, gtin")
     .in("id", rows.map((r) => r.product_id));
   if (pErr) throw pErr;
   const pMap = new Map(
-    ((prods ?? []) as { id: string; name: string | null; sku: string | null }[]).map((p) => [p.id, p])
+    ((prods ?? []) as { id: string; name: string | null; sku: string | null; gtin: string | null }[]).map(
+      (p) => [p.id, p]
+    )
   );
   return rows
     .map((r) => ({
       ...r,
       name: pMap.get(r.product_id)?.name ?? null,
       sku: pMap.get(r.product_id)?.sku ?? null,
+      gtin: pMap.get(r.product_id)?.gtin ?? null,
     }))
     .sort((a, b) => (b.expected - b.found) - (a.expected - a.found) || (a.name ?? "").localeCompare(b.name ?? ""));
 }
 
-/** Илүү олдсон/танигдаагүй уншилтууд. */
-export async function fetchStocktakeExtras(stocktakeId: string): Promise<StocktakeExtra[]> {
+/** Илүү олдсон/танигдаагүй уншилтууд — бараа + одоогийн төлөв/салбартай нь. */
+export async function fetchStocktakeExtras(stocktakeId: string): Promise<StocktakeExtraDetail[]> {
   const { data, error } = await supabase
     .from("stocktake_scans")
-    .select("epc_hex, outcome, product_id, scanned_at")
+    .select("epc_hex, outcome, epc_id, product_id")
     .eq("stocktake_id", stocktakeId)
     .neq("outcome", "found")
     .order("scanned_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as StocktakeExtra[];
+  const scans = (data ?? []) as {
+    epc_hex: string; outcome: StocktakeOutcome; epc_id: string | null; product_id: string | null;
+  }[];
+  if (scans.length === 0) return [];
+
+  const epcIds = scans.map((s) => s.epc_id).filter((x): x is string => !!x);
+  const epcMap = new Map<string, { status: string; branch_id: string | null; product_id: string }>();
+  for (let i = 0; i < epcIds.length; i += 500) {
+    const { data: epcs, error: eErr } = await supabase
+      .from("epc_codes")
+      .select("id, status, branch_id, product_id")
+      .in("id", epcIds.slice(i, i + 500));
+    if (eErr) throw eErr;
+    for (const e of (epcs ?? []) as { id: string; status: string; branch_id: string | null; product_id: string }[]) {
+      epcMap.set(e.id, e);
+    }
+  }
+
+  const prodIds = [...new Set([...epcMap.values()].map((e) => e.product_id))];
+  const pMap = new Map<string, { name: string | null; sku: string | null; gtin: string | null }>();
+  if (prodIds.length > 0) {
+    const { data: prods, error: pErr } = await supabase
+      .from("products")
+      .select("id, name, sku, gtin")
+      .in("id", prodIds);
+    if (pErr) throw pErr;
+    for (const p of (prods ?? []) as { id: string; name: string | null; sku: string | null; gtin: string | null }[]) {
+      pMap.set(p.id, p);
+    }
+  }
+
+  return scans.map((s) => {
+    const e = s.epc_id ? epcMap.get(s.epc_id) : undefined;
+    const p = e ? pMap.get(e.product_id) : undefined;
+    return {
+      epc_hex: s.epc_hex,
+      outcome: s.outcome,
+      name: p?.name ?? null,
+      sku: p?.sku ?? null,
+      gtin: p?.gtin ?? null,
+      status: e?.status ?? null,
+      branch_id: e?.branch_id ?? null,
+    };
+  });
 }
 
 /** Дутуу (тоологдоогүй) EPC-үүд — cap-тай (жагсаалт харуулах + актлахад). */

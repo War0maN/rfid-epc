@@ -4,6 +4,7 @@ import { listBranches, type Branch } from "../lib/branches";
 import { makeCan } from "../lib/permissions";
 import { errorMessage } from "../lib/errorMessage";
 import { normalizeEpc } from "../lib/epc";
+import { STATUS_LABEL, badgeOf } from "../lib/epcStatus";
 import {
   listStocktakes,
   createStocktake,
@@ -15,7 +16,7 @@ import {
   writeOffMissing,
   type StocktakeListItem,
   type StocktakeProgressRow,
-  type StocktakeExtra,
+  type StocktakeExtraDetail,
   type StocktakeScanCounts,
   type MissingEpc,
 } from "../lib/stocktake";
@@ -47,10 +48,10 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
 
   const [current, setCurrent] = useState<StocktakeListItem | null>(null);
   const [progress, setProgress] = useState<StocktakeProgressRow[]>([]);
-  const [extras, setExtras] = useState<StocktakeExtra[]>([]);
+  const [extras, setExtras] = useState<StocktakeExtraDetail[]>([]);
   const [missing, setMissing] = useState<MissingEpc[]>([]);
-  const [showExtras, setShowExtras] = useState(false);
-  const [showMissing, setShowMissing] = useState(false);
+  // Дутуу/Илүү картын тоон дээр дарахад нээгдэх дэлгэрэнгүй модал
+  const [detailModal, setDetailModal] = useState<"missing" | "extras" | null>(null);
   const [scanValue, setScanValue] = useState("");
   const [lastResult, setLastResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -107,6 +108,7 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
     setProgress([]);
     setExtras([]);
     setMissing([]);
+    setDetailModal(null);
     setLastResult(null);
     setError(null);
     setInfo(null);
@@ -209,9 +211,14 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
     [progress]
   );
 
-  const productName = useCallback(
-    (id: string | null) => progress.find((p) => p.product_id === id)?.name ?? null,
+  // Дутуу жагсаалтын бараа мэдээлэл — snapshot-ын бүх бараа progress-д бий.
+  const productInfo = useMemo(
+    () => new Map(progress.map((p) => [p.product_id, p])),
     [progress]
+  );
+  const branchName = useCallback(
+    (id: string | null) => branches.find((b) => b.id === id)?.name ?? "—",
+    [branches]
   );
 
   // ============ Дэлгэрэнгүй ============
@@ -253,18 +260,51 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
         {info && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{info}</p>}
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-        {/* Нийлбэр картууд */}
+        {/* Нийлбэр картууд — Дутуу/Илүүгийн тоон дээр дарж дэлгэрэнгүй харна */}
         <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: t("stocktake.cardExpected"), value: totals.expected, cls: "text-slate-900" },
-            { label: t("stocktake.cardFound"), value: totals.found, cls: "text-emerald-700" },
-            { label: t("stocktake.cardMissing"), value: missingTotal, cls: missingTotal > 0 ? "text-amber-700" : "text-emerald-700" },
-          ].map((c) => (
-            <div key={c.label} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{c.label}</p>
-              <p className={"mt-1 text-2xl font-semibold tabular-nums " + c.cls}>{c.value.toLocaleString()}</p>
-            </div>
-          ))}
+          <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {t("stocktake.cardFoundExpected")}
+            </p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
+              <span className={totals.found === totals.expected ? "text-emerald-700" : ""}>
+                {totals.found.toLocaleString()}
+              </span>
+              <span className="text-slate-400">/{totals.expected.toLocaleString()}</span>
+            </p>
+          </div>
+          <button
+            onClick={() => missingTotal > 0 && setDetailModal("missing")}
+            disabled={missingTotal === 0}
+            className={
+              "rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm " +
+              (missingTotal > 0 ? "cursor-pointer hover:border-amber-300 hover:bg-amber-50/40" : "")
+            }
+            title={missingTotal > 0 ? t("stocktake.clickForDetail") : undefined}
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {t("stocktake.cardMissing")}
+            </p>
+            <p className={"mt-1 text-2xl font-semibold tabular-nums " + (missingTotal > 0 ? "text-amber-700 underline decoration-dotted underline-offset-4" : "text-emerald-700")}>
+              {missingTotal.toLocaleString()}
+            </p>
+          </button>
+          <button
+            onClick={() => extras.length > 0 && setDetailModal("extras")}
+            disabled={extras.length === 0}
+            className={
+              "rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm " +
+              (extras.length > 0 ? "cursor-pointer hover:border-sky-300 hover:bg-sky-50/40" : "")
+            }
+            title={extras.length > 0 ? t("stocktake.clickForDetail") : undefined}
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {t("stocktake.cardExtra")}
+            </p>
+            <p className={"mt-1 text-2xl font-semibold tabular-nums " + (extras.length > 0 ? "text-sky-700 underline decoration-dotted underline-offset-4" : "text-slate-900")}>
+              {extras.length.toLocaleString()}
+            </p>
+          </button>
         </div>
 
         {/* Скан оролт */}
@@ -296,6 +336,7 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
               <tr>
                 <th className={th}>{t("common.product")}</th>
                 <th className={th}>SKU</th>
+                <th className={th}>{t("common.barcode")}</th>
                 <th className={th + " text-right"}>{t("stocktake.colExpected")}</th>
                 <th className={th + " text-right"}>{t("stocktake.colFound")}</th>
                 <th className={th + " text-right"}>{t("stocktake.colMissing")}</th>
@@ -304,7 +345,7 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
             <tbody>
               {progress.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
                     {t("common.loading")}
                   </td>
                 </tr>
@@ -316,6 +357,7 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
                       <tr key={p.product_id} className="hover:bg-slate-50">
                         <td className={td}>{p.name || "—"}</td>
                         <td className={td + " font-mono"}>{p.sku || "—"}</td>
+                        <td className={td + " font-mono"}>{p.gtin || "—"}</td>
                         <td className={td + " text-right tabular-nums"}>{p.expected}</td>
                         <td className={td + " text-right tabular-nums " + (p.found > 0 ? "text-emerald-700" : "")}>
                           {p.found}
@@ -329,6 +371,7 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
                   <tr className="bg-slate-50 font-semibold">
                     <td className={td}>{t("stocktake.total")}</td>
                     <td className={td} />
+                    <td className={td} />
                     <td className={td + " text-right tabular-nums"}>{totals.expected}</td>
                     <td className={td + " text-right tabular-nums"}>{totals.found}</td>
                     <td className={td + " text-right tabular-nums"}>{missingTotal}</td>
@@ -339,57 +382,120 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
           </table>
         </div>
 
-        {/* Дутуу жагсаалт + актлах */}
-        {missing.length > 0 && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => setShowMissing((s) => !s)}
-                className="text-sm font-medium text-amber-800"
-              >
-                {showMissing ? "▾" : "▸"} {t("stocktake.missingTitle", { n: missing.length })}
-              </button>
-              <div className="flex-1" />
+        {/* Дутуугийн дэлгэрэнгүй модал */}
+        {detailModal === "missing" && (
+          <div
+            className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4"
+            onClick={() => setDetailModal(null)}
+          >
+            <div
+              className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl bg-white p-5 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="font-semibold text-slate-900">
+                {t("stocktake.missingTitle", { n: missing.length })}
+              </h3>
+              <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr>
+                      <th className={th}>{t("common.product")}</th>
+                      <th className={th}>SKU</th>
+                      <th className={th}>{t("common.barcode")}</th>
+                      <th className={th}>EPC</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {missing.map((m) => {
+                      const p = productInfo.get(m.product_id);
+                      return (
+                        <tr key={m.epc_id} className="hover:bg-slate-50">
+                          <td className={td}>{p?.name || "—"}</td>
+                          <td className={td + " font-mono"}>{p?.sku || "—"}</td>
+                          <td className={td + " font-mono"}>{p?.gtin || "—"}</td>
+                          <td className={td + " font-mono"}>{m.epc_hex}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
               {current.status === "closed" && isAdmin && (
-                <button onClick={handleWriteOff} disabled={busy} className={btn + " border-amber-300 text-amber-800"}>
-                  {t("stocktake.writeOffBtn", { n: missing.length })}
-                </button>
+                <p className="mt-2 text-xs text-amber-700">{t("stocktake.writeOffHint")}</p>
               )}
+              <div className="mt-3 flex justify-end gap-2">
+                <button onClick={() => setDetailModal(null)} className={btn}>
+                  {t("common.close")}
+                </button>
+                {current.status === "closed" && isAdmin && missing.length > 0 && (
+                  <button
+                    onClick={handleWriteOff}
+                    disabled={busy}
+                    className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {t("stocktake.writeOffBtn", { n: missing.length })}
+                  </button>
+                )}
+              </div>
             </div>
-            {current.status === "closed" && isAdmin && (
-              <p className="mt-1 text-xs text-amber-700">{t("stocktake.writeOffHint")}</p>
-            )}
-            {showMissing && (
-              <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto text-xs text-slate-700">
-                {missing.map((m) => (
-                  <li key={m.epc_id} className="font-mono">
-                    {m.epc_hex}
-                    <span className="ml-2 font-sans text-slate-500">{productName(m.product_id) ?? ""}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
         )}
 
-        {/* Илүү олдсон / танигдаагүй */}
-        {extras.length > 0 && (
-          <div className="rounded-xl border border-sky-200 bg-sky-50/40 p-4">
-            <button onClick={() => setShowExtras((s) => !s)} className="text-sm font-medium text-sky-800">
-              {showExtras ? "▾" : "▸"} {t("stocktake.extrasTitle", { n: extras.length })}
-            </button>
-            {showExtras && (
-              <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto text-xs text-slate-700">
-                {extras.map((s) => (
-                  <li key={s.epc_hex} className="font-mono">
-                    {s.epc_hex}
-                    <span className="ml-2 font-sans text-slate-500">
-                      {t(`stocktake.outcome.${s.outcome}`)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+        {/* Илүүгийн дэлгэрэнгүй модал — төлөв нь ЯАГААД илүү болохыг тайлбарлана */}
+        {detailModal === "extras" && (
+          <div
+            className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4"
+            onClick={() => setDetailModal(null)}
+          >
+            <div
+              className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-xl bg-white p-5 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="font-semibold text-slate-900">
+                {t("stocktake.extrasTitle", { n: extras.length })}
+              </h3>
+              <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr>
+                      <th className={th}>{t("common.product")}</th>
+                      <th className={th}>SKU</th>
+                      <th className={th}>{t("common.barcode")}</th>
+                      <th className={th}>EPC</th>
+                      <th className={th}>{t("common.status")}</th>
+                      <th className={th}>{t("common.branch")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {extras.map((s) => (
+                      <tr key={s.epc_hex} className="hover:bg-slate-50">
+                        <td className={td}>{s.name || "—"}</td>
+                        <td className={td + " font-mono"}>{s.sku || "—"}</td>
+                        <td className={td + " font-mono"}>{s.gtin || "—"}</td>
+                        <td className={td + " font-mono"}>{s.epc_hex}</td>
+                        <td className={td}>
+                          {s.status ? (
+                            <span className={"whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium " + badgeOf(s.status)}>
+                              {STATUS_LABEL[s.status as keyof typeof STATUS_LABEL] ?? s.status}
+                            </span>
+                          ) : (
+                            <span className="whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-500">
+                              {t("stocktake.extraUnknown")}
+                            </span>
+                          )}
+                        </td>
+                        <td className={td}>{s.status ? branchName(s.branch_id) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button onClick={() => setDetailModal(null)} className={btn}>
+                  {t("common.close")}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

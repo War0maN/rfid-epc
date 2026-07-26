@@ -18,9 +18,11 @@ export default {
   createdInfo: "Тооллого эхэллээ — уншуулж эхлээрэй.",
 
   backToList: "Жагсаалт",
-  cardExpected: "Бүртгэлтэй",
-  cardFound: "Тоологдсон",
+  cardFoundExpected: "Тоологдсон / Бүртгэлтэй",
   cardMissing: "Дутуу",
+  cardExtra: "Илүү",
+  clickForDetail: "Дарж дэлгэрэнгүй харна",
+  extraUnknown: "Танигдаагүй",
   scanLabel: "EPC уншуулах (уншигчаар эсвэл бичиж Enter; олныг зэрэг paste хийж болно)",
   scanBtn: "Илгээх",
   scanInvalid: "Буруу EPC: {{token}}",
@@ -39,8 +41,8 @@ export default {
     unknown: "системд огт бүртгэлгүй",
   },
 
-  missingTitle: "Дутуу EPC ({{n}})",
-  extrasTitle: "Илүү олдсон / танигдаагүй ({{n}})",
+  missingTitle: "Дутуу ({{n}})",
+  extrasTitle: "Илүү тоологдсон ({{n}})",
 
   closeBtn: "Хаах",
   closeConfirmText: "Тооллогыг хаах уу? Хаасны дараа уншилт нэмэх боломжгүй.",

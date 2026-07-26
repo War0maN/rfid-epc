@@ -17,9 +17,11 @@ export default {
   createdInfo: "Stocktake started — begin scanning.",
 
   backToList: "Back to list",
-  cardExpected: "Expected",
-  cardFound: "Counted",
+  cardFoundExpected: "Counted / Expected",
   cardMissing: "Missing",
+  cardExtra: "Extra",
+  clickForDetail: "Click for details",
+  extraUnknown: "Unknown",
   scanLabel: "Scan EPC (reader or type + Enter; paste multiple at once)",
   scanBtn: "Submit",
   scanInvalid: "Invalid EPC: {{token}}",
@@ -38,8 +40,8 @@ export default {
     unknown: "not registered in the system",
   },
 
-  missingTitle: "Missing EPCs ({{n}})",
-  extrasTitle: "Unexpected / unknown ({{n}})",
+  missingTitle: "Missing ({{n}})",
+  extrasTitle: "Extras ({{n}})",
 
   closeBtn: "Close",
   closeConfirmText: "Close this stocktake? No more scans can be added afterwards.",

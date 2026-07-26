@@ -15,9 +15,11 @@ export default {
   createdInfo: "盘点已开始——请开始扫描。",
 
   backToList: "返回列表",
-  cardExpected: "应盘",
-  cardFound: "已盘",
+  cardFoundExpected: "已盘 / 应盘",
   cardMissing: "短缺",
+  cardExtra: "多出",
+  clickForDetail: "点击查看详情",
+  extraUnknown: "未知",
   scanLabel: "扫描 EPC（扫描枪或输入后回车；可一次粘贴多个）",
   scanBtn: "提交",
   scanInvalid: "无效 EPC：{{token}}",
@@ -36,8 +38,8 @@ export default {
     unknown: "系统中未登记",
   },
 
-  missingTitle: "短缺 EPC（{{n}}）",
-  extrasTitle: "多出 / 未知（{{n}}）",
+  missingTitle: "短缺（{{n}}）",
+  extrasTitle: "多出（{{n}}）",
 
   closeBtn: "关闭",
   closeConfirmText: "关闭本次盘点？关闭后无法再添加扫描。",
