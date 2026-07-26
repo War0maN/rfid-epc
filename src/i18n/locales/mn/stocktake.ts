@@ -22,7 +22,6 @@ export default {
   cardMissing: "Дутуу",
   cardExtra: "Илүү",
   clickForDetail: "Дарж дэлгэрэнгүй харна",
-  extraUnknown: "Танигдаагүй",
   scanLabel: "EPC уншуулах (уншигчаар эсвэл бичиж Enter; олныг зэрэг paste хийж болно)",
   scanBtn: "Илгээх",
   scanInvalid: "Буруу EPC: {{token}}",
@@ -33,13 +32,8 @@ export default {
 
   resFound: "Тоологдлоо: {{n}}",
   resNotExpected: "Илүү олдсон (энэ салбарын бүртгэлд алга): {{n}}",
-  resUnknown: "Танигдаагүй таг: {{n}}",
   resSkipped: "Өмнө илгээгдсэн: {{n}}",
   resNothing: "Шинэ уншилт алга.",
-  outcome: {
-    not_expected: "системд бүртгэлтэй ч энэ тооллогод хүлээгдээгүй (өөр салбарын эсвэл Идэвхтэй биш)",
-    unknown: "системд огт бүртгэлгүй",
-  },
 
   missingTitle: "Дутуу ({{n}})",
   extrasTitle: "Илүү тоологдсон ({{n}})",

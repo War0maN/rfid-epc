@@ -21,6 +21,7 @@ import {
 } from "../lib/transactions";
 import { toCsv, downloadCsv } from "../lib/exportCsv";
 import { errorMessage } from "../lib/errorMessage";
+import ConfirmDialog from "./ConfirmDialog";
 import { makeCan, type Perm } from "../lib/permissions";
 
 interface Props {
@@ -69,6 +70,12 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Баталгаажуулах модал (window.confirm найдваргүй — ConfirmDialog ашиглана)
+  const [confirmDlg, setConfirmDlg] = useState<{
+    message: string;
+    action: () => void;
+    danger?: boolean;
+  } | null>(null);
 
   // Шинэ гүйлгээний төлөв
   const [txTypeState, setTxType] = useState<TxType>("sale");
@@ -273,34 +280,43 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
     }
   }
 
-  async function handleReceive(tx: TxRow) {
-    if (!window.confirm(t("transactions.receiveConfirm", { n: tx.item_count, branch: tx.to_branch_name ?? "?" }))) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await receiveTransfer(tx.id);
-      setInfo(t("transactions.receiveSuccess"));
-      reload();
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+  function handleReceive(tx: TxRow) {
+    setConfirmDlg({
+      message: t("transactions.receiveConfirm", { n: tx.item_count, branch: tx.to_branch_name ?? "?" }),
+      action: async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          await receiveTransfer(tx.id);
+          setInfo(t("transactions.receiveSuccess"));
+          reload();
+        } catch (e) {
+          setError(errorMessage(e));
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
   }
 
-  async function handleCancel(tx: TxRow) {
-    if (!window.confirm(t("transactions.cancelConfirm", { n: tx.item_count }))) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await cancelTransfer(tx.id);
-      setInfo(t("transactions.cancelSuccess"));
-      reload();
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+  function handleCancel(tx: TxRow) {
+    setConfirmDlg({
+      message: t("transactions.cancelConfirm", { n: tx.item_count }),
+      danger: true,
+      action: async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          await cancelTransfer(tx.id);
+          setInfo(t("transactions.cancelSuccess"));
+          reload();
+        } catch (e) {
+          setError(errorMessage(e));
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
   }
 
   function handleDetailExport() {
@@ -703,6 +719,20 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
             </div>
           </div>
         </div>
+      )}
+
+      {confirmDlg && (
+        <ConfirmDialog
+          message={confirmDlg.message}
+          danger={confirmDlg.danger}
+          busy={busy}
+          onCancel={() => setConfirmDlg(null)}
+          onConfirm={() => {
+            const a = confirmDlg.action;
+            setConfirmDlg(null);
+            a();
+          }}
+        />
       )}
     </div>
   );

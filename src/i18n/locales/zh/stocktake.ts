@@ -19,7 +19,6 @@ export default {
   cardMissing: "短缺",
   cardExtra: "多出",
   clickForDetail: "点击查看详情",
-  extraUnknown: "未知",
   scanLabel: "扫描 EPC（扫描枪或输入后回车；可一次粘贴多个）",
   scanBtn: "提交",
   scanInvalid: "无效 EPC：{{token}}",
@@ -30,13 +29,8 @@ export default {
 
   resFound: "已盘点：{{n}}",
   resNotExpected: "多出（不在本分店登记册中）：{{n}}",
-  resUnknown: "未知标签：{{n}}",
   resSkipped: "此前已提交：{{n}}",
   resNothing: "没有新的扫描。",
-  outcome: {
-    not_expected: "已在系统登记但不在本次盘点范围（其他分店或非有效状态）",
-    unknown: "系统中未登记",
-  },
 
   missingTitle: "短缺（{{n}}）",
   extrasTitle: "多出（{{n}}）",

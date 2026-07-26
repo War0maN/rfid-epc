@@ -8,6 +8,7 @@ import {
   type Branch,
 } from "../lib/branches";
 import { errorMessage } from "../lib/errorMessage";
+import ConfirmDialog from "./ConfirmDialog";
 
 const inp =
   "w-full rounded border border-slate-300 px-2 py-1 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200";
@@ -22,6 +23,8 @@ export default function Branches({ isAdmin }: Props) {
   const [rows, setRows] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Баталгаажуулах модал (window.confirm найдваргүй — ConfirmDialog ашиглана)
+  const [confirmDlg, setConfirmDlg] = useState<{ message: string; action: () => void } | null>(null);
 
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
@@ -73,10 +76,13 @@ export default function Branches({ isAdmin }: Props) {
       .catch((e) => setError(errorMessage(e)));
   }
   function remove(b: Branch) {
-    if (!window.confirm(t("branches.confirmDelete", { name: b.name }))) return;
-    deleteBranch(b.id)
-      .then(reload)
-      .catch((e) => setError(errorMessage(e)));
+    setConfirmDlg({
+      message: t("branches.confirmDelete", { name: b.name }),
+      action: () =>
+        deleteBranch(b.id)
+          .then(reload)
+          .catch((e) => setError(errorMessage(e))),
+    });
   }
 
   const th = "border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500";
@@ -152,6 +158,19 @@ export default function Branches({ isAdmin }: Props) {
           </tbody>
         </table>
       </div>
+
+      {confirmDlg && (
+        <ConfirmDialog
+          message={confirmDlg.message}
+          danger
+          onCancel={() => setConfirmDlg(null)}
+          onConfirm={() => {
+            const a = confirmDlg.action;
+            setConfirmDlg(null);
+            a();
+          }}
+        />
+      )}
     </div>
   );
 }

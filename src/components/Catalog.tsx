@@ -20,6 +20,7 @@ import {
   type AttrInputType,
 } from "../lib/catalog";
 import { errorMessage } from "../lib/errorMessage";
+import ConfirmDialog from "./ConfirmDialog";
 
 const inp =
   "w-full rounded border border-slate-300 px-2 py-1 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200";
@@ -41,6 +42,8 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
   const [attrs, setAttrs] = useState<AttributeDef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Баталгаажуулах модал (window.confirm найдваргүй — ConfirmDialog ашиглана)
+  const [confirmDlg, setConfirmDlg] = useState<{ message: string; action: () => void } | null>(null);
 
   // Ангилал нэмэх/нэр солих төлөв
   const [addParent, setAddParent] = useState<string | null | false>(false); // false=нэмэхгүй
@@ -168,10 +171,13 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
     const msg = c.children.length
       ? t("catalog.confirmDeleteCategoryWithChildren", { name: c.name })
       : t("catalog.confirmDeleteCategory", { name: c.name });
-    if (!window.confirm(msg)) return;
-    deleteCategory(c.id)
-      .then(reload)
-      .catch((e) => setError(errorMessage(e)));
+    setConfirmDlg({
+      message: msg,
+      action: () =>
+        deleteCategory(c.id)
+          .then(reload)
+          .catch((e) => setError(errorMessage(e))),
+    });
   }
 
   function renderNode(node: CategoryNode, depth: number): React.ReactNode {
@@ -352,6 +358,19 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
           />
         </div>
       </div>
+
+      {confirmDlg && (
+        <ConfirmDialog
+          message={confirmDlg.message}
+          danger
+          onCancel={() => setConfirmDlg(null)}
+          onConfirm={() => {
+            const a = confirmDlg.action;
+            setConfirmDlg(null);
+            a();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -373,12 +392,16 @@ function AttrList({
 }) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState<AttributeDef | "new" | null>(null);
+  const [confirmDlg, setConfirmDlg] = useState<{ message: string; action: () => void } | null>(null);
 
   function remove(a: AttributeDef) {
-    if (!window.confirm(t("catalog.confirmDeleteAttr", { label: a.label }))) return;
-    deleteAttributeDef(a.id)
-      .then(onChanged)
-      .catch((e) => onError(errorMessage(e)));
+    setConfirmDlg({
+      message: t("catalog.confirmDeleteAttr", { label: a.label }),
+      action: () =>
+        deleteAttributeDef(a.id)
+          .then(onChanged)
+          .catch((e) => onError(errorMessage(e))),
+    });
   }
 
   return (
@@ -435,6 +458,19 @@ function AttrList({
           {t("catalog.addAttr")}
         </button>
       ) : null}
+
+      {confirmDlg && (
+        <ConfirmDialog
+          message={confirmDlg.message}
+          danger
+          onCancel={() => setConfirmDlg(null)}
+          onConfirm={() => {
+            const a = confirmDlg.action;
+            setConfirmDlg(null);
+            a();
+          }}
+        />
+      )}
     </div>
   );
 }

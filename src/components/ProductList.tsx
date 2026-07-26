@@ -6,6 +6,7 @@ import { generateEpcsForProduct } from "../lib/createProduct";
 import { listAttributeDefs, dedupAttrs, type AttributeDef } from "../lib/catalog";
 import { listBranches, type Branch } from "../lib/branches";
 import { errorMessage } from "../lib/errorMessage";
+import ConfirmDialog from "./ConfirmDialog";
 import { formatMoney } from "../lib/format";
 import { makeCan } from "../lib/permissions";
 import ProductForm from "./ProductForm";
@@ -59,6 +60,8 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  // Баталгаажуулах модал (window.confirm найдваргүй — ConfirmDialog ашиглана)
+  const [confirmDlg, setConfirmDlg] = useState<{ message: string; action: () => void } | null>(null);
 
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
@@ -170,10 +173,13 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
       setError(t("products.deleteBlocked", { name: p.name, epcCount: p.epc_count }));
       return;
     }
-    if (!window.confirm(t("products.confirmDelete", { name: p.name }))) return;
-    deleteProduct(p.id)
-      .then(reload)
-      .catch((e) => setError(errorMessage(e)));
+    setConfirmDlg({
+      message: t("products.confirmDelete", { name: p.name }),
+      action: () =>
+        deleteProduct(p.id)
+          .then(reload)
+          .catch((e) => setError(errorMessage(e))),
+    });
   }
 
   async function handleGenerate() {
@@ -370,6 +376,19 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
             </div>
           </div>
         </div>
+      )}
+
+      {confirmDlg && (
+        <ConfirmDialog
+          message={confirmDlg.message}
+          danger
+          onCancel={() => setConfirmDlg(null)}
+          onConfirm={() => {
+            const a = confirmDlg.action;
+            setConfirmDlg(null);
+            a();
+          }}
+        />
       )}
     </div>
   );

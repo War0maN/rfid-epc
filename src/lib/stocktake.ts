@@ -126,13 +126,15 @@ export async function fetchStocktakeProgress(stocktakeId: string): Promise<Stock
     .sort((a, b) => (b.expected - b.found) - (a.expected - a.found) || (a.name ?? "").localeCompare(b.name ?? ""));
 }
 
-/** Илүү олдсон/танигдаагүй уншилтууд — бараа + одоогийн төлөв/салбартай нь. */
+/** Илүү олдсон уншилтууд — бараа + одоогийн төлөв/салбартай нь.
+ *  Системд огт бүртгэлгүй (unknown) таг-уудыг ХАРУУЛАХГҮЙ — хажуугаар өнгөрсөн
+ *  гадны таг хэнд ч хэрэггүй мэдээлэл (DB-д бичигдсэн хэвээр, зөвхөн нуугдана). */
 export async function fetchStocktakeExtras(stocktakeId: string): Promise<StocktakeExtraDetail[]> {
   const { data, error } = await supabase
     .from("stocktake_scans")
     .select("epc_hex, outcome, epc_id, product_id")
     .eq("stocktake_id", stocktakeId)
-    .neq("outcome", "found")
+    .eq("outcome", "not_expected")
     .order("scanned_at", { ascending: false });
   if (error) throw error;
   const scans = (data ?? []) as {

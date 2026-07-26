@@ -5,6 +5,7 @@ import { makeCan } from "../lib/permissions";
 import { errorMessage } from "../lib/errorMessage";
 import { normalizeEpc } from "../lib/epc";
 import { STATUS_LABEL, badgeOf } from "../lib/epcStatus";
+import ConfirmDialog from "./ConfirmDialog";
 import {
   listStocktakes,
   createStocktake,
@@ -52,6 +53,12 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
   const [missing, setMissing] = useState<MissingEpc[]>([]);
   // Дутуу/Илүү картын тоон дээр дарахад нээгдэх дэлгэрэнгүй модал
   const [detailModal, setDetailModal] = useState<"missing" | "extras" | null>(null);
+  // Баталгаажуулах модал (window.confirm найдваргүй — ConfirmDialog ашиглана)
+  const [confirmDlg, setConfirmDlg] = useState<{
+    message: string;
+    action: () => void;
+    danger?: boolean;
+  } | null>(null);
   const [scanValue, setScanValue] = useState("");
   const [lastResult, setLastResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -162,40 +169,52 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
     }
   }
 
-  async function handleClose() {
+  function handleClose() {
     if (!current) return;
-    if (!window.confirm(t("stocktake.closeConfirmText"))) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await closeStocktake(current.id);
-      setCurrent({ ...current, status: "closed" });
-      setInfo(t("stocktake.closedInfo"));
-      reload();
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+    const cur = current;
+    setConfirmDlg({
+      message: t("stocktake.closeConfirmText"),
+      action: async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          await closeStocktake(cur.id);
+          setCurrent({ ...cur, status: "closed" });
+          setInfo(t("stocktake.closedInfo"));
+          reload();
+        } catch (e) {
+          setError(errorMessage(e));
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
   }
 
-  async function handleWriteOff() {
+  function handleWriteOff() {
     if (!current || missing.length === 0) return;
-    if (!window.confirm(t("stocktake.writeOffConfirm", { n: missing.length }))) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const n = await writeOffMissing(
-        missing.map((m) => m.epc_id),
-        t("stocktake.writeOffReason", { number: current.number })
-      );
-      setInfo(t("stocktake.writeOffDone", { n }));
-      loadDetail(current.id);
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+    const cur = current;
+    setConfirmDlg({
+      message: t("stocktake.writeOffConfirm", { n: missing.length }),
+      danger: true,
+      action: async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          const n = await writeOffMissing(
+            missing.map((m) => m.epc_id),
+            t("stocktake.writeOffReason", { number: cur.number })
+          );
+          setInfo(t("stocktake.writeOffDone", { n }));
+          setDetailModal(null);
+          loadDetail(cur.id);
+        } catch (e) {
+          setError(errorMessage(e));
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
   }
 
   const th =
@@ -479,9 +498,7 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
                               {STATUS_LABEL[s.status as keyof typeof STATUS_LABEL] ?? s.status}
                             </span>
                           ) : (
-                            <span className="whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-500">
-                              {t("stocktake.extraUnknown")}
-                            </span>
+                            "—"
                           )}
                         </td>
                         <td className={td}>{s.status ? branchName(s.branch_id) : "—"}</td>
@@ -497,6 +514,20 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
               </div>
             </div>
           </div>
+        )}
+
+        {confirmDlg && (
+          <ConfirmDialog
+            message={confirmDlg.message}
+            danger={confirmDlg.danger}
+            busy={busy}
+            onCancel={() => setConfirmDlg(null)}
+            onConfirm={() => {
+              const a = confirmDlg.action;
+              setConfirmDlg(null);
+              a();
+            }}
+          />
         )}
       </div>
     );
@@ -602,7 +633,7 @@ function describeCounts(
   const parts: string[] = [];
   if (c.found) parts.push(t("stocktake.resFound", { n: c.found }));
   if (c.not_expected) parts.push(t("stocktake.resNotExpected", { n: c.not_expected }));
-  if (c.unknown) parts.push(t("stocktake.resUnknown", { n: c.unknown }));
+  // unknown (системд бүртгэлгүй таг) зориуд дурдагдахгүй — хэрэггүй мэдээлэл.
   if (c.skipped) parts.push(t("stocktake.resSkipped", { n: c.skipped }));
   return parts.length ? parts.join(" · ") : t("stocktake.resNothing");
 }

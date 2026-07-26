@@ -21,7 +21,6 @@ export default {
   cardMissing: "Missing",
   cardExtra: "Extra",
   clickForDetail: "Click for details",
-  extraUnknown: "Unknown",
   scanLabel: "Scan EPC (reader or type + Enter; paste multiple at once)",
   scanBtn: "Submit",
   scanInvalid: "Invalid EPC: {{token}}",
@@ -32,13 +31,8 @@ export default {
 
   resFound: "Counted: {{n}}",
   resNotExpected: "Unexpected (not in this branch's register): {{n}}",
-  resUnknown: "Unknown tag: {{n}}",
   resSkipped: "Previously submitted: {{n}}",
   resNothing: "No new scans.",
-  outcome: {
-    not_expected: "registered in the system but not expected here (other branch or not Active)",
-    unknown: "not registered in the system",
-  },
 
   missingTitle: "Missing ({{n}})",
   extrasTitle: "Extras ({{n}})",
