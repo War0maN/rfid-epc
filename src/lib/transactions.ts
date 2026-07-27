@@ -37,6 +37,7 @@ export const TX_STATUS_BADGE: Record<TxStatus, string> = {
 
 export interface TxRow {
   id: string;
+  tx_number: string | null;
   type: TxType;
   status: TxStatus;
   from_branch: string | null;
@@ -55,7 +56,7 @@ export async function listTransactions(): Promise<TxRow[]> {
   const [{ data: txs, error: tErr }, { data: brs }, { data: profs }] = await Promise.all([
     supabase
       .from("transactions")
-      .select("id, type, status, from_branch, to_branch, note, created_by, created_at, completed_at")
+      .select("id, tx_number, type, status, from_branch, to_branch, note, created_by, created_at, completed_at")
       .order("created_at", { ascending: false }),
     supabase.from("branches").select("id, name"),
     supabase.from("profiles").select("id, email"),
@@ -82,6 +83,7 @@ export async function listTransactions(): Promise<TxRow[]> {
 
   return rows.map((r) => ({
     id: r.id,
+    tx_number: r.tx_number,
     type: r.type,
     status: r.status,
     from_branch: r.from_branch,

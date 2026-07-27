@@ -20,29 +20,57 @@ import ProductList from "./components/ProductList";
 import Inventory from "./components/Inventory";
 import Transactions from "./components/Transactions";
 import Branches from "./components/Branches";
+import OrgSettings from "./components/OrgSettings";
 import { lazy, Suspense } from "react";
 // Шошгоны дизайнер (Konva/bwip-js том) — зөвхөн нээх үед ачаална.
 const Labels = lazy(() => import("./components/Labels"));
 // Тайлан (recharts том) — зөвхөн нээх үед ачаална.
 const Reports = lazy(() => import("./components/Reports"));
 
-type Tab = "create" | "receiving" | "products" | "inventory" | "stocktake" | "transactions" | "reports" | "table" | "labels" | "branches" | "audit" | "members";
+type Tab = "create" | "receiving" | "products" | "inventory" | "stocktake" | "transactions" | "reports" | "table" | "lookup" | "labels" | "branches" | "org" | "audit" | "members";
 
 // label = орчуулгын түлхүүр (render дээр t()-ээр уншина).
-const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
-  { id: "create", label: "app.tabCreate" },
-  { id: "receiving", label: "app.tabReceiving" },
+type TabDef = { id: Tab; label: string; adminOnly?: boolean };
+// Дээд цэс = дан таб эсвэл бүлэг (дэд табуудтай). Бүлгийн бүх хүүхэд
+// эрхээр нуугдвал бүлэг өөрөө нуугдана.
+type NavGroup = { group: string; label: string; children: TabDef[] };
+type NavItem = TabDef | NavGroup;
+
+const NAV: NavItem[] = [
+  {
+    group: "epc",
+    label: "app.tabEpc",
+    children: [
+      { id: "table", label: "app.tabEpcList" },
+      { id: "create", label: "app.tabCreate" },
+      { id: "receiving", label: "app.tabReceiving" },
+      { id: "labels", label: "app.tabLabels" },
+      { id: "lookup", label: "app.tabLookup" },
+    ],
+  },
   { id: "products", label: "app.tabProducts" },
   { id: "inventory", label: "app.tabInventory" },
   { id: "stocktake", label: "app.tabStocktake" },
   { id: "transactions", label: "app.tabTransactions" },
   { id: "reports", label: "app.tabReports" },
-  { id: "table", label: "app.tabEpc" },
-  { id: "labels", label: "app.tabLabels" },
-  { id: "branches", label: "app.tabBranches" },
-  { id: "audit", label: "app.tabAudit" },
-  { id: "members", label: "app.tabMembers", adminOnly: true },
+  {
+    group: "admin",
+    label: "app.groupAdmin",
+    children: [
+      { id: "branches", label: "app.tabBranches" },
+      { id: "org", label: "app.tabOrg", adminOnly: true },
+      { id: "audit", label: "app.tabAudit" },
+      { id: "members", label: "app.tabMembers", adminOnly: true },
+    ],
+  },
 ];
+
+function isGroup(n: NavItem): n is NavGroup {
+  return "children" in n;
+}
+
+// Бүлэг бүрийн сүүлд нээсэн дэд табыг санах localStorage түлхүүр.
+const subTabKey = (group: string) => `navSub.${group}`;
 
 /**
  * Профайл татах. Профайлгүй бол урилга шалгаж, байвал нэгдэнэ.
@@ -64,11 +92,10 @@ async function loadProfileOrAcceptInvite(): Promise<MyProfile | null> {
 function App() {
   const { t, i18n } = useTranslation();
   const { session, loading, recovery, clearRecovery } = useSession();
-  const [tab, setTab] = useState<Tab>("create");
+  const [tab, setTab] = useState<Tab>("table");
   // Бүтээгдэхүүн табын дэд таб: жагсаалт | ангилал (каталог).
   const [productsView, setProductsView] = useState<"list" | "catalog">("list");
-  // Бараа (EPC) табын дэд таб: жагсаалт | хайлт. lookupHex = жагсаалтаас дарсан EPC.
-  const [epcView, setEpcView] = useState<"list" | "lookup">("list");
+  // lookupHex = EPC жагсаалтаас дарсан EPC (хайлт таб руу дамжина).
   const [lookupHex, setLookupHex] = useState<string | null>(null);
   // EpcTable-г сэргээх дохио: шинэ ажил үүсгэх бүрт нэмэгдэнэ.
   const [refreshKey, setRefreshKey] = useState(0);
@@ -151,12 +178,27 @@ function App() {
   if (!profile) return <Onboarding onDone={loadProfile} />;
 
   // Эрхээр харагдах табууд; идэвхтэй таб нуугдсан бол эхний зөвшөөрөгдсөн рүү.
-  const visibleTabs = TABS.filter(
-    (t) => (!t.adminOnly || profile.role === "admin") && (!TAB_PERM[t.id] || can(TAB_PERM[t.id]))
-  );
-  const activeTab: Tab = visibleTabs.some((t) => t.id === tab)
-    ? tab
-    : (visibleTabs[0]?.id ?? "create");
+  const tabVisible = (tb: TabDef) =>
+    (!tb.adminOnly || profile.role === "admin") && (!TAB_PERM[tb.id] || can(TAB_PERM[tb.id]));
+  const visibleNav: NavItem[] = NAV.map((n) =>
+    isGroup(n) ? { ...n, children: n.children.filter(tabVisible) } : n
+  ).filter((n) => (isGroup(n) ? n.children.length > 0 : tabVisible(n)));
+  const visibleTabIds = visibleNav.flatMap((n) => (isGroup(n) ? n.children.map((c) => c.id) : [n.id]));
+  const activeTab: Tab = visibleTabIds.includes(tab) ? tab : (visibleTabIds[0] ?? "table");
+  // Идэвхтэй таб аль бүлэгт харьяалагдаж байгааг олно (дэд таб бар харуулахад).
+  const activeGroup = visibleNav.filter(isGroup).find((g) => g.children.some((c) => c.id === activeTab));
+
+  // Дэд таб сонгоход бүлэг доторх сүүлийн байрлалыг санана.
+  const selectTab = (id: Tab, group?: string) => {
+    setTab(id);
+    if (group) localStorage.setItem(subTabKey(group), id);
+  };
+  // Дээд цэснээс бүлэг дарахад: сүүлд нээсэн (эсвэл эхний) дэд таб руу.
+  const openGroup = (g: NavGroup) => {
+    const remembered = localStorage.getItem(subTabKey(g.group));
+    const target = g.children.find((c) => c.id === remembered) ?? g.children[0];
+    if (target) selectTab(target.id, g.group);
+  };
 
   return (
     <div className="min-h-screen">
@@ -190,30 +232,52 @@ function App() {
 
         {/* Жижиг дэлгэцэнд табууд хэвтээ гүйлгэгдэнэ (C5 г.м.) — таслагдахгүй. */}
         <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 [scrollbar-width:thin]">
-          {visibleTabs.map((tb) => (
-            <button
-              key={tb.id}
-              onClick={() => setTab(tb.id)}
-              className={
-                "whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition " +
-                (activeTab === tb.id
-                  ? "border-indigo-600 text-indigo-700"
-                  : "border-transparent text-slate-500 hover:text-slate-700")
-              }
-            >
-              {t(tb.label)}
-            </button>
-          ))}
+          {visibleNav.map((n) => {
+            const active = isGroup(n) ? activeGroup?.group === n.group : activeTab === n.id;
+            return (
+              <button
+                key={isGroup(n) ? n.group : n.id}
+                onClick={() => (isGroup(n) ? openGroup(n) : setTab(n.id))}
+                className={
+                  "whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition " +
+                  (active
+                    ? "border-indigo-600 text-indigo-700"
+                    : "border-transparent text-slate-500 hover:text-slate-700")
+                }
+              >
+                {t(n.label)}
+              </button>
+            );
+          })}
         </nav>
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6">
+        {/* Идэвхтэй бүлгийн дэд таб бар (Бүтээгдэхүүний дотоод табтай ижил загвар). */}
+        {activeGroup && (
+          <div className="mb-4 flex gap-1 overflow-x-auto border-b border-slate-200 [scrollbar-width:thin]">
+            {activeGroup.children.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => selectTab(c.id, activeGroup.group)}
+                className={
+                  "whitespace-nowrap rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
+                  (activeTab === c.id
+                    ? "border-indigo-600 text-indigo-700"
+                    : "border-transparent text-slate-500 hover:text-slate-700")
+                }
+              >
+                {t(c.label)}
+              </button>
+            ))}
+          </div>
+        )}
         {activeTab === "create" && (
           <CreateJobForm
             allowedBranches={allowedBranches}
             onCreated={() => {
               setRefreshKey((k) => k + 1);
-              setTab("table");
+              selectTab("table", "epc");
             }}
           />
         )}
@@ -274,42 +338,18 @@ function App() {
           </Suspense>
         )}
         {activeTab === "table" && (
-          <div className="space-y-4">
-            <div className="flex gap-1 border-b border-slate-200">
-              {(
-                [
-                  { id: "list", label: "app.subList" },
-                  { id: "lookup", label: "app.subLookup" },
-                ] as const
-              ).map((tb) => (
-                <button
-                  key={tb.id}
-                  onClick={() => setEpcView(tb.id)}
-                  className={
-                    "rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
-                    (epcView === tb.id
-                      ? "border-indigo-600 text-indigo-700"
-                      : "border-transparent text-slate-500 hover:text-slate-700")
-                  }
-                >
-                  {t(tb.label)}
-                </button>
-              ))}
-            </div>
-            {epcView === "list" ? (
-              <EpcTable
-                refreshKey={refreshKey}
-                isAdmin={profile.role === "admin"}
-                perms={myPerms}
-                onLookup={(hex) => {
-                  setLookupHex(hex);
-                  setEpcView("lookup");
-                }}
-              />
-            ) : (
-              <EpcLookup key={lookupHex ?? "manual"} initialHex={lookupHex ?? undefined} />
-            )}
-          </div>
+          <EpcTable
+            refreshKey={refreshKey}
+            isAdmin={profile.role === "admin"}
+            perms={myPerms}
+            onLookup={(hex) => {
+              setLookupHex(hex);
+              selectTab("lookup", "epc");
+            }}
+          />
+        )}
+        {activeTab === "lookup" && (
+          <EpcLookup key={lookupHex ?? "manual"} initialHex={lookupHex ?? undefined} />
         )}
         {activeTab === "labels" && (
           <Suspense
@@ -327,6 +367,7 @@ function App() {
             }
           />
         )}
+        {activeTab === "org" && profile.role === "admin" && <OrgSettings />}
         {activeTab === "audit" && <AuditLog />}
         {activeTab === "members" && profile.role === "admin" && <Members />}
       </main>

@@ -15,6 +15,10 @@ create table if not exists tenants (
   default_filter_value  smallint not null default 1,
   created_at            timestamptz not null default now()
 );
+-- Байгууллагын холбоо барих мэдээлэл — падаан/баримтын толгойд (сонголтоор).
+alter table tenants add column if not exists address text;
+alter table tenants add column if not exists phone   text;
+alter table tenants add column if not exists email   text;
 
 -- ---------- profiles (auth.users -> tenant) ----------
 create table if not exists profiles (
@@ -336,6 +340,12 @@ $$;
 drop policy if exists "tenant members read" on profiles;
 create policy "tenant members read" on profiles
   for select using (tenant_id = current_tenant_id());
+
+-- tenants: зөвхөн админ байгууллагын мэдээллээ засна (нэр, хаяг, утас, имэйл).
+drop policy if exists "tenant update by admin" on tenants;
+create policy "tenant update by admin" on tenants
+  for update using (id = current_tenant_id() and (select is_tenant_admin()))
+  with check   (id = current_tenant_id() and (select is_tenant_admin()));
 
 -- ---------- Шинэ тенант + admin профайл үүсгэх ----------
 -- Бүртгүүлж нэвтэрсэн (session-тэй) хэрэглэгч өөрийн байгууллагыг үүсгэнэ.
@@ -747,6 +757,9 @@ create table if not exists branches (
   created_at  timestamptz not null default now()
 );
 create index if not exists branches_tenant_idx on branches (tenant_id, sort);
+-- Салбарын холбоо барих мэдээлэл — падаан/баримтад (сонголтоор).
+alter table branches add column if not exists address text;
+alter table branches add column if not exists phone   text;
 -- Код нь тенант дотор давтагдашгүй (импортод найдвартай таних). Хоосон код хязгааргүй.
 create unique index if not exists branches_code_uniq
   on branches (tenant_id, lower(code)) where code is not null;
@@ -918,6 +931,25 @@ create table if not exists transactions (
 create index if not exists tx_tenant_date_idx   on transactions (tenant_id, created_at desc);
 create index if not exists tx_tenant_status_idx on transactions (tenant_id, status);
 
+-- Хүн уншихад ойлгомжтой дэс дугаар (TRN-0001, тенант бүрд) — падаан/баримтад.
+alter table transactions add column if not exists tx_number text;
+create unique index if not exists tx_number_uniq
+  on transactions (tenant_id, tx_number) where tx_number is not null;
+-- Backfill: дугааргүй хуучин гүйлгээнүүдэд он цагийн дарааллаар олгоно (idempotent —
+-- давтан ажиллуулахад дугаартай мөрийг алгасаад одоогийн max-аас үргэлжлүүлнэ).
+with base as (
+  select tenant_id,
+         coalesce(max((regexp_match(tx_number, '^TRN-(\d+)$'))[1]::int), 0) as maxn
+  from transactions group by tenant_id
+), numbered as (
+  select t.id,
+         'TRN-' || lpad((b.maxn + row_number() over (partition by t.tenant_id order by t.created_at, t.id))::text, 4, '0') as num
+  from transactions t
+  join base b on b.tenant_id = t.tenant_id
+  where t.tx_number is null
+)
+update transactions t set tx_number = n.num from numbered n where t.id = n.id;
+
 create table if not exists transaction_items (
   transaction_id uuid not null references transactions(id) on delete cascade,
   epc_id         uuid not null references epc_codes(id),  -- RESTRICT: гүйлгээтэй EPC устахгүй
@@ -966,6 +998,7 @@ declare
   v_branches int;
   v_from     uuid;
   v_tx       uuid;
+  v_number   text;
 begin
   if v_tenant is null then
     raise exception 'Нэвтрээгүй байна.';
@@ -1029,15 +1062,30 @@ begin
   -- Guard trigger (epc_guard_transferring)-ийг энэ transaction-д давах эрх.
   perform set_config('app.tx_rpc', '1', true);
 
-  insert into transactions (tenant_id, type, status, from_branch, to_branch, note)
-  values (
-    v_tenant, p_type,
-    case when p_type = 'transfer' then 'pending' else 'done' end,
-    v_from,
-    case when p_type = 'transfer' then p_to_branch else null end,
-    nullif(btrim(coalesce(p_note, '')), '')
-  )
-  returning id into v_tx;
+  -- TRN-дэс дугаар (давхцвал 3 удаа дахин оролдоно — RCV-тэй ижил хэв маяг).
+  for i in 1..3 loop
+    select 'TRN-' || lpad((coalesce(max((regexp_match(tx_number, '^TRN-(\d+)$'))[1]::int), 0) + 1)::text, 4, '0')
+      into v_number
+      from transactions where tenant_id = v_tenant and tx_number like 'TRN-%';
+    begin
+      insert into transactions (tenant_id, type, status, from_branch, to_branch, note, tx_number)
+      values (
+        v_tenant, p_type,
+        case when p_type = 'transfer' then 'pending' else 'done' end,
+        v_from,
+        case when p_type = 'transfer' then p_to_branch else null end,
+        nullif(btrim(coalesce(p_note, '')), ''),
+        v_number
+      )
+      returning id into v_tx;
+      exit;
+    exception when unique_violation then
+      null; -- зэрэг гүйлгээ ижил дугаар авчихсан — дахин тоолно
+    end;
+  end loop;
+  if v_tx is null then
+    raise exception 'Гүйлгээний дугаар олгоход зөрчил гарлаа — дахин оролдоно уу.';
+  end if;
 
   -- Event log-д энэ гүйлгээг холбох (epc_event_trigger уншина).
   perform set_config('app.tx_id', v_tx::text, true);

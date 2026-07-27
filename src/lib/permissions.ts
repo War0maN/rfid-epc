@@ -82,6 +82,7 @@ export const TAB_PERM: Record<string, Perm> = {
   transactions: "tab_transactions",
   reports: "tab_reports",
   table: "tab_epc",
+  lookup: "tab_epc",
   labels: "tab_labels",
   branches: "tab_branches",
   audit: "tab_audit",

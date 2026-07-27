@@ -29,9 +29,13 @@ export default function Branches({ isAdmin }: Props) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const [address, setAddress] = useState("");
+  const [phone, setPhone] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editCode, setEditCode] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editPhone, setEditPhone] = useState("");
 
   function reload() {
     setLoading(true);
@@ -57,18 +61,20 @@ export default function Branches({ isAdmin }: Props) {
 
   function saveAdd() {
     if (!name.trim()) return;
-    createBranch(name, code || null)
+    createBranch(name, code || null, address || null, phone || null)
       .then(() => {
         setAdding(false);
         setName("");
         setCode("");
+        setAddress("");
+        setPhone("");
         reload();
       })
       .catch((e) => setError(errorMessage(e)));
   }
   function saveEdit() {
     if (!editId) return;
-    updateBranch(editId, editName, editCode || null)
+    updateBranch(editId, editName, editCode || null, editAddress || null, editPhone || null)
       .then(() => {
         setEditId(null);
         reload();
@@ -89,7 +95,7 @@ export default function Branches({ isAdmin }: Props) {
   const td = "border-b border-slate-100 px-3 py-2 text-slate-700";
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
+    <div className="mx-auto max-w-4xl space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">{t("branches.title")}</h2>
@@ -112,6 +118,8 @@ export default function Branches({ isAdmin }: Props) {
             <tr>
               <th className={th}>{t("common.name")}</th>
               <th className={th}>{t("common.code")}</th>
+              <th className={th}>{t("branches.colAddress")}</th>
+              <th className={th}>{t("branches.colPhone")}</th>
               {isAdmin && <th className={th + " text-right"}>{t("common.actions")}</th>}
             </tr>
           </thead>
@@ -120,6 +128,8 @@ export default function Branches({ isAdmin }: Props) {
               <tr>
                 <td className={td}><input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveAdd()} placeholder={t("branches.namePlaceholder")} className={inp} /></td>
                 <td className={td}><input value={code} onChange={(e) => setCode(e.target.value)} placeholder={t("branches.codePlaceholder")} className={inp} /></td>
+                <td className={td}><input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={t("branches.addressPlaceholder")} className={inp} /></td>
+                <td className={td}><input value={phone} onChange={(e) => setPhone(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveAdd()} placeholder={t("branches.phonePlaceholder")} className={inp} /></td>
                 <td className={td + " text-right"}>
                   <button onClick={saveAdd} className="text-xs text-indigo-600 hover:underline">{t("common.save")}</button>
                   <button onClick={() => setAdding(false)} className="ml-2 text-xs text-slate-400 hover:underline">{t("branches.cancel")}</button>
@@ -127,15 +137,17 @@ export default function Branches({ isAdmin }: Props) {
               </tr>
             )}
             {loading ? (
-              <tr><td colSpan={3} className="px-4 py-8 text-center text-slate-400">{t("common.loading")}</td></tr>
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">{t("common.loading")}</td></tr>
             ) : rows.length === 0 && !adding ? (
-              <tr><td colSpan={3} className="px-4 py-8 text-center text-slate-400">{t("branches.empty")}</td></tr>
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">{t("branches.empty")}</td></tr>
             ) : (
               rows.map((b) =>
                 editId === b.id ? (
                   <tr key={b.id}>
                     <td className={td}><input autoFocus value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveEdit()} className={inp} /></td>
                     <td className={td}><input value={editCode} onChange={(e) => setEditCode(e.target.value)} className={inp} /></td>
+                    <td className={td}><input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} placeholder={t("branches.addressPlaceholder")} className={inp} /></td>
+                    <td className={td}><input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveEdit()} placeholder={t("branches.phonePlaceholder")} className={inp} /></td>
                     <td className={td + " text-right"}>
                       <button onClick={saveEdit} className="text-xs text-indigo-600 hover:underline">{t("common.save")}</button>
                       <button onClick={() => setEditId(null)} className="ml-2 text-xs text-slate-400 hover:underline">{t("branches.cancel")}</button>
@@ -145,9 +157,11 @@ export default function Branches({ isAdmin }: Props) {
                   <tr key={b.id} className="hover:bg-slate-50">
                     <td className={td + " font-medium text-slate-800"}>{b.name}</td>
                     <td className={td + " font-mono text-xs text-slate-500"}>{b.code || "—"}</td>
+                    <td className={td + " text-xs text-slate-500"}>{b.address || "—"}</td>
+                    <td className={td + " text-xs text-slate-500"}>{b.phone || "—"}</td>
                     {isAdmin && (
                       <td className={td + " text-right"}>
-                        <button onClick={() => { setEditId(b.id); setEditName(b.name); setEditCode(b.code ?? ""); }} className="text-xs text-slate-500 hover:underline">{t("common.edit")}</button>
+                        <button onClick={() => { setEditId(b.id); setEditName(b.name); setEditCode(b.code ?? ""); setEditAddress(b.address ?? ""); setEditPhone(b.phone ?? ""); }} className="text-xs text-slate-500 hover:underline">{t("common.edit")}</button>
                         <button onClick={() => remove(b)} className="ml-2 text-xs text-red-600 hover:underline">{t("common.delete")}</button>
                       </td>
                     )}

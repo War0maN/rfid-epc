@@ -19,12 +19,14 @@ export interface Branch {
   name: string;
   code: string | null;
   sort: number;
+  address: string | null;
+  phone: string | null;
 }
 
 export async function listBranches(): Promise<Branch[]> {
   const { data, error } = await supabase
     .from("branches")
-    .select("id, name, code, sort")
+    .select("id, name, code, sort, address, phone")
     .order("sort", { ascending: true })
     .order("name", { ascending: true });
   if (error) throw error;
@@ -37,21 +39,42 @@ export async function defaultBranchId(): Promise<string | null> {
   return list[0]?.id ?? null;
 }
 
-export async function createBranch(name: string, code: string | null): Promise<Branch> {
+export async function createBranch(
+  name: string,
+  code: string | null,
+  address: string | null = null,
+  phone: string | null = null
+): Promise<Branch> {
   const { data, error } = await supabase
     .from("branches")
-    .insert({ name: name.trim(), code: code?.trim() || null })
-    .select("id, name, code, sort")
+    .insert({
+      name: name.trim(),
+      code: code?.trim() || null,
+      address: address?.trim() || null,
+      phone: phone?.trim() || null,
+    })
+    .select("id, name, code, sort, address, phone")
     .single();
   const friendly = branchError(error);
   if (friendly) throw friendly;
   return data as Branch;
 }
 
-export async function updateBranch(id: string, name: string, code: string | null): Promise<void> {
+export async function updateBranch(
+  id: string,
+  name: string,
+  code: string | null,
+  address: string | null = null,
+  phone: string | null = null
+): Promise<void> {
   const { error } = await supabase
     .from("branches")
-    .update({ name: name.trim(), code: code?.trim() || null })
+    .update({
+      name: name.trim(),
+      code: code?.trim() || null,
+      address: address?.trim() || null,
+      phone: phone?.trim() || null,
+    })
     .eq("id", id);
   const friendly = branchError(error);
   if (friendly) throw friendly;

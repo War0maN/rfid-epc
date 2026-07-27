@@ -22,6 +22,7 @@ import {
 import { toCsv, downloadCsv } from "../lib/exportCsv";
 import { errorMessage } from "../lib/errorMessage";
 import ConfirmDialog from "./ConfirmDialog";
+import TransferNoteDialog from "./TransferNoteDialog";
 import { makeCan, type Perm } from "../lib/permissions";
 
 interface Props {
@@ -95,6 +96,10 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
   // Дэлгэрэнгүй модал (түүх)
   const [detail, setDetail] = useState<TxRow | null>(null);
   const [detailItems, setDetailItems] = useState<TxItem[] | null>(null);
+  // Сүүлд үүсгэсэн шилжүүлэг — амжилтын мөрөнд "Падаан хэвлэх" товч гаргана.
+  const [lastTransferId, setLastTransferId] = useState<string | null>(null);
+  // Падааны урьдчилан харах модал (null = хаалттай).
+  const [noteTxId, setNoteTxId] = useState<string | null>(null);
 
   function reload() {
     setLoading(true);
@@ -251,13 +256,15 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
     if (cartItems.length === 0) return;
     setBusy(true);
     setError(null);
+    setLastTransferId(null);
     try {
-      await createTransaction(
+      const txId = await createTransaction(
         txType,
         txType === "transfer" ? toBranch || null : null,
         note,
         cartItems.map((i) => i.id)
       );
+      if (txType === "transfer") setLastTransferId(txId);
       setInfo(
         t("transactions.successInfo", {
           type: TX_TYPE_LABEL[txType],
@@ -394,7 +401,19 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-      {info && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{info}</p>}
+      {info && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <span>{info}</span>
+          {lastTransferId && (
+            <button
+              onClick={() => setNoteTxId(lastTransferId)}
+              className="rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700"
+            >
+              🖨 {t("transferNote.printButton")}
+            </button>
+          )}
+        </div>
+      )}
 
       {view === "new" && allowedTypes.length === 0 && (
         <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-10 text-center text-sm text-slate-400">
@@ -616,6 +635,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
           <table className="min-w-full text-sm">
             <thead>
               <tr>
+                <th className={th}>№</th>
                 <th className={th}>{t("common.date")}</th>
                 <th className={th}>{t("transactions.typeLabel")}</th>
                 <th className={th}>{t("common.status")}</th>
@@ -628,12 +648,13 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</td></tr>
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">{t("transactions.noTransactions")}</td></tr>
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400">{t("transactions.noTransactions")}</td></tr>
               ) : (
                 rows.map((tx) => (
                   <tr key={tx.id} className="cursor-pointer hover:bg-slate-50" onClick={() => openDetail(tx)}>
+                    <td className={td + " whitespace-nowrap font-mono text-xs"}>{tx.tx_number || "—"}</td>
                     <td className={td + " whitespace-nowrap"}>{new Date(tx.created_at).toLocaleString()}</td>
                     <td className={td}>
                       <span className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + TX_TYPE_BADGE[tx.type]}>{TX_TYPE_LABEL[tx.type]}</span>
@@ -670,6 +691,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
               <div className="min-w-0">
                 <h3 className="truncate font-semibold text-slate-900">
+                  {detail.tx_number && <span className="font-mono">{detail.tx_number} · </span>}
                   {TX_TYPE_LABEL[detail.type]} — {txBranchText(detail)}
                 </h3>
                 <p className="text-xs text-slate-500">
@@ -679,6 +701,14 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                {detail.type === "transfer" && (
+                  <button
+                    onClick={() => setNoteTxId(detail.id)}
+                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+                  >
+                    🖨 {t("transferNote.noteButton")}
+                  </button>
+                )}
                 <button
                   onClick={handleDetailExport}
                   disabled={!detailItems || detailItems.length === 0}
@@ -720,6 +750,8 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
           </div>
         </div>
       )}
+
+      {noteTxId && <TransferNoteDialog txId={noteTxId} onClose={() => setNoteTxId(null)} />}
 
       {confirmDlg && (
         <ConfirmDialog

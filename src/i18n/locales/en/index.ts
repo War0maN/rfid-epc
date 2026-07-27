@@ -19,6 +19,8 @@ import catalog from "./catalog";
 import createJob from "./createJob";
 import importer from "./importer";
 import branches from "./branches";
+import org from "./org";
+import transferNote from "./transferNote";
 import errors from "./errors";
 
 export default {
@@ -43,5 +45,7 @@ export default {
   createJob,
   importer,
   branches,
+  org,
+  transferNote,
   errors,
 };
