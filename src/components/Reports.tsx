@@ -25,6 +25,7 @@ import {
 import { toCsv, downloadCsv } from "../lib/exportCsv";
 import { logAuditEvent } from "../lib/audit";
 import { errorMessage } from "../lib/errorMessage";
+import ValuationReport from "./ValuationReport";
 
 const ctl =
   "h-9 rounded border border-slate-300 px-2 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200";
@@ -41,8 +42,42 @@ function daysAgo(n: number): string {
   return isoDay(d);
 }
 
-/** Тайлан (Phase 6) — Борлуулалт: интервал + бүлэглэлт + график + хүснэгт + CSV. */
+/** Тайлан — дэд табууд: Борлуулалт, Үлдэгдлийн үнэлгээ. */
 export default function Reports() {
+  const { t } = useTranslation();
+  const [tab, setTab] = useState<"sales" | "valuation">("sales");
+
+  const subTab = (active: boolean) =>
+    "rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
+    (active
+      ? "border-indigo-600 text-indigo-700"
+      : "border-transparent text-slate-500 hover:text-slate-700");
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-900">{t("reports.title")}</h2>
+        <p className="text-sm text-slate-500">
+          {tab === "sales" ? t("reports.subtitle") : t("reports.valuationSubtitle")}
+        </p>
+      </div>
+
+      <div className="flex gap-1 border-b border-slate-200">
+        <button onClick={() => setTab("sales")} className={subTab(tab === "sales")}>
+          {t("reports.salesTab")}
+        </button>
+        <button onClick={() => setTab("valuation")} className={subTab(tab === "valuation")}>
+          {t("reports.valuationTab")}
+        </button>
+      </div>
+
+      {tab === "sales" ? <SalesReport /> : <ValuationReport />}
+    </div>
+  );
+}
+
+/** Борлуулалтын тайлан (Phase 6): интервал + бүлэглэлт + график + хүснэгт + CSV. */
+function SalesReport() {
   const { t } = useTranslation();
   const [from, setFrom] = useState(daysAgo(30));
   const [to, setTo] = useState(isoDay(new Date()));
@@ -212,20 +247,6 @@ export default function Reports() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">{t("reports.title")}</h2>
-          <p className="text-sm text-slate-500">{t("reports.subtitle")}</p>
-        </div>
-      </div>
-
-      {/* Дэд таб — одоогоор зөвхөн Борлуулалт; дараа шилжүүлэг г.м. нэмэгдэнэ */}
-      <div className="flex gap-1 border-b border-slate-200">
-        <button className="rounded-t-lg border-b-2 border-indigo-600 px-4 py-2 text-sm font-medium text-indigo-700">
-          {t("reports.salesTab")}
-        </button>
-      </div>
-
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {/* Удирдлага */}
