@@ -91,12 +91,11 @@ export default function ValuationReport() {
   }, [grouped, valueKey, t]);
 
   function handleExport() {
-    const row = (g: { label: string; sub?: string | null; qty: number; value: number; noPriceQty: number }) => ({
+    const row = (g: { label: string; sub?: string | null; qty: number; value: number }) => ({
       label: g.label,
       sku: g.sub ?? "",
       qty: g.qty,
       value: g.value,
-      noPriceQty: g.noPriceQty,
       share: totals.value ? Math.round((g.value / totals.value) * 1000) / 10 : 0,
     });
     const csv = toCsv(
@@ -107,7 +106,6 @@ export default function ValuationReport() {
           sub: "",
           qty: totals.qty,
           value: totals.value,
-          noPriceQty: totals.noPriceQty,
         }),
       ],
       [
@@ -115,7 +113,6 @@ export default function ValuationReport() {
         { key: "sku", label: "SKU" },
         { key: "qty", label: t("reports.qtyHeader") },
         { key: "value", label: t("reports.valueHeader") },
-        { key: "noPriceQty", label: t("reports.noPriceQtyHeader") },
         { key: "share", label: t("reports.shareHeader") },
       ]
     );
@@ -157,8 +154,15 @@ export default function ValuationReport() {
         </button>
       </div>
 
+      {/* Үнэгүй бараа байвал л анхааруулна — дүн дутуу гарч буйг мэдэгдэнэ. */}
+      {!loading && totals.noPriceQty > 0 && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          {t("reports.noPriceWarning", { n: totals.noPriceQty.toLocaleString() })}
+        </p>
+      )}
+
       {/* Нийлбэр картууд */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {[
           {
             label: t("reports.totalValue"),
@@ -171,12 +175,6 @@ export default function ValuationReport() {
             value: grouped.length.toLocaleString(),
             sub: "",
             cls: "text-slate-900",
-          },
-          {
-            label: t("reports.noPriceQtyHeader"),
-            value: totals.noPriceQty.toLocaleString(),
-            sub: totals.noPriceQty > 0 ? t("reports.noPriceNote") : "",
-            cls: totals.noPriceQty > 0 ? "text-amber-600" : "text-slate-900",
           },
         ].map((c) => (
           <div key={c.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -230,15 +228,14 @@ export default function ValuationReport() {
               {group === "product" && <th className={th}>SKU</th>}
               <th className={th + " text-right"}>{t("reports.qtyHeader")}</th>
               <th className={th + " text-right"}>{t("reports.valueHeader")}</th>
-              <th className={th + " text-right"}>{t("reports.noPriceQtyHeader")}</th>
               <th className={th + " text-right"}>{t("reports.shareHeader")}</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={group === "product" ? 6 : 5} className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</td></tr>
+              <tr><td colSpan={group === "product" ? 5 : 4} className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</td></tr>
             ) : grouped.length === 0 ? (
-              <tr><td colSpan={group === "product" ? 6 : 5} className="px-4 py-10 text-center text-slate-400">{t("reports.noStock")}</td></tr>
+              <tr><td colSpan={group === "product" ? 5 : 4} className="px-4 py-10 text-center text-slate-400">{t("reports.noStock")}</td></tr>
             ) : (
               <>
                 {grouped.map((g) => (
@@ -251,9 +248,6 @@ export default function ValuationReport() {
                     <td className={td + " text-right font-semibold tabular-nums"}>
                       {t("reports.amountCurrency", { amount: g.value.toLocaleString() })}
                     </td>
-                    <td className={td + " text-right tabular-nums" + (g.noPriceQty > 0 ? " text-amber-600" : "")}>
-                      {g.noPriceQty > 0 ? g.noPriceQty.toLocaleString() : "—"}
-                    </td>
                     <td className={td + " text-right tabular-nums"}>
                       {totals.value ? ((g.value / totals.value) * 100).toFixed(1) + "%" : "—"}
                     </td>
@@ -265,9 +259,6 @@ export default function ValuationReport() {
                   <td className={td + " text-right tabular-nums"}>{totals.qty.toLocaleString()}</td>
                   <td className={td + " text-right tabular-nums"}>
                     {t("reports.amountCurrency", { amount: totals.value.toLocaleString() })}
-                  </td>
-                  <td className={td + " text-right tabular-nums" + (totals.noPriceQty > 0 ? " text-amber-600" : "")}>
-                    {totals.noPriceQty > 0 ? totals.noPriceQty.toLocaleString() : "—"}
                   </td>
                   <td className={td + " text-right tabular-nums"}>100%</td>
                 </tr>

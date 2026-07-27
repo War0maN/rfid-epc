@@ -26,6 +26,7 @@ import { toCsv, downloadCsv } from "../lib/exportCsv";
 import { logAuditEvent } from "../lib/audit";
 import { errorMessage } from "../lib/errorMessage";
 import ValuationReport from "./ValuationReport";
+import InflowReport from "./InflowReport";
 
 const ctl =
   "h-9 rounded border border-slate-300 px-2 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200";
@@ -45,7 +46,7 @@ function daysAgo(n: number): string {
 /** Тайлан — дэд табууд: Борлуулалт, Үлдэгдлийн үнэлгээ. */
 export default function Reports() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<"sales" | "valuation">("sales");
+  const [tab, setTab] = useState<"sales" | "inflow" | "valuation">("sales");
 
   const subTab = (active: boolean) =>
     "rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
@@ -58,7 +59,11 @@ export default function Reports() {
       <div>
         <h2 className="text-lg font-semibold text-slate-900">{t("reports.title")}</h2>
         <p className="text-sm text-slate-500">
-          {tab === "sales" ? t("reports.subtitle") : t("reports.valuationSubtitle")}
+          {tab === "sales"
+            ? t("reports.subtitle")
+            : tab === "inflow"
+              ? t("reports.inflowSubtitle")
+              : t("reports.valuationSubtitle")}
         </p>
       </div>
 
@@ -66,12 +71,15 @@ export default function Reports() {
         <button onClick={() => setTab("sales")} className={subTab(tab === "sales")}>
           {t("reports.salesTab")}
         </button>
+        <button onClick={() => setTab("inflow")} className={subTab(tab === "inflow")}>
+          {t("reports.inflowTab")}
+        </button>
         <button onClick={() => setTab("valuation")} className={subTab(tab === "valuation")}>
           {t("reports.valuationTab")}
         </button>
       </div>
 
-      {tab === "sales" ? <SalesReport /> : <ValuationReport />}
+      {tab === "sales" ? <SalesReport /> : tab === "inflow" ? <InflowReport /> : <ValuationReport />}
     </div>
   );
 }

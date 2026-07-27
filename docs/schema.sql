@@ -1488,6 +1488,38 @@ $$;
 grant execute on function report_sales(date, date) to authenticated;
 
 -- ============================================================
+-- Тайлан: Орлого (inflow) — интервалд ШИНЭЭР ҮҮССЭН EPC-ийн нэгтгэл
+--   (өдөр × салбар × бараа × ажил). Бүх үүсгэлтийн зам орно (EPC үүсгэх,
+--   EPC-р хүлээн авах, бүтээгдэхүүнээс үүсгэх) — төлөв ҮЛ ХАМААРНА
+--   (Хэвлээгүй ч бараа ирсэн гэж тооцно; дараа зарагдсан нь ч орлогоос
+--   хасагдахгүй). Устгагдсан EPC мөр нь байхгүй тул автоматаар орохгүй
+--   (буруу үүсгэлтийн залруулга). security invoker тул RLS (тенант +
+--   салбарын scoping) хэрэгжинэ. Үнийг client талд одоогийн үнээр тооцно.
+-- ============================================================
+drop function if exists report_inflow(date, date);
+create function report_inflow(p_from date, p_to date)
+returns table (day date, branch_id uuid, product_id uuid,
+               job_number text, supplier text, qty bigint)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select date(e.created_at),
+         e.branch_id,
+         e.product_id,
+         j.job_number,
+         j.supplier,
+         count(*)
+    from epc_codes e
+    left join jobs j on j.id = e.job_id
+   where e.created_at >= p_from
+     and e.created_at < p_to + 1   -- p_to өдрийг дуустал
+   group by 1, 2, 3, 4, 5
+$$;
+grant execute on function report_inflow(date, date) to authenticated;
+
+-- ============================================================
 -- Phase 2b: Хэрэглэгч↔салбар хуваарилалт + салбараар scoping.
 --   Оператор зөвхөн хуваарилагдсан салбарын EPC/гүйлгээ/түүхийг харж,
 --   үйлдэл хийнэ (RLS — UI тойрч гарах боломжгүй). Хуваарилалтгүй
