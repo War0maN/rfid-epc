@@ -931,22 +931,30 @@ create table if not exists transactions (
 create index if not exists tx_tenant_date_idx   on transactions (tenant_id, created_at desc);
 create index if not exists tx_tenant_status_idx on transactions (tenant_id, status);
 
--- Хүн уншихад ойлгомжтой дэс дугаар (TRN-0001, тенант бүрд) — падаан/баримтад.
+-- Хүн уншихад ойлгомжтой дэс дугаар — падаан/баримтад. Төрөл бүр өөрийн
+-- угтвар + дэстэй (олон улсын ERP нэршил): transfer=TRF, sale=SAL,
+-- return=RTN, other=ADJ (adjustment). Тенант бүрд тусдаа дэс.
 alter table transactions add column if not exists tx_number text;
 create unique index if not exists tx_number_uniq
   on transactions (tenant_id, tx_number) where tx_number is not null;
--- Backfill: дугааргүй хуучин гүйлгээнүүдэд он цагийн дарааллаар олгоно (idempotent —
--- давтан ажиллуулахад дугаартай мөрийг алгасаад одоогийн max-аас үргэлжлүүлнэ).
-with base as (
-  select tenant_id,
-         coalesce(max((regexp_match(tx_number, '^TRN-(\d+)$'))[1]::int), 0) as maxn
-  from transactions group by tenant_id
+-- Backfill (idempotent): дугааргүй мөрүүд + хуучин нэгдсэн TRN-% дугаарууд
+-- төрлийнхөө дэс рүү он цагийн дарааллаар нэг удаа хөрвөнө; давтан
+-- ажиллуулахад аль хэдийн угтвартай мөрийг алгасаад max-аас үргэлжлүүлнэ.
+with pref as (
+  select id, tenant_id, created_at, tx_number,
+         case type when 'sale' then 'SAL' when 'transfer' then 'TRF'
+                   when 'return' then 'RTN' else 'ADJ' end as p
+  from transactions
+), base as (
+  select tenant_id, p,
+         coalesce(max((regexp_match(tx_number, '^' || p || '-(\d+)$'))[1]::int), 0) as maxn
+  from pref group by tenant_id, p
 ), numbered as (
-  select t.id,
-         'TRN-' || lpad((b.maxn + row_number() over (partition by t.tenant_id order by t.created_at, t.id))::text, 4, '0') as num
-  from transactions t
-  join base b on b.tenant_id = t.tenant_id
-  where t.tx_number is null
+  select pr.id,
+         pr.p || '-' || lpad((b.maxn + row_number() over (partition by pr.tenant_id, pr.p order by pr.created_at, pr.id))::text, 4, '0') as num
+  from pref pr
+  join base b on b.tenant_id = pr.tenant_id and b.p = pr.p
+  where pr.tx_number is null or pr.tx_number like 'TRN-%'
 )
 update transactions t set tx_number = n.num from numbered n where t.id = n.id;
 
@@ -999,6 +1007,7 @@ declare
   v_from     uuid;
   v_tx       uuid;
   v_number   text;
+  v_prefix   text;
 begin
   if v_tenant is null then
     raise exception 'Нэвтрээгүй байна.';
@@ -1062,11 +1071,14 @@ begin
   -- Guard trigger (epc_guard_transferring)-ийг энэ transaction-д давах эрх.
   perform set_config('app.tx_rpc', '1', true);
 
-  -- TRN-дэс дугаар (давхцвал 3 удаа дахин оролдоно — RCV-тэй ижил хэв маяг).
+  -- Төрлийн угтвартай дэс дугаар: TRF/SAL/RTN/ADJ-0001 (төрөл бүр өөрийн дэс;
+  -- давхцвал 3 удаа дахин оролдоно — RCV-тэй ижил хэв маяг).
+  v_prefix := case p_type when 'sale' then 'SAL' when 'transfer' then 'TRF'
+                          when 'return' then 'RTN' else 'ADJ' end;
   for i in 1..3 loop
-    select 'TRN-' || lpad((coalesce(max((regexp_match(tx_number, '^TRN-(\d+)$'))[1]::int), 0) + 1)::text, 4, '0')
+    select v_prefix || '-' || lpad((coalesce(max((regexp_match(tx_number, '^' || v_prefix || '-(\d+)$'))[1]::int), 0) + 1)::text, 4, '0')
       into v_number
-      from transactions where tenant_id = v_tenant and tx_number like 'TRN-%';
+      from transactions where tenant_id = v_tenant and tx_number like v_prefix || '-%';
     begin
       insert into transactions (tenant_id, type, status, from_branch, to_branch, note, tx_number)
       values (
