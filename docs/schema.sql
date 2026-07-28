@@ -2237,6 +2237,10 @@ create table if not exists stocktake_scans (
   primary key (stocktake_id, epc_hex)
 );
 create index if not exists stocktake_scans_outcome_idx on stocktake_scans (stocktake_id, outcome);
+-- Скан хийх МӨЧИЙН төлөв/салбар (зөвхөн not_expected-д) — яагаад "илүү"
+-- болсныг хаагдсаны дараа ч тайлбарлана (EPC хожим өөрчлөгдсөн ч хөлдсөн).
+alter table stocktake_scans add column if not exists scan_status text;
+alter table stocktake_scans add column if not exists scan_branch uuid;
 
 alter table stocktakes enable row level security;
 alter table stocktake_items enable row level security;
@@ -2329,6 +2333,8 @@ declare
   v_hex     text;
   v_epc     uuid;
   v_prod    uuid;
+  v_status  text;
+  v_branch  uuid;
   v_outcome text;
   v_counts  jsonb := '{}'::jsonb;
   v_skipped int := 0;
@@ -2361,7 +2367,7 @@ begin
       continue;
     end if;
 
-    v_epc := null; v_prod := null;
+    v_epc := null; v_prod := null; v_status := null; v_branch := null;
     if v_hex !~ '^[0-9A-F]{24}$' then
       v_outcome := 'unknown';
     else
@@ -2371,15 +2377,19 @@ begin
       if v_epc is not null then
         v_outcome := 'found';
       else
-        select e.id, e.product_id into v_epc, v_prod
+        select e.id, e.product_id, e.status, e.branch_id
+          into v_epc, v_prod, v_status, v_branch
           from epc_codes e
          where e.tenant_id = v_tenant and e.epc_hex = v_hex;
         v_outcome := case when v_epc is null then 'unknown' else 'not_expected' end;
       end if;
     end if;
 
-    insert into stocktake_scans (stocktake_id, tenant_id, epc_hex, outcome, epc_id, product_id)
-    values (p_stocktake, v_tenant, v_hex, v_outcome, v_epc, v_prod);
+    insert into stocktake_scans (stocktake_id, tenant_id, epc_hex, outcome, epc_id, product_id,
+                                 scan_status, scan_branch)
+    values (p_stocktake, v_tenant, v_hex, v_outcome, v_epc, v_prod,
+            case when v_outcome = 'not_expected' then v_status end,
+            case when v_outcome = 'not_expected' then v_branch end);
     v_counts := jsonb_set(v_counts, array[v_outcome],
                           to_jsonb(coalesce((v_counts ->> v_outcome)::int, 0) + 1));
   end loop;
@@ -2387,6 +2397,69 @@ begin
   return v_counts || jsonb_build_object('skipped', v_skipped);
 end $$;
 grant execute on function stocktake_scan(uuid, text[]) to authenticated;
+
+-- ---------- RPC: Илүүг энэ салбарт бүртгэж тоолуулах ----------
+-- Нээлттэй тооллогод илүү (not_expected) тоологдсон, Идэвхтэй (өөр салбарын)
+-- эсвэл Хэвлээгүй тагийг: энэ салбарт Идэвхтэй болгож → snapshot-д нэмж →
+-- Тоологдсонд шилжүүлнэ (бүгд түүхэнд бичигдэнэ). Борлуулсан/Бусад гүйлгээ
+-- төлөвтэйг АЛГАСНА — тэдгээр нь буцаалтын урсгалаар л сэргэх ёстой (залруулга
+-- = сөрөг үйлдэл зарчим); Шилжүүлж буйг мөн алгасна (хүлээн авалтаараа шийдэгдэнэ).
+-- Буцаана: {done: n, skipped: n}.
+create or replace function absorb_stocktake_extras(p_stocktake uuid, p_epc_ids uuid[])
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant   uuid := current_tenant_id();
+  v_st       stocktakes%rowtype;
+  v_eligible uuid[];
+  v_done     int := 0;
+begin
+  if v_tenant is null then raise exception 'Нэвтрээгүй байна.'; end if;
+  select * into v_st from stocktakes where id = p_stocktake and tenant_id = v_tenant;
+  if not found then raise exception 'Тооллого олдсонгүй.'; end if;
+  if v_st.status <> 'open' then
+    raise exception 'Тооллого хаагдсан тул илүүг бүртгэх боломжгүй.';
+  end if;
+  if not (is_tenant_admin() or has_perm('act_stocktake')) then
+    raise exception 'Танд тооллого хийх эрх байхгүй.';
+  end if;
+  if not has_branch_access(v_st.branch_id) then
+    raise exception 'Энэ салбарт тооллого хийх эрхгүй.';
+  end if;
+
+  -- Зөвхөн: энэ тооллогод not_expected тоологдсон + Идэвхтэй/Хэвлээгүй тагууд.
+  select coalesce(array_agg(e.id), '{}')
+    into v_eligible
+    from epc_codes e
+    join stocktake_scans s on s.stocktake_id = p_stocktake
+                          and s.epc_id = e.id and s.outcome = 'not_expected'
+   where e.id = any(p_epc_ids)
+     and e.tenant_id = v_tenant
+     and e.status in ('active','unprinted');
+
+  if coalesce(array_length(v_eligible, 1), 0) > 0 then
+    -- Тэмдэглэл түүхэнд (epc_event trigger app.reason-ийг уншина).
+    perform set_config('app.reason', 'Тооллого ' || v_st.number || ': илүүг энэ салбарт бүртгэв', true);
+    update epc_codes
+       set status = 'active', branch_id = v_st.branch_id
+     where id = any(v_eligible);
+    insert into stocktake_items (stocktake_id, epc_id, tenant_id, epc_hex, product_id)
+    select p_stocktake, e.id, v_tenant, e.epc_hex, e.product_id
+      from epc_codes e where e.id = any(v_eligible)
+    on conflict (stocktake_id, epc_id) do nothing;
+    update stocktake_scans
+       set outcome = 'found'
+     where stocktake_id = p_stocktake and epc_id = any(v_eligible);
+    v_done := array_length(v_eligible, 1);
+  end if;
+
+  return jsonb_build_object('done', v_done,
+                            'skipped', coalesce(array_length(p_epc_ids, 1), 0) - v_done);
+end $$;
+grant execute on function absorb_stocktake_extras(uuid, uuid[]) to authenticated;
 
 -- ---------- RPC: Тооллого хаах ----------
 create or replace function close_stocktake(p_stocktake uuid)
@@ -2431,3 +2504,56 @@ from stocktake_items i
 where not exists (select 1 from stocktake_scans s
                   where s.stocktake_id = i.stocktake_id
                     and s.epc_hex = i.epc_hex and s.outcome = 'found');
+
+-- ============================================================
+-- Тайлан: Тооллогын зөрүү (shrinkage/variance) — ХААГДСАН тооллогуудын
+--   нэгтгэл (тооллого × бараа): бүртгэлтэй / тоологдсон / илүү.
+--   Дутуу = expected − found (client талд), дүн = одоогийн үнээр.
+--   Илүү (not_expected) = бүртгэлтэй ч энэ салбарын snapshot-д байгаагүй таг;
+--   бүртгэлгүй (unknown) таг системийн зарчмаар огт орохгүй.
+--   security invoker — RLS (тенант + салбарын scoping) хэрэгжинэ.
+-- ============================================================
+drop function if exists report_stocktake(date, date);
+create function report_stocktake(p_from date, p_to date)
+returns table (stocktake_id uuid, number text, branch_id uuid,
+               closed_at timestamptz, product_id uuid,
+               expected bigint, found bigint, extra bigint)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  with st as (
+    select id, number, branch_id, closed_at
+      from stocktakes
+     where status = 'closed'
+       and closed_at >= p_from
+       and closed_at < p_to + 1   -- p_to өдрийг дуустал
+  ),
+  prog as (
+    select i.stocktake_id, i.product_id,
+           count(*) as expected,
+           count(s.epc_hex) as found
+      from stocktake_items i
+      join st on st.id = i.stocktake_id
+      left join stocktake_scans s
+        on s.stocktake_id = i.stocktake_id and s.epc_hex = i.epc_hex and s.outcome = 'found'
+     group by i.stocktake_id, i.product_id
+  ),
+  ext as (
+    select s.stocktake_id, s.product_id, count(*) as extra
+      from stocktake_scans s
+      join st on st.id = s.stocktake_id
+     where s.outcome = 'not_expected' and s.product_id is not null
+     group by s.stocktake_id, s.product_id
+  )
+  select st.id, st.number, st.branch_id, st.closed_at,
+         coalesce(p.product_id, x.product_id),
+         coalesce(p.expected, 0),
+         coalesce(p.found, 0),
+         coalesce(x.extra, 0)
+    from prog p
+    full join ext x on x.stocktake_id = p.stocktake_id and x.product_id = p.product_id
+    join st on st.id = coalesce(p.stocktake_id, x.stocktake_id)
+$$;
+grant execute on function report_stocktake(date, date) to authenticated;

@@ -36,6 +36,13 @@ export default {
 
   missingTitle: "Missing ({{n}})",
   extrasTitle: "Extras ({{n}})",
+  extrasScanTimeHint:
+    "Status/branch show the state AT SCAN TIME — explaining why the tag was extra (frozen even if changed later). Active (other-branch) and Unprinted tags can be registered to this branch; Sold/Other can only come back via a return.",
+  absorbButton: "Register to this branch ({{n}})",
+  absorbConfirm:
+    "Make {{n}} tags Active at {{branch}} and move them to Counted? (Recorded in history)",
+  absorbDone: "Registered to this branch: {{done}}",
+  absorbSkipped: "skipped: {{n}} (Sold/Other/In transfer)",
 
   closeBtn: "Close",
   closeConfirmText: "Close this stocktake? No more scans can be added afterwards.",

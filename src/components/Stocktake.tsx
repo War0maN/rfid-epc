@@ -18,6 +18,7 @@ import {
   fetchMissing,
   closeStocktake,
   writeOffMissing,
+  absorbExtras,
   type StocktakeListItem,
   type StocktakeProgressRow,
   type StocktakeExtraDetail,
@@ -59,6 +60,8 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
   // Актлах сонголт (epc_id) + заавал бичих тайлбар
   const [woChecked, setWoChecked] = useState<Set<string>>(new Set());
   const [woReason, setWoReason] = useState("");
+  // Илүүг энэ салбарт бүртгэх сонголт (epc_id)
+  const [abChecked, setAbChecked] = useState<Set<string>>(new Set());
   // Баталгаажуулах модал (window.confirm найдваргүй — ConfirmDialog ашиглана)
   const [confirmDlg, setConfirmDlg] = useState<{
     message: string;
@@ -121,6 +124,7 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
     setProgress([]);
     setExtras([]);
     setMissing([]);
+    setAbChecked(new Set());
     setDetailModal(null);
     setLastResult(null);
     setError(null);
@@ -285,6 +289,32 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
     void logAuditEvent(supabase, "export_csv", "report", null, {
       report: "stocktake_missing",
       number: current.number,
+    });
+  }
+
+  /** Сонгосон илүү тагийг энэ салбарт Идэвхтэй болгож, Тоологдсонд оруулна. */
+  function handleAbsorb() {
+    if (!current || abChecked.size === 0) return;
+    setConfirmDlg({
+      message: t("stocktake.absorbConfirm", { n: abChecked.size, branch: current.branch_name }),
+      action: async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          const r = await absorbExtras(current.id, [...abChecked]);
+          setInfo(
+            t("stocktake.absorbDone", { done: r.done }) +
+              (r.skipped > 0 ? " · " + t("stocktake.absorbSkipped", { n: r.skipped }) : "")
+          );
+          setAbChecked(new Set());
+          setDetailModal(null);
+          loadDetail(current.id);
+        } catch (e) {
+          setError(errorMessage(e));
+        } finally {
+          setBusy(false);
+        }
+      },
     });
   }
 
@@ -617,48 +647,109 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
               <h3 className="font-semibold text-slate-900">
                 {t("stocktake.extrasTitle", { n: extras.length })}
               </h3>
-              <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr>
-                      <th className={th}>{t("common.product")}</th>
-                      <th className={th}>SKU</th>
-                      <th className={th}>{t("common.barcode")}</th>
-                      <th className={th}>EPC</th>
-                      <th className={th}>{t("common.status")}</th>
-                      <th className={th}>{t("common.branch")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {extras.map((s) => (
-                      <tr key={s.epc_hex} className="hover:bg-slate-50">
-                        <td className={td}>{s.name || "—"}</td>
-                        <td className={td + " font-mono"}>{s.sku || "—"}</td>
-                        <td className={td + " font-mono"}>{s.gtin || "—"}</td>
-                        <td className={td + " font-mono"}>{s.epc_hex}</td>
-                        <td className={td}>
-                          {s.status ? (
-                            <span className={"whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium " + badgeOf(s.status)}>
-                              {STATUS_LABEL[s.status as keyof typeof STATUS_LABEL] ?? s.status}
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className={td}>{s.status ? branchName(s.branch_id) : "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-3 flex justify-end gap-2">
-                <button onClick={exportExtras} className={btn}>
-                  {t("common.exportCsv")}
-                </button>
-                <button onClick={() => setDetailModal(null)} className={btn}>
-                  {t("common.close")}
-                </button>
-              </div>
+              <p className="mt-1 text-xs text-slate-500">{t("stocktake.extrasScanTimeHint")}</p>
+              {(() => {
+                // Нээлттэй тооллогод: Идэвхтэй/Хэвлээгүй тагийг сонгож энэ салбарт бүртгэж болно.
+                const absorbMode = current.status === "open" && (isAdmin || canAct);
+                const eligible = extras.filter(
+                  (s) => s.epc_id && (s.current_status === "active" || s.current_status === "unprinted")
+                );
+                const allChecked = eligible.length > 0 && eligible.every((s) => abChecked.has(s.epc_id as string));
+                return (
+                  <>
+                    <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200">
+                      <table className="min-w-full text-sm">
+                        <thead>
+                          <tr>
+                            {absorbMode && (
+                              <th className={th + " w-8"}>
+                                <input
+                                  type="checkbox"
+                                  checked={allChecked}
+                                  disabled={eligible.length === 0}
+                                  onChange={(e) =>
+                                    setAbChecked(
+                                      e.target.checked
+                                        ? new Set(eligible.map((s) => s.epc_id as string))
+                                        : new Set()
+                                    )
+                                  }
+                                />
+                              </th>
+                            )}
+                            <th className={th}>{t("common.product")}</th>
+                            <th className={th}>SKU</th>
+                            <th className={th}>{t("common.barcode")}</th>
+                            <th className={th}>EPC</th>
+                            <th className={th}>{t("common.status")}</th>
+                            <th className={th}>{t("common.branch")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {extras.map((s) => {
+                            const canPick =
+                              absorbMode &&
+                              !!s.epc_id &&
+                              (s.current_status === "active" || s.current_status === "unprinted");
+                            return (
+                              <tr key={s.epc_hex} className="hover:bg-slate-50">
+                                {absorbMode && (
+                                  <td className={td}>
+                                    <input
+                                      type="checkbox"
+                                      checked={!!s.epc_id && abChecked.has(s.epc_id)}
+                                      disabled={!canPick}
+                                      onChange={(e) =>
+                                        setAbChecked((c) => {
+                                          const n = new Set(c);
+                                          if (e.target.checked) n.add(s.epc_id as string);
+                                          else n.delete(s.epc_id as string);
+                                          return n;
+                                        })
+                                      }
+                                    />
+                                  </td>
+                                )}
+                                <td className={td}>{s.name || "—"}</td>
+                                <td className={td + " font-mono"}>{s.sku || "—"}</td>
+                                <td className={td + " font-mono"}>{s.gtin || "—"}</td>
+                                <td className={td + " font-mono"}>{s.epc_hex}</td>
+                                <td className={td}>
+                                  {s.status ? (
+                                    <span className={"whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium " + badgeOf(s.status)}>
+                                      {STATUS_LABEL[s.status as keyof typeof STATUS_LABEL] ?? s.status}
+                                    </span>
+                                  ) : (
+                                    "—"
+                                  )}
+                                </td>
+                                <td className={td}>{s.status ? branchName(s.branch_id) : "—"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-3 flex flex-wrap justify-end gap-2">
+                      {absorbMode && (
+                        <button
+                          onClick={handleAbsorb}
+                          disabled={busy || abChecked.size === 0}
+                          className={primaryBtn}
+                        >
+                          {t("stocktake.absorbButton", { n: abChecked.size })}
+                        </button>
+                      )}
+                      <button onClick={exportExtras} className={btn}>
+                        {t("common.exportCsv")}
+                      </button>
+                      <button onClick={() => setDetailModal(null)} className={btn}>
+                        {t("common.close")}
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}

@@ -96,9 +96,9 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
   // Дэлгэрэнгүй модал (түүх)
   const [detail, setDetail] = useState<TxRow | null>(null);
   const [detailItems, setDetailItems] = useState<TxItem[] | null>(null);
-  // Сүүлд үүсгэсэн шилжүүлэг — амжилтын мөрөнд "Падаан хэвлэх" товч гаргана.
-  const [lastTransferId, setLastTransferId] = useState<string | null>(null);
-  // Падааны урьдчилан харах модал (null = хаалттай).
+  // Падааны урьдчилан харах модал (null = хаалттай). Зөвхөн дэлгэрэнгүй
+  // модалын "Падаан" товчоор нээгдэнэ — олон шилжүүлэг зэрэг хийхэд
+  // амжилтын мөрөнд гаргавал аль нь болох нь ойлгомжгүй болдог.
   const [noteTxId, setNoteTxId] = useState<string | null>(null);
 
   function reload() {
@@ -256,15 +256,13 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
     if (cartItems.length === 0) return;
     setBusy(true);
     setError(null);
-    setLastTransferId(null);
     try {
-      const txId = await createTransaction(
+      await createTransaction(
         txType,
         txType === "transfer" ? toBranch || null : null,
         note,
         cartItems.map((i) => i.id)
       );
-      if (txType === "transfer") setLastTransferId(txId);
       setInfo(
         t("transactions.successInfo", {
           type: TX_TYPE_LABEL[txType],
@@ -401,19 +399,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-      {info && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-          <span>{info}</span>
-          {lastTransferId && (
-            <button
-              onClick={() => setNoteTxId(lastTransferId)}
-              className="rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700"
-            >
-              🖨 {t("transferNote.printButton")}
-            </button>
-          )}
-        </div>
-      )}
+      {info && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{info}</p>}
 
       {view === "new" && allowedTypes.length === 0 && (
         <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-10 text-center text-sm text-slate-400">

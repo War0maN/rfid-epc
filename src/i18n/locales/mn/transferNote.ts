@@ -20,7 +20,6 @@ export default {
   signSignature: "Гарын үсэг",
   signDate: "Огноо",
   stamp: "Тамга / Stamp",
-  printButton: "Падаан хэвлэх",
   noteButton: "Падаан",
   previewTitle: "Шилжүүлгийн падаан",
   editHint: "Хэвлэхийн өмнө текст дээр нь дараад шууд засаж болно.",

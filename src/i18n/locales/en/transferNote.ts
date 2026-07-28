@@ -20,7 +20,6 @@ export default {
   signSignature: "Signature",
   signDate: "Date",
   stamp: "Stamp",
-  printButton: "Print transfer note",
   noteButton: "Transfer note",
   previewTitle: "Stock transfer note",
   editHint: "Click any text to edit it before printing.",

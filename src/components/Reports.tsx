@@ -27,6 +27,7 @@ import { logAuditEvent } from "../lib/audit";
 import { errorMessage } from "../lib/errorMessage";
 import ValuationReport from "./ValuationReport";
 import InflowReport from "./InflowReport";
+import StocktakeReport from "./StocktakeReport";
 
 const ctl =
   "h-9 rounded border border-slate-300 px-2 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200";
@@ -46,10 +47,10 @@ function daysAgo(n: number): string {
 /** Тайлан — дэд табууд: Борлуулалт, Үлдэгдлийн үнэлгээ. */
 export default function Reports() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<"sales" | "inflow" | "valuation">("sales");
+  const [tab, setTab] = useState<"sales" | "inflow" | "valuation" | "stocktake">("sales");
 
   const subTab = (active: boolean) =>
-    "rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
+    "whitespace-nowrap rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
     (active
       ? "border-indigo-600 text-indigo-700"
       : "border-transparent text-slate-500 hover:text-slate-700");
@@ -63,11 +64,13 @@ export default function Reports() {
             ? t("reports.subtitle")
             : tab === "inflow"
               ? t("reports.inflowSubtitle")
-              : t("reports.valuationSubtitle")}
+              : tab === "valuation"
+                ? t("reports.valuationSubtitle")
+                : t("reports.stocktakeSubtitle")}
         </p>
       </div>
 
-      <div className="flex gap-1 border-b border-slate-200">
+      <div className="flex gap-1 overflow-x-auto border-b border-slate-200 [scrollbar-width:thin]">
         <button onClick={() => setTab("sales")} className={subTab(tab === "sales")}>
           {t("reports.salesTab")}
         </button>
@@ -77,9 +80,20 @@ export default function Reports() {
         <button onClick={() => setTab("valuation")} className={subTab(tab === "valuation")}>
           {t("reports.valuationTab")}
         </button>
+        <button onClick={() => setTab("stocktake")} className={subTab(tab === "stocktake")}>
+          {t("reports.stocktakeTab")}
+        </button>
       </div>
 
-      {tab === "sales" ? <SalesReport /> : tab === "inflow" ? <InflowReport /> : <ValuationReport />}
+      {tab === "sales" ? (
+        <SalesReport />
+      ) : tab === "inflow" ? (
+        <InflowReport />
+      ) : tab === "valuation" ? (
+        <ValuationReport />
+      ) : (
+        <StocktakeReport />
+      )}
     </div>
   );
 }

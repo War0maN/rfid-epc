@@ -34,6 +34,12 @@ export default {
 
   missingTitle: "短缺（{{n}}）",
   extrasTitle: "多出（{{n}}）",
+  extrasScanTimeHint:
+    "状态/分店为扫描时刻的状态 — 解释为何多出（之后变更也保持冻结）。可选择「有效（其他分店）」和「未打印」的标签登记到本分店；已售出/其他只能通过退货恢复。",
+  absorbButton: "登记到本分店（{{n}}）",
+  absorbConfirm: "将 {{n}} 个标签在 {{branch}} 设为有效并计入已盘？（将记录在历史中）",
+  absorbDone: "已登记到本分店：{{done}}",
+  absorbSkipped: "已跳过：{{n}}（已售出/其他/调拨中）",
 
   closeBtn: "关闭",
   closeConfirmText: "关闭本次盘点？关闭后无法再添加扫描。",

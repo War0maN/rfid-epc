@@ -20,7 +20,6 @@ export default {
   signSignature: "签字",
   signDate: "日期",
   stamp: "盖章 / Stamp",
-  printButton: "打印调拨单",
   noteButton: "调拨单",
   previewTitle: "调拨单",
   editHint: "打印前可点击任意文字直接编辑。",

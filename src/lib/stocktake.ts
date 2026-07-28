@@ -39,13 +39,17 @@ export interface StocktakeProgressRow {
  *  Төлөв нь ЯАГААД илүү болохыг тайлбарлана: Борлуулсан (шошго хаягдсан),
  *  Бусад гүйлгээ (актлаад хадгалсан), өөр салбарын Идэвхтэй г.м. */
 export interface StocktakeExtraDetail {
+  epc_id: string | null;
   epc_hex: string;
   outcome: StocktakeOutcome;
   name: string | null;
   sku: string | null;
   gtin: string | null;
+  /** Скан хийх үеийн төлөв/салбар (шинэ скан) — байхгүй бол одоогийнх (хуучин дата). */
   status: string | null; // epcStatus код (unknown таг-д null)
   branch_id: string | null;
+  /** Одоогийн төлөв — "энэ салбарт бүртгэх" боломжтой эсэхийг шалгахад. */
+  current_status: string | null;
 }
 
 export interface MissingEpc {
@@ -132,13 +136,14 @@ export async function fetchStocktakeProgress(stocktakeId: string): Promise<Stock
 export async function fetchStocktakeExtras(stocktakeId: string): Promise<StocktakeExtraDetail[]> {
   const { data, error } = await supabase
     .from("stocktake_scans")
-    .select("epc_hex, outcome, epc_id, product_id")
+    .select("epc_hex, outcome, epc_id, product_id, scan_status, scan_branch")
     .eq("stocktake_id", stocktakeId)
     .eq("outcome", "not_expected")
     .order("scanned_at", { ascending: false });
   if (error) throw error;
   const scans = (data ?? []) as {
     epc_hex: string; outcome: StocktakeOutcome; epc_id: string | null; product_id: string | null;
+    scan_status: string | null; scan_branch: string | null;
   }[];
   if (scans.length === 0) return [];
 
@@ -172,15 +177,42 @@ export async function fetchStocktakeExtras(stocktakeId: string): Promise<Stockta
     const e = s.epc_id ? epcMap.get(s.epc_id) : undefined;
     const p = e ? pMap.get(e.product_id) : undefined;
     return {
+      epc_id: s.epc_id,
       epc_hex: s.epc_hex,
       outcome: s.outcome,
       name: p?.name ?? null,
       sku: p?.sku ?? null,
       gtin: p?.gtin ?? null,
-      status: e?.status ?? null,
-      branch_id: e?.branch_id ?? null,
+      // Скан үеийн snapshot байвал түүнийг (хөлдсөн түүх), үгүй бол одоогийнх.
+      status: s.scan_status ?? e?.status ?? null,
+      branch_id: s.scan_branch ?? e?.branch_id ?? null,
+      current_status: e?.status ?? null,
     };
   });
+}
+
+/**
+ * Илүү тоологдсон тагуудыг энэ салбарт бүртгэж тоолуулна (нээлттэй тооллогод):
+ * Идэвхтэй болгож салбарт нь оруулаад snapshot-д нэмж, Тоологдсонд шилжүүлнэ.
+ * Борлуулсан/Бусад/Шилжүүлж буй төлөвтэйг сервер алгасна (буцаалтаар л сэргэнэ).
+ */
+export async function absorbExtras(
+  stocktakeId: string,
+  epcIds: string[]
+): Promise<{ done: number; skipped: number }> {
+  let done = 0;
+  let skipped = 0;
+  for (let i = 0; i < epcIds.length; i += 500) {
+    const { data, error } = await supabase.rpc("absorb_stocktake_extras", {
+      p_stocktake: stocktakeId,
+      p_epc_ids: epcIds.slice(i, i + 500),
+    });
+    if (error) throw error;
+    const r = (data ?? {}) as { done?: number; skipped?: number };
+    done += r.done ?? 0;
+    skipped += r.skipped ?? 0;
+  }
+  return { done, skipped };
 }
 
 /** Дутуу (тоологдоогүй) EPC-үүд — cap-тай (жагсаалт харуулах + актлахад). */
