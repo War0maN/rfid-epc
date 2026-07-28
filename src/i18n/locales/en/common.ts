@@ -21,6 +21,7 @@ export default {
   barcode: "Barcode",
   epc: "EPC",
   price: "Price",
+  cost: "Cost",
   qty: "Qty",
   branch: "Branch",
   status: "Status",

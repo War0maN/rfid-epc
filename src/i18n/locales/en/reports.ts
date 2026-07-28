@@ -14,6 +14,21 @@ export default {
   noJob: "(No job)",
   noSupplier: "(No supplier)",
   noInflow: "No inflow in this interval.",
+  mvTab: "Movement",
+  mvSubtitle:
+    "Inventory movement: Opening + Inflow − Outflow = Closing (at cost and at retail).",
+  mvOpening: "Opening",
+  mvIn: "Inflow",
+  mvOut: "Outflow",
+  mvClosing: "Closing",
+  qtyShort: "Qty",
+  costShort: "At cost",
+  retailShort: "At retail",
+  mvNoData: "No movement or stock in this interval.",
+  mvNoCostWarning:
+    "Note: {{cost}} pcs have no cost and {{price}} pcs have no retail price — counted as 0 (set them on Products).",
+  mvFootnote:
+    "Stock = Unprinted + Active + In transfer (company level — inter-branch transfers are not movement). Inflow = new EPCs + returns; Outflow = sales + write-offs. Valued at the product's current cost/retail price. The identity self-checks on every row: Opening + Inflow − Outflow = Closing.",
   stocktakeTab: "Variance",
   stocktakeSubtitle: "Variance of closed stocktakes — missing/extra pieces, shrinkage value, accuracy.",
   groupStocktake: "By stocktake",

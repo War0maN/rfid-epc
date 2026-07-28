@@ -52,6 +52,7 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
   const [gtin, setGtin] = useState(initial?.gtin ?? "");
   // Үнэ: харагдац таслалтай ("1,500,000"), хадгалахад parseMoney-оор тоо болгоно.
   const [price, setPrice] = useState(initial?.price != null ? formatMoney(initial.price) : "");
+  const [cost, setCost] = useState(initial?.cost != null ? formatMoney(initial.cost) : "");
   const [attrValues, setAttrValues] = useState<Record<string, string>>({}); // def.id -> value
   const [extra, setExtra] = useState<{ label: string; value: string }[]>([]);
 
@@ -127,6 +128,7 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
     setBusy(true);
     try {
       const priceNum = parseMoney(price);
+      const costNum = parseMoney(cost);
       await upsertCatalogProduct(supabase, {
         id: initial?.id,
         categoryId,
@@ -134,6 +136,7 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
         sku: sku.trim() || null,
         gtin: gtin.trim() || null,
         price: priceNum != null && Number.isFinite(priceNum) ? priceNum : null,
+        cost: costNum != null && Number.isFinite(costNum) ? costNum : null,
         attributes,
       });
       onSaved();
@@ -213,6 +216,20 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
               // Зөвхөн цифр үлдээгээд шууд таслалтай харуулна (1500000 → 1,500,000).
               const n = parseMoney(e.target.value);
               setPrice(n != null ? formatMoney(n) : "");
+            }}
+            placeholder={t("products.optionalPlaceholder")}
+            className={inp}
+          />
+        </div>
+        <div>
+          <label className={lbl}>{t("products.costLabel")}</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={cost}
+            onChange={(e) => {
+              const n = parseMoney(e.target.value);
+              setCost(n != null ? formatMoney(n) : "");
             }}
             placeholder={t("products.optionalPlaceholder")}
             className={inp}

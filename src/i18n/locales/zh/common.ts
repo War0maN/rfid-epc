@@ -21,6 +21,7 @@ export default {
   barcode: "条码",
   epc: "EPC",
   price: "价格",
+  cost: "成本",
   qty: "数量",
   branch: "分店",
   status: "状态",

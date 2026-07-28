@@ -17,6 +17,7 @@ export interface ProductInput {
   sku: string | null;
   gtin: string | null; // баркод (байвал SGTIN-96, эс бөгөөс GID-96)
   price: number | null;
+  cost: number | null; // өртгийн үнэ (сонголтоор)
   attributes: Record<string, string>; // { "Өнгө": "Улаан", "Размер": "L" }
 }
 
@@ -54,6 +55,7 @@ export async function upsertCatalogProduct(
     sku: input.sku?.trim() || null,
     name,
     price: input.price,
+    cost: input.cost,
     category_id: input.categoryId,
     attributes: input.attributes,
     gtin, // null бол GID-96

@@ -26,6 +26,7 @@ export interface EpcRow {
   gtin: string;
   sku: string | null;
   price: number | null;
+  cost: number | null;
   category_id: string | null;
   category_l1: string | null; // Үндсэн ангилал
   category_l2: string | null; // Дэд ангилал
@@ -44,6 +45,7 @@ interface ProductLite {
   gtin: string;
   sku: string | null;
   price: number | null;
+  cost: number | null;
   category_id: string | null;
   attributes: Record<string, string> | null;
 }
@@ -70,7 +72,7 @@ function attrsToText(attrs: Record<string, string>): string {
 async function fetchLookupMaps() {
   const [{ data: prods, error: pErr }, { data: jobs, error: jErr }, { data: cats, error: cErr }] =
     await Promise.all([
-      supabase.from("products").select("id, name, gtin, sku, price, category_id, attributes"),
+      supabase.from("products").select("id, name, gtin, sku, price, cost, category_id, attributes"),
       supabase.from("jobs").select("id, job_number, arrival_date, supplier"),
       supabase.from("categories").select("id, name, parent_id"),
     ]);
@@ -137,6 +139,7 @@ function joinRow(
     gtin: p?.gtin ?? "",
     sku: p?.sku ?? null,
     price: p?.price ?? null,
+    cost: p?.cost ?? null,
     category_id: p?.category_id ?? null,
     category_l1: lv.l1,
     category_l2: lv.l2,
@@ -217,6 +220,7 @@ const COL_TO_DB: Record<string, string> = {
   name: "name",
   sku: "sku",
   price: "price",
+  cost: "cost",
   gtin: "gtin",
   cat1: "category_l1",
   cat2: "category_l2",

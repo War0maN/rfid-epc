@@ -4,6 +4,7 @@ export default {
   pieceColumnMissing: "'piece' (quantity) column not found.",
   identifyColumnMissing: "No column to identify items (barcode, sku or name).",
   rowError: "Row {{row}}: {{message}}",
+  templateDownload: "Download template (Excel)",
   rowPieceInvalid: "Row {{row}}: invalid piece ({{value}})",
   noValidRows: "No valid rows to import.",
   productMissing: "item not found ({{key}})",

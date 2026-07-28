@@ -40,6 +40,7 @@ export default {
   skuLabel: "SKU / code",
   optionalPlaceholder: "Optional",
   gtinLabel: "GTIN / barcode",
+  costLabel: "Cost price",
   gtinPlaceholder: "Optional (SGTIN-96 if provided)",
   attributesTitle: "Attributes",
   selectOption: "— Select —",

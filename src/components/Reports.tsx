@@ -28,6 +28,7 @@ import { errorMessage } from "../lib/errorMessage";
 import ValuationReport from "./ValuationReport";
 import InflowReport from "./InflowReport";
 import StocktakeReport from "./StocktakeReport";
+import MovementReport from "./MovementReport";
 
 const ctl =
   "h-9 rounded border border-slate-300 px-2 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200";
@@ -47,7 +48,7 @@ function daysAgo(n: number): string {
 /** Тайлан — дэд табууд: Борлуулалт, Үлдэгдлийн үнэлгээ. */
 export default function Reports() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<"sales" | "inflow" | "valuation" | "stocktake">("sales");
+  const [tab, setTab] = useState<"sales" | "inflow" | "valuation" | "stocktake" | "movement">("sales");
 
   const subTab = (active: boolean) =>
     "whitespace-nowrap rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
@@ -66,7 +67,9 @@ export default function Reports() {
               ? t("reports.inflowSubtitle")
               : tab === "valuation"
                 ? t("reports.valuationSubtitle")
-                : t("reports.stocktakeSubtitle")}
+                : tab === "stocktake"
+                  ? t("reports.stocktakeSubtitle")
+                  : t("reports.mvSubtitle")}
         </p>
       </div>
 
@@ -83,6 +86,9 @@ export default function Reports() {
         <button onClick={() => setTab("stocktake")} className={subTab(tab === "stocktake")}>
           {t("reports.stocktakeTab")}
         </button>
+        <button onClick={() => setTab("movement")} className={subTab(tab === "movement")}>
+          {t("reports.mvTab")}
+        </button>
       </div>
 
       {tab === "sales" ? (
@@ -91,8 +97,10 @@ export default function Reports() {
         <InflowReport />
       ) : tab === "valuation" ? (
         <ValuationReport />
-      ) : (
+      ) : tab === "stocktake" ? (
         <StocktakeReport />
+      ) : (
+        <MovementReport />
       )}
     </div>
   );

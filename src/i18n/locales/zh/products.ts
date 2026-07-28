@@ -39,6 +39,7 @@ export default {
   skuLabel: "SKU / 编码",
   optionalPlaceholder: "选填",
   gtinLabel: "GTIN / 条码",
+  costLabel: "成本价",
   gtinPlaceholder: "选填（如有则为 SGTIN-96）",
   attributesTitle: "属性",
   selectOption: "— 请选择 —",

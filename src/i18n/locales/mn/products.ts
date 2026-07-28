@@ -40,6 +40,7 @@ export default {
   skuLabel: "SKU / код",
   optionalPlaceholder: "Заавал биш",
   gtinLabel: "GTIN / баркод",
+  costLabel: "Өртгийн үнэ",
   gtinPlaceholder: "Заавал биш (байвал SGTIN-96)",
   attributesTitle: "Шинж чанар",
   selectOption: "— Сонгох —",

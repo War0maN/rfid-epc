@@ -53,6 +53,7 @@ interface CleanRow {
   sku: string | null;
   name: string | null;
   price: number | null;
+  cost: number | null; // өртгийн үнэ (сонголтоор — багана байхгүй бол хөндөхгүй)
   piece: number;
   boxNo: string | null;
   branchValue: string | null; // салбарын код эсвэл нэр (Excel-ээс)
@@ -65,6 +66,7 @@ interface HeaderMap {
   sku: number;
   barcode: number;
   price: number;
+  cost: number;
   piece: number;
   box: number;
   branch: number;
@@ -82,18 +84,19 @@ function parseHeader(header: unknown[]): HeaderMap {
   const sku = find(["sku", "code", "код", "артикул", "article"]);
   const barcode = find(["barcode", "bar code", "ean", "ean13", "gtin", "баркод", "бар код"]);
   const price = find(["price", "үнэ", "une", "amount", "цэн"]);
+  const cost = find(["cost", "cost price", "өртөг", "өртгийн үнэ", "ortog", "成本", "成本价"]);
   const piece = find(["piece", "pieces", "pcs", "qty", "quantity", "count", "тоо", "ширхэг", "тоо ширхэг"]);
   const box = find(["box", "box no", "box_no", "boxno", "box №", "хайрцаг", "хайрцагны дугаар", "хайрцаг №"]);
   const branch = find(["branch", "салбар", "салбарын дугаар", "салбарын код", "branch code", "store"]);
   const category = find(["category", "categories", "ангилал", "ангиллал", "анги"]);
 
-  const reserved = new Set([name, sku, barcode, price, piece, box, branch, category].filter((i) => i >= 0));
+  const reserved = new Set([name, sku, barcode, price, cost, piece, box, branch, category].filter((i) => i >= 0));
   const attrCols: { idx: number; label: string }[] = [];
   for (let i = 0; i < norm.length; i++) {
     if (reserved.has(i) || !norm[i]) continue;
     attrCols.push({ idx: i, label: norm[i] });
   }
-  return { name, sku, barcode, price, piece, box, branch, category, attrCols };
+  return { name, sku, barcode, price, cost, piece, box, branch, category, attrCols };
 }
 
 function cell(row: unknown[], idx: number): string {
@@ -103,7 +106,9 @@ function cell(row: unknown[], idx: number): string {
 }
 
 /** Excel файлыг уншиж, цэвэр мөр болгоно. */
-async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: string[] }> {
+async function parseFile(
+  file: Blob
+): Promise<{ rows: CleanRow[]; skipped: string[]; hasCost: boolean }> {
   const buffer = await file.arrayBuffer();
   const raw = await readXlsxFile(buffer);
 
@@ -169,6 +174,8 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
 
     const priceRaw = cell(row, col.price).replace(/[^0-9.]/g, "");
     const price = priceRaw ? Number(priceRaw) : null;
+    const costRaw = cell(row, col.cost).replace(/[^0-9.]/g, "");
+    const cost = costRaw ? Number(costRaw) : null;
 
     out.push({
       gtin,
@@ -176,6 +183,7 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
       sku,
       name,
       price: Number.isFinite(price as number) ? price : null,
+      cost: Number.isFinite(cost as number) ? cost : null,
       piece,
       boxNo: cell(row, col.box) || null,
       branchValue: cell(row, col.branch) || null,
@@ -188,7 +196,7 @@ async function parseFile(file: Blob): Promise<{ rows: CleanRow[]; skipped: strin
       i18n.t("importer.noValidRows") + (skipped.length ? ` (${skipped[0]})` : "")
     );
   }
-  return { rows: out, skipped };
+  return { rows: out, skipped, hasCost: col.cost >= 0 };
 }
 
 /** Задалсан мөр + бүртгэгдсэн барааны id (хүлээн авалт/импорт хоёул ашиглана). */
@@ -205,7 +213,9 @@ export async function parseAndUpsertProducts(
   supabase: SupabaseClient,
   file: Blob
 ): Promise<{ rows: ParsedProductRow[]; skipped: string[]; productCount: number; categoryCount: number }> {
-  const { rows, skipped } = await parseFile(file);
+  // hasCost: "Өртөг" багана файлд БАЙВАЛ л cost-ыг upsert-д оруулна —
+  // байхгүй үед бараанд өмнө нь бөглөсөн өртгийг null-ээр дарж бичихгүй.
+  const { rows, skipped, hasCost } = await parseFile(file);
 
   const { data: tenant, error: tErr } = await supabase.from("tenants").select("id").single();
   if (tErr) throw tErr;
@@ -238,6 +248,7 @@ export async function parseAndUpsertProducts(
       sku: r.sku,
       name: r.name,
       price: r.price,
+      ...(hasCost ? { cost: r.cost } : {}),
       category_id: catId(r),
       attributes: r.attributes,
       source: "packing_list" as const,
@@ -258,6 +269,7 @@ export async function parseAndUpsertProducts(
       sku: r.sku,
       name: r.name,
       price: r.price,
+      ...(hasCost ? { cost: r.cost } : {}),
       category_id: catId(r),
       attributes: r.attributes,
       source: "packing_list" as const,

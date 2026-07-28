@@ -6,6 +6,7 @@ export default {
   pieceColumnMissing: "'piece' (тоо ширхэг) багана олдсонгүй.",
   identifyColumnMissing: "Барааг таних багана (barcode, sku эсвэл name) олдсонгүй.",
   rowError: "Мөр {{row}}: {{message}}",
+  templateDownload: "Загвар татах (Excel)",
   rowPieceInvalid: "Мөр {{row}}: piece буруу ({{value}})",
   noValidRows: "Импортлох хүчинтэй мөр олдсонгүй.",
   productMissing: "бараа олдсонгүй ({{key}})",

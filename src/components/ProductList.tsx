@@ -38,6 +38,7 @@ const STATIC_COLUMNS: ColDef[] = [
   { key: "sku", label: "common.sku", get: (p) => p.sku ?? "", mono: true },
   { key: "gtin", label: "products.colGtin", get: (p) => p.gtin ?? "", mono: true },
   { key: "price", label: "common.price", get: (p) => (p.price != null ? String(p.price) : ""), num: true, money: true },
+  { key: "cost", label: "common.cost", get: (p) => (p.cost != null ? String(p.cost) : ""), num: true, money: true },
   { key: "stock", label: "products.colStock", get: (p) => String(p.active_count), num: true },
 ];
 

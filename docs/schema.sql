@@ -824,7 +824,7 @@ select
   e.id, e.tenant_id, e.serial, e.epc_hex, e.box_no,
   e.created_at, e.printed_at, e.status, e.job_id, e.product_id,
   e.branch_id, b.name as branch_name,
-  p.name, p.gtin, p.sku, p.price,
+  p.name, p.gtin, p.sku, p.price, p.cost,
   p.category_id,
   -- 3 түвшний ангилал (дээдээс доош). leaf нь L1/L2/L3-ийн аль нь ч байж болно.
   coalesce(c3.name, c2.name, c1.name) as category_l1,
@@ -856,12 +856,15 @@ grant select on epc_full to authenticated;
 -- Phase 1: Бүтээгдэхүүн (master) — жагсаалт + үлдэгдэл, админ-only устгах
 -- ============================================================
 
+-- Өртгийн үнэ (cost) — хөдөлгөөний тайлан/ашгийн тооцоонд (сонголтоор бөглөнө).
+alter table products add column if not exists cost numeric;
+
 -- View: products_full — бүтээгдэхүүн + ангиллын түвшин + үлдэгдэл (EPC тоо).
 drop view if exists products_full;
 create view products_full
 with (security_invoker = true) as
 select
-  p.id, p.tenant_id, p.name, p.sku, p.gtin, p.price, p.source, p.created_at,
+  p.id, p.tenant_id, p.name, p.sku, p.gtin, p.price, p.cost, p.source, p.created_at,
   p.category_id, p.attributes,
   coalesce(c3.name, c2.name, c1.name) as category_l1,
   case when c3.id is not null then c2.name when c2.id is not null then c1.name end as category_l2,
@@ -1518,6 +1521,78 @@ as $$
    group by 1, 2, 3, 4, 5
 $$;
 grant execute on function report_inflow(date, date) to authenticated;
+
+-- ============================================================
+-- Тайлан: Бараа материалын хөдөлгөөн (Inventory Movement) — олон улсын
+--   стандарт: Эхний үлдэгдэл + Орлого − Зарлага = Эцсийн үлдэгдэл (бараагаар).
+--   Бүх тоо epc_events-ийн төлөв ШИЛЖИЛТЭЭР (event нэрээр биш) тооцогдоно —
+--   "нөөцөд байгаа" = unprinted/active/transferring; орж ирэх шилжилт бүр
+--   орлого (шинэ=null-ээс, буцаалт=sold/other-оос), гарах шилжилт бүр зарлага
+--   (борлуулалт=sold руу, актлалт=other руу) тул томьёо ҮРГЭЛЖ таарна.
+--   Компанийн түвшинд (салбар хоорондын шилжүүлэг хөдөлгөөн БИШ).
+--   security invoker — RLS үйлчилнэ. Үнэлгээ client талд (өртөг + зарах үнэ).
+-- ============================================================
+drop function if exists report_movement(date, date);
+create function report_movement(p_from date, p_to date)
+returns table (product_id uuid, opening bigint, in_new bigint, in_return bigint,
+               out_sold bigint, out_writeoff bigint, closing bigint)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  with instock as (select unnest(array['unprinted','active','transferring']) s),
+  -- EPC бүрийн интервалын эхэн/төгсгөл дэх төлөв (сүүлчийн event-ээр).
+  state_open as (
+    select distinct on (ev.epc_id) ev.epc_id, ev.new_status
+      from epc_events ev
+     where ev.created_at < p_from
+     order by ev.epc_id, ev.created_at desc, ev.id desc
+  ),
+  state_close as (
+    select distinct on (ev.epc_id) ev.epc_id, ev.new_status
+      from epc_events ev
+     where ev.created_at < p_to + 1
+     order by ev.epc_id, ev.created_at desc, ev.id desc
+  ),
+  moves as (
+    select e.product_id,
+           count(*) filter (where ev.old_status is null
+                              and ev.new_status in (select s from instock)) as in_new,
+           count(*) filter (where ev.old_status in ('sold','other')
+                              and ev.new_status in (select s from instock)) as in_return,
+           count(*) filter (where ev.old_status in (select s from instock)
+                              and ev.new_status = 'sold') as out_sold,
+           count(*) filter (where ev.old_status in (select s from instock)
+                              and ev.new_status = 'other') as out_writeoff
+      from epc_events ev
+      join epc_codes e on e.id = ev.epc_id
+     where ev.created_at >= p_from and ev.created_at < p_to + 1
+     group by e.product_id
+  ),
+  opening as (
+    select e.product_id, count(*) as qty
+      from state_open so join epc_codes e on e.id = so.epc_id
+     where so.new_status in (select s from instock)
+     group by e.product_id
+  ),
+  closing as (
+    select e.product_id, count(*) as qty
+      from state_close sc join epc_codes e on e.id = sc.epc_id
+     where sc.new_status in (select s from instock)
+     group by e.product_id
+  )
+  select coalesce(m.product_id, o.product_id, c.product_id),
+         coalesce(o.qty, 0), coalesce(m.in_new, 0), coalesce(m.in_return, 0),
+         coalesce(m.out_sold, 0), coalesce(m.out_writeoff, 0), coalesce(c.qty, 0)
+    from moves m
+    full join opening o on o.product_id = m.product_id
+    full join closing c on c.product_id = coalesce(m.product_id, o.product_id)
+   where coalesce(o.qty, 0) <> 0 or coalesce(c.qty, 0) <> 0
+      or coalesce(m.in_new, 0) + coalesce(m.in_return, 0)
+       + coalesce(m.out_sold, 0) + coalesce(m.out_writeoff, 0) <> 0
+$$;
+grant execute on function report_movement(date, date) to authenticated;
 
 -- ============================================================
 -- Phase 2b: Хэрэглэгч↔салбар хуваарилалт + салбараар scoping.

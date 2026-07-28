@@ -471,7 +471,16 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
         <div className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/40 p-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div>
-              <label className={lbl}>{t("receiving.fileLabel")}</label>
+              <div className="flex items-center justify-between">
+                <label className={lbl}>{t("receiving.fileLabel")}</label>
+                <a
+                  href="/templates/packing-list-template.xlsx"
+                  download
+                  className="text-xs font-medium text-indigo-600 hover:underline"
+                >
+                  ⬇ {t("importer.templateDownload")}
+                </a>
+              </div>
               <input
                 type="file"
                 accept=".xlsx"

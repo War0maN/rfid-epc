@@ -22,6 +22,7 @@ export default {
   barcode: "Баркод",
   epc: "EPC",
   price: "Үнэ",
+  cost: "Өртөг",
   qty: "Тоо",
   branch: "Салбар",
   status: "Төлөв",

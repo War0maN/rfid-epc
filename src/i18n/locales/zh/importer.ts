@@ -4,6 +4,7 @@ export default {
   pieceColumnMissing: "未找到 'piece'（数量）列。",
   identifyColumnMissing: "未找到识别商品的列（barcode、sku 或 name）。",
   rowError: "第 {{row}} 行：{{message}}",
+  templateDownload: "下载模板（Excel）",
   rowPieceInvalid: "第 {{row}} 行：piece 无效（{{value}}）",
   noValidRows: "未找到可导入的有效行。",
   productMissing: "未找到商品（{{key}}）",

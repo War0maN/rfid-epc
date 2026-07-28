@@ -12,6 +12,7 @@ export interface ProductRow {
   sku: string | null;
   gtin: string | null;
   price: number | null;
+  cost: number | null; // өртгийн үнэ (хөдөлгөөний тайлан/ашгийн тооцоонд)
   category_id: string | null;
   category_l1: string | null;
   category_l2: string | null;

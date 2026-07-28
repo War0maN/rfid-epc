@@ -165,9 +165,18 @@ export default function CreateJobForm({ onCreated, allowedBranches = null }: Pro
         </div>
 
         <div className="mt-4">
-          <label className="mb-1 block text-sm font-medium text-slate-700">
-            {t("createJob.fileLabel")} <span className="text-red-500">*</span>
-          </label>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="block text-sm font-medium text-slate-700">
+              {t("createJob.fileLabel")} <span className="text-red-500">*</span>
+            </label>
+            <a
+              href="/templates/packing-list-template.xlsx"
+              download
+              className="text-xs font-medium text-indigo-600 hover:underline"
+            >
+              ⬇ {t("importer.templateDownload")}
+            </a>
+          </div>
           <input
             ref={fileRef}
             type="file"
