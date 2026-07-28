@@ -2,7 +2,7 @@
 export default {
   // Гүйлгээний төрөл (TX_TYPE_LABEL)
   type: {
-    sale: "Борлуулсан",
+    sale: "Борлуулалт",
     transfer: "Шилжүүлэг",
     other: "Бусад гүйлгээ",
     return: "Буцаалт",
