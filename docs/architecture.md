@@ -30,7 +30,7 @@ Serial нь тенант × бараа бүрд **хэзээ ч давтагда
 
 - **Ангилал** — 3 түвшин (Үндсэн → Дэд → Барааны), заавал бүгдийг бөглөх албагүй.
 - **Шинж чанар** — глобал жагсаалт (Өнгө, Размер...); утга нь `products.attributes` jsonb-д.
-- **Бараа (master)** — нэр, SKU, GTIN, үнэ, ангилал, шинж чанарууд. Импортоос автоматаар үүсдэг (gtin эсвэл ext_key-ээр давхардалгүй upsert).
+- **Бараа (master)** — нэр, SKU, GTIN, үнэ, **өртөг (cost, сонголтоор — Хөдөлгөөний тайлан/ашгийн суурь)**, ангилал, шинж чанарууд. Импортоос автоматаар үүсдэг (gtin эсвэл ext_key-ээр давхардалгүй upsert).
 
 ## 4. EPC-ийн төлөвийн мөчлөг
 
@@ -55,9 +55,11 @@ Serial нь тенант × бараа бүрд **хэзээ ч давтагда
 | Буцаалт (return) | Зарагдсан/гарсан бараа буцаах | sold/other → active |
 
 - Нэг гүйлгээ = нэг салбарын EPC-үүд; `transaction_items`-д ширхэг бүр **тухайн үеийн үнийн snapshot**-той.
+- **Дугаарлалт**: төрөл бүр өөрийн угтвартай дэс (олон улсын нэршил) — transfer=**TRF-0001**, sale=**SAL-0001**, return=**RTN-0001**, other=**ADJ-0001** (тенант бүрд тусдаа; `create_transaction` дотор RCV-маягийн retry-той олгоно).
 - UI: скан→сагс урсгал (салбар сонгох → тохирох EPC жагсаалт → RFID уншигч/гараар скан эсвэл дарж нэмэх → нийт дүнтэй баталгаажуулах).
 - Гүйлгээ **хэзээ ч устгагдахгүй** (DELETE policy байхгүй) — immutable ledger зарчим.
 - Бүх бичилт `create_transaction`/`receive_transfer`/`cancel_transfer` атом RPC-ээр (security definer, дотроо тенант/төлөв/салбар/эрхийн шалгалттай).
+- **Шилжүүлгийн падаан (Stock Transfer Note)**: гүйлгээний түүхийн дэлгэрэнгүй модалоос шилжүүлэг бүрд олон улсын Delivery Note загвартай баримт — толгой (байгууллага/салбарын нэр, хаяг, утас — `tenants`/`branches`-ийн contact талбарууд), бараагаар бүлэглэсэн хүснэгт, гарын үсэг ×3 + тамгын хүрээ. Урьдчилан харах модал (`TransferNoteDialog`): iframe srcDoc + body contentEditable (хэвлэхийн өмнө текстээ засна) → iframe print() — popup ХЭРЭГЛЭХГҮЙ (blocker-т өртдөг байсан); фонтод CJK ил зааснаар хятад үсэг PDF-д гардаг.
 
 ## 6. EPC түүх (epc_events)
 
@@ -67,10 +69,20 @@ Append-only event log — `epc_codes`-ийн insert/update дээрх DB trigger
 
 Мөр бүрд: өмнөх/шинэ төлөв, өмнөх/шинэ салбар, холбогдох гүйлгээ (tx_id), тэмдэглэл (reason), хэн (actor), хэзээ. `(tenant_id, epc_id, created_at)` индекстэй тул сая мөрд ч нэг EPC-ийн түүх хурдан. UI: Бараа (EPC) → EPC дээр дарахад Хайлт руу үсэрч timeline харуулна.
 
-## 7. Үлдэгдэл ба Тайлан
+## 7. Үлдэгдэл ба Тайлан (7 дэд таб, 2026-07 бүрэн)
 
-- **Үлдэгдэл** = Идэвхтэй EPC-ийн тоо, бараа × салбараар (`stock_by_branch` view). Матриц UI; Нийт/Нийт үнэ нь харагдаж буй салбаруудаар; тоон дээр дарж EPC жагсаалт.
-- **Тайлан (Борлуулалт)** = `epc_events`-ийн 'sold' дээр DB-aggregate (`report_sales` RPC: өдөр×салбар×бараа×хэрэглэгч) — гүйлгээгээр ч, гараар Борлуулсан болгосон ч орно. Бүлэглэлт client-side (өдөр/сар/салбар/бараа/хэрэглэгч). Хязгаарлалт: буцаалт хасагддаггүй.
+- **Үлдэгдэл цэс** = Идэвхтэй EPC-ийн тоо, бараа × салбараар (`stock_by_branch` view). Матриц UI; тоон дээр дарж EPC жагсаалт.
+- **Тайлан цэс — 7 дэд таб** (олон улсын стандарт нэршилтэй):
+  | Таб | Юу | Эх сурвалж |
+  |---|---|---|
+  | Борлуулалт | Цэвэр борлуулалт (буцаалт буцаасан өдрөөрөө хасагдана) | `report_sales` RPC (epc_events sold/returned) |
+  | Орлого (Inflow) | Интервалд шинээр үүссэн EPC — бүх суваг, төлөв үл хамааран; устгагдсан орохгүй | `report_inflow` RPC |
+  | Үлдэгдэл (Stock) | Өнөөдрийн снапшот: идэвхтэй ширхэг × одоогийн үнэ | client (stock_by_branch × products_full) |
+  | Зөрүү (Variance) | Хаагдсан тооллогуудын дутуу/илүү, алдагдлын дүн, гүйцэтгэл % | `report_stocktake` RPC |
+  | Хөдөлгөөн (Movement) | Эхний + Орлого − Зарлага = Эцсийн (өртөг + зарах үнээр) | `report_movement` RPC |
+  | Шилжүүлэг (Transfers) | Чиглэлийн матриц + гацсан pending жагсаалт | client (transactions) |
+  | Актлалт (Write-offs) | Шалтгаан/хэн/дүн — хяналт, аудит | client (transactions type=other) |
+- **Тогтсон хэв маягууд**: том нэгтгэл DB талд `report_*` RPC (**security invoker** — RLS/салбарын scoping автоматаар), бүлэглэлт client талд labelMap-тай; үнэ/өртөггүй бараа дүнд 0-ээр + байгаа үед л шар анхааруулга (тусдаа багана ҮГҮЙ — хэрэглэгчийн шийдвэр); CSV бүр audit log-тай. `report_movement` тоог event нэрээр биш **төлөвийн шилжилтээр** тооцдог тул томьёо мөр бүрд өөрөө шалгагдана (нөөц = unprinted+active+transferring, компанийн түвшинд — салбар хоорондын шилжүүлэг хөдөлгөөн биш).
 
 ## 8. Эрхийн систем (2 давхарга)
 
@@ -93,13 +105,21 @@ Append-only event log — `epc_codes`-ийн insert/update дээрх DB trigger
 
 ## 11. Гол хүснэгтүүд
 
-`tenants · profiles · invites · user_branches · user_permissions · branches · categories · attribute_defs · products · serial_counters · object_class_counters · jobs · epc_codes · epc_events · transactions · transaction_items · label_templates · audit_log`
+`tenants · profiles · invites · user_branches · user_permissions · branches · categories · attribute_defs · products · serial_counters · object_class_counters · jobs · epc_codes · epc_events · transactions · transaction_items · label_templates · audit_log · receipts · receipt_lines · receipt_scans · stocktakes · stocktake_items · stocktake_scans`
 
-View: `epc_full · products_full · stock_by_branch` (бүгд security_invoker → RLS үйлчилнэ)
+View: `epc_full · products_full · stock_by_branch · receipt_progress · stocktake_progress · stocktake_missing` (бүгд security_invoker → RLS үйлчилнэ). Тайлангийн RPC: `report_sales · report_inflow · report_stocktake · report_movement` (security invoker).
+
+Байгууллага/салбарын contact: `tenants.address/phone/email` (Удирдлага→Байгууллага, зөвхөн админ засна — UPDATE policy), `branches.address/phone` — падааны толгойд.
 
 ## 12. Үе шатын түүх (товч)
 
-Phase 0 EPC/шошго/каталог → 1 Бүтээгдэхүүн master → 2 Салбар → 3 Төлөвийн мөчлөг → 4 Үлдэгдэл → 5 Гүйлгээ + EPC түүх → 6 Тайлан → 2b Салбар scoping → 2c Эрхийн систем → UX багц (таслал, аудит дэлгэрэнгүй, EPC устгах, Буцаалт). Хийгдээгүй: i18n (3 хэл), тооллого, deploy, имэйл урилга.
+Phase 0 EPC/шошго/каталог → 1 Бүтээгдэхүүн master → 2 Салбар → 3 Төлөвийн мөчлөг → 4 Үлдэгдэл → 5 Гүйлгээ + EPC түүх → 6 Тайлан → 2b Салбар scoping → 2c Эрхийн систем → UX багц → i18n (3 хэл) → Ү1 Deploy (Vercel) → Ү2 Хүлээн авалт → Ү3 Тооллого → Ү4 Mobile nav → 2026-07-27/28: цэс бүлэглэлт (12→7), шилжүүлгийн падаан, TRF/SAL/RTN/ADJ дугаарлалт, тайлан 7 таб, өртөг, импортын загвар, UI жигдлэлт. Хийгдээгүй: имэйл урилга; Ү5 (C5 туршилт хүлээгдэж байна), Ү6.
+
+## 12а. Цэсний бүтэц ба UI стандарт (2026-07-28)
+
+Дээд цэс **7**: Бараа (EPC) [EPC жагсаалт · EPC үүсгэх · EPC-р хүлээн авах · Шошгоны загвар · EPC хайлт] · Бүтээгдэхүүн [Жагсаалт · Ангилал] · Үлдэгдэл · Тооллого · Гүйлгээ [Гүйлгээ · Түүх] · Тайлан [7 таб] · Удирдлага [Салбар · Байгууллага · Аудит · Хэрэглэгчид]. App.tsx NAV бүтэц (дан таб + бүлэг); бүлэг сүүлд нээсэн дэд табаа localStorage `navSub.*`-д санана; бүлгийн бүх хүүхэд эрхээр нуугдвал бүлэг нуугдана.
+
+UI стандарт: дээд цэс **font-semibold**, дэд таб энгийн; хуудас доторх **давтсан том гарчиг байхгүй** (таб өөрөө гарчиг) — зөвхөн жижиг саарал тайлбар текст; баталгаажуулалт үргэлж ConfirmDialog.
 
 ## 13. Хүлээн авалт (receiving, Ү2 — 2026-07)
 
@@ -113,6 +133,12 @@ unknown_gtin / not_on_list / undecodable / serial_conflict (сануулга).
 таг-гүй үлдэгдэлд ижил job дээр EPC үүсгэж (Хэвлээгүй) хэвлэнэ, эсвэл дутуу
 гэж хаана. Системийн serial үйлдвэрийнхээс хараат бус өөрийн дэсээ явна.
 
+Excel импорт (генерац + хүлээн авалт хоёул): толгойн багануудыг MN/EN/ZH
+synonym-оор таньдаг; "Өртөг/Cost/成本" багана сонголтоор — байхгүй бол
+барааны байгаа өртгийг ДАРДАГГҮЙ. Загвар файл: `public/templates/
+packing-list-template.{mn,en,zh}.xlsx` — идэвхтэй хэлээр "Загвар татах"
+холбоосоор татагдана (заавал баганууд шараар + Тайлбар хуудастай).
+
 ## 14. Тооллого (stocktake, Ү3 — 2026-07)
 
 Салбарын Идэвхтэй EPC-г бодит байдалтай тулгана. `create_stocktake` (ST-0001
@@ -124,11 +150,24 @@ UI-д огт харагдахгүй). Тооллого юуг ч өөрчилд�
 checkbox-оор сонгож, заавал тайлбартайгаар `change_epc_status`-аар актална
 ("Тооллого ST-XXXX: тайлбар" түүхэнд). Явц/дутуу/илүү CSV-ээр татагдана.
 
+Илүүгийн семантик (2026-07-28): скан бүртгэгдэх МӨЧИД тагийн төлөв/салбар
+`stocktake_scans.scan_status/scan_branch`-д хөлддөг — хаагдсан тооллого =
+хөлдсөн баримт, EPC хожим өөрчлөгдсөн ч "яагаад илүү байсан" нь харагдана.
+Нээлттэй тооллогод Илүү модалын checkbox + `absorb_stocktake_extras` RPC:
+Идэвхтэй (өөр салбарын) / Хэвлээгүй тагийг энэ салбарт Идэвхтэй болгож
+snapshot-д нэмээд Тоологдсонд шилжүүлнэ (түүхэнд тэмдэглэлтэй);
+Борлуулсан/Бусад/Шилжүүлж буйг АЛГАСНА — буцаалт/хүлээн авалтаараа л сэргэнэ.
+
 ## 15. Төхөөрөмж (Chainway C5) стратеги
 
 Бүх логик DB талд (RPC+RLS) тул C5 = бас нэг клиент, sync давхарга хэрэггүй.
 Одоо: C5-ийн Chrome + keyboard-wedge (уншигч гар шиг бичдэг) горимоор
-vercel дээрх апп шууд ажиллана. Дараа (Ү5-Ү6): EpcBarcodeApp (Kotlin+Compose,
-Chainway DeviceAPI, github War0maN/EpcBarcodeApp) Supabase-т холбогдож bulk
-уншилт (хүлээн авалт, тооллого), дутуу барааг Geiger/Gen2 Select-ээр хайх,
-скангийн эх сурвалж (device/manual) ялгах.
+vercel дээрх апп шууд ажиллана.
+
+Ү5 явц (2026-07-27, EpcBarcodeApp feature/supabase branch, C5 туршилт
+хүлээгдэж байна): supabase-kt 3.5.0 (Auth+Postgrest, вебтэй ижил акаунт/RLS),
+нэвтрэлт + офлайн горим, нээлттэй RCV ажлууд татах, уншилтаа receive_scans
+RPC-ээр 500-аар idempotent илгээх, явц харах. MatchEngine-д ижил баркод олон
+хайрцагт давхардаж тоологддог гажилт засагдсан (barcode-оор нэгтгэж qty
+нийлүүлдэг). Үлдсэн (Ү6): тооллогын урсгал, офлайн буфер, скангийн эх
+сурвалж (device/manual), дутууг Geiger/Gen2 Select-ээр хайх.
