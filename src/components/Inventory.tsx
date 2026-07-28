@@ -295,10 +295,7 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">{t("inventory.title")}</h2>
-          <p className="text-sm text-slate-500">{t("inventory.subtitle")}</p>
-        </div>
+        <p className="text-sm text-slate-500">{t("inventory.subtitle")}</p>
         <div className="flex-1" />
         <span className="text-sm text-slate-600">
           <strong>{sorted.length.toLocaleString()}</strong> {t("inventory.productsUnit")} ·{" "}

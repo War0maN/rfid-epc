@@ -230,8 +230,7 @@ export default function AuditLog() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-900">{t("audit.title")}</h2>
+      <div className="flex items-center justify-end">
         <button
           onClick={load}
           disabled={loading}

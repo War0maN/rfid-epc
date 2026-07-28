@@ -24,7 +24,7 @@ interface Result {
 
 /** Ажил (Job) үүсгэх форм + packing list CSV upload -> EPC генерац. */
 export default function CreateJobForm({ onCreated, allowedBranches = null }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [jobNumber, setJobNumber] = useState("");
   const [arrivalDate, setArrivalDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [supplier, setSupplier] = useState("");
@@ -101,8 +101,6 @@ export default function CreateJobForm({ onCreated, allowedBranches = null }: Pro
         onSubmit={handleSubmit}
         className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
       >
-        <h2 className="mb-4 text-lg font-semibold text-slate-900">{t("createJob.title")}</h2>
-
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
@@ -170,7 +168,7 @@ export default function CreateJobForm({ onCreated, allowedBranches = null }: Pro
               {t("createJob.fileLabel")} <span className="text-red-500">*</span>
             </label>
             <a
-              href="/templates/packing-list-template.xlsx"
+              href={`/templates/packing-list-template.${i18n.language}.xlsx`}
               download
               className="text-xs font-medium text-indigo-600 hover:underline"
             >

@@ -38,7 +38,7 @@ interface Props {
 
 /** Хүлээн авалт (Ү2) — таг-тай ирсэн барааг packing list-тэй тулгаж бүртгэнэ. */
 export default function Receiving({ allowedBranches = null, perms = null }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const can = makeCan(perms);
   const canAct = can("act_receiving");
 
@@ -452,10 +452,7 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">{t("receiving.title")}</h2>
-          <p className="text-sm text-slate-500">{t("receiving.subtitle")}</p>
-        </div>
+        <p className="text-sm text-slate-500">{t("receiving.subtitle")}</p>
         <div className="flex-1" />
         {canAct && (
           <button onClick={() => setShowCreate((s) => !s)} className={primaryBtn}>
@@ -474,7 +471,7 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
               <div className="flex items-center justify-between">
                 <label className={lbl}>{t("receiving.fileLabel")}</label>
                 <a
-                  href="/templates/packing-list-template.xlsx"
+                  href={`/templates/packing-list-template.${i18n.language}.xlsx`}
                   download
                   className="text-xs font-medium text-indigo-600 hover:underline"
                 >

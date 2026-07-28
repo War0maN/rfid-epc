@@ -216,10 +216,7 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">{t("common.products")}</h2>
-          <p className="text-sm text-slate-500">{t("products.subtitle")}</p>
-        </div>
+        <p className="text-sm text-slate-500">{t("products.subtitle")}</p>
         <div className="flex-1" />
         <span className="text-sm text-slate-600">
           {activeFilters.length > 0 ? t("products.filtered") : t("common.total")} <strong>{sorted.length.toLocaleString()}</strong>

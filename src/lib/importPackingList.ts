@@ -80,15 +80,15 @@ function parseHeader(header: unknown[]): HeaderMap {
   const lower = norm.map((s) => s.toLowerCase());
   const find = (cands: string[]) => lower.findIndex((h) => cands.includes(h));
 
-  const name = find(["name", "нэр", "барааны нэр", "product", "бараа"]);
-  const sku = find(["sku", "code", "код", "артикул", "article"]);
-  const barcode = find(["barcode", "bar code", "ean", "ean13", "gtin", "баркод", "бар код"]);
-  const price = find(["price", "үнэ", "une", "amount", "цэн"]);
+  const name = find(["name", "нэр", "барааны нэр", "product", "бараа", "名称", "品名", "商品名称"]);
+  const sku = find(["sku", "code", "код", "артикул", "article", "货号"]);
+  const barcode = find(["barcode", "bar code", "ean", "ean13", "gtin", "баркод", "бар код", "条码", "条形码"]);
+  const price = find(["price", "үнэ", "une", "amount", "цэн", "价格", "单价"]);
   const cost = find(["cost", "cost price", "өртөг", "өртгийн үнэ", "ortog", "成本", "成本价"]);
-  const piece = find(["piece", "pieces", "pcs", "qty", "quantity", "count", "тоо", "ширхэг", "тоо ширхэг"]);
-  const box = find(["box", "box no", "box_no", "boxno", "box №", "хайрцаг", "хайрцагны дугаар", "хайрцаг №"]);
-  const branch = find(["branch", "салбар", "салбарын дугаар", "салбарын код", "branch code", "store"]);
-  const category = find(["category", "categories", "ангилал", "ангиллал", "анги"]);
+  const piece = find(["piece", "pieces", "pcs", "qty", "quantity", "count", "тоо", "ширхэг", "тоо ширхэг", "数量", "件数"]);
+  const box = find(["box", "box no", "box_no", "boxno", "box №", "хайрцаг", "хайрцагны дугаар", "хайрцаг №", "箱号"]);
+  const branch = find(["branch", "салбар", "салбарын дугаар", "салбарын код", "branch code", "store", "分店", "门店"]);
+  const category = find(["category", "categories", "ангилал", "ангиллал", "анги", "分类"]);
 
   const reserved = new Set([name, sku, barcode, price, cost, piece, box, branch, category].filter((i) => i >= 0));
   const attrCols: { idx: number; label: string }[] = [];

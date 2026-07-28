@@ -19,6 +19,6 @@ export default {
   loading: "Loading…",
   reportsLoading: "Loading reports…",
   designerLoading: "Loading designer…",
-  subProducts: "Products",
+  subProducts: "List",
   subCatalog: "Categories",
 };

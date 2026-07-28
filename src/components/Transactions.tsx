@@ -371,12 +371,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">{t("transactions.title")}</h2>
-          <p className="text-sm text-slate-500">
-            {t("transactions.subtitle")}
-          </p>
-        </div>
+        <p className="text-sm text-slate-500">{t("transactions.subtitle")}</p>
         <div className="flex-1" />
         <button onClick={reload} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
           ↻ {t("transactions.refresh")}

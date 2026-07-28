@@ -272,12 +272,9 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900">{t("catalog.title")}</h2>
-        <p className="text-sm text-slate-500">
-          {t("catalog.intro", { levels: CATEGORY_LEVELS.join(" → ") })}
-        </p>
-      </div>
+      <p className="text-sm text-slate-500">
+        {t("catalog.intro", { levels: CATEGORY_LEVELS.join(" → ") })}
+      </p>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 

@@ -58,20 +58,17 @@ export default function Reports() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900">{t("reports.title")}</h2>
-        <p className="text-sm text-slate-500">
-          {tab === "sales"
-            ? t("reports.subtitle")
-            : tab === "inflow"
-              ? t("reports.inflowSubtitle")
-              : tab === "valuation"
-                ? t("reports.valuationSubtitle")
-                : tab === "stocktake"
-                  ? t("reports.stocktakeSubtitle")
-                  : t("reports.mvSubtitle")}
-        </p>
-      </div>
+      <p className="text-sm text-slate-500">
+        {tab === "sales"
+          ? t("reports.subtitle")
+          : tab === "inflow"
+            ? t("reports.inflowSubtitle")
+            : tab === "valuation"
+              ? t("reports.valuationSubtitle")
+              : tab === "stocktake"
+                ? t("reports.stocktakeSubtitle")
+                : t("reports.mvSubtitle")}
+      </p>
 
       <div className="flex gap-1 overflow-x-auto border-b border-slate-200 [scrollbar-width:thin]">
         <button onClick={() => setTab("sales")} className={subTab(tab === "sales")}>

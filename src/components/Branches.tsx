@@ -97,12 +97,7 @@ export default function Branches({ isAdmin }: Props) {
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">{t("branches.title")}</h2>
-          <p className="text-sm text-slate-500">
-            {t("branches.subtitle")}
-          </p>
-        </div>
+        <p className="text-sm text-slate-500">{t("branches.subtitle")}</p>
         {isAdmin && !adding && (
           <button onClick={() => setAdding(true)} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
             {t("branches.addBranch")}

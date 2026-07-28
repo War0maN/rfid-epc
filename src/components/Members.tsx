@@ -164,8 +164,6 @@ export default function Members() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <h2 className="text-lg font-semibold text-slate-900">{t("members.title")}</h2>
-
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {/* Урих */}

@@ -86,7 +86,6 @@ export default function EpcLookup({ initialHex }: Props) {
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <form onSubmit={handleSubmit} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-1 text-lg font-semibold text-slate-900">{t("epcLookup.title")}</h2>
         <p className="mb-4 text-sm text-slate-500">{t("epcLookup.subtitle")}</p>
         <div className="flex gap-2">
           <input

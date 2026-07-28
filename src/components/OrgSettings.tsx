@@ -64,10 +64,7 @@ export default function OrgSettings() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900">{t("org.title")}</h2>
-        <p className="text-sm text-slate-500">{t("org.subtitle")}</p>
-      </div>
+      <p className="text-sm text-slate-500">{t("org.subtitle")}</p>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {info && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{info}</p>}

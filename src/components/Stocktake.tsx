@@ -775,10 +775,7 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">{t("stocktake.title")}</h2>
-          <p className="text-sm text-slate-500">{t("stocktake.subtitle")}</p>
-        </div>
+        <p className="text-sm text-slate-500">{t("stocktake.subtitle")}</p>
         <div className="flex-1" />
         {canAct && (
           <button onClick={() => setShowCreate((s) => !s)} className={primaryBtn}>

@@ -20,6 +20,6 @@ export default {
   loading: "Ачаалж байна…",
   reportsLoading: "Тайлан ачаалж байна…",
   designerLoading: "Дизайнер ачаалж байна…",
-  subProducts: "Бүтээгдэхүүн",
+  subProducts: "Жагсаалт",
   subCatalog: "Ангилал",
 };

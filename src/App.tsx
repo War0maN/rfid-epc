@@ -239,10 +239,11 @@ function App() {
                 key={isGroup(n) ? n.group : n.id}
                 onClick={() => (isGroup(n) ? openGroup(n) : setTab(n.id))}
                 className={
-                  "whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition " +
+                  // Дээд цэс дэд табаас ялгарч bold — шатлал нүдэнд ил байна.
+                  "whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold transition " +
                   (active
                     ? "border-indigo-600 text-indigo-700"
-                    : "border-transparent text-slate-500 hover:text-slate-700")
+                    : "border-transparent text-slate-600 hover:text-slate-800")
                 }
               >
                 {t(n.label)}

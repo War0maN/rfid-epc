@@ -19,6 +19,6 @@ export default {
   loading: "加载中…",
   reportsLoading: "报表加载中…",
   designerLoading: "设计器加载中…",
-  subProducts: "产品",
+  subProducts: "列表",
   subCatalog: "分类",
 };
