@@ -29,6 +29,8 @@ import ValuationReport from "./ValuationReport";
 import InflowReport from "./InflowReport";
 import StocktakeReport from "./StocktakeReport";
 import MovementReport from "./MovementReport";
+import TransferReport from "./TransferReport";
+import WriteoffReport from "./WriteoffReport";
 
 const ctl =
   "h-9 rounded border border-slate-300 px-2 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200";
@@ -48,7 +50,9 @@ function daysAgo(n: number): string {
 /** Тайлан — дэд табууд: Борлуулалт, Үлдэгдлийн үнэлгээ. */
 export default function Reports() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<"sales" | "inflow" | "valuation" | "stocktake" | "movement">("sales");
+  const [tab, setTab] = useState<
+    "sales" | "inflow" | "valuation" | "stocktake" | "movement" | "transfers" | "writeoffs"
+  >("sales");
 
   const subTab = (active: boolean) =>
     "whitespace-nowrap rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
@@ -59,15 +63,17 @@ export default function Reports() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-500">
-        {tab === "sales"
-          ? t("reports.subtitle")
-          : tab === "inflow"
-            ? t("reports.inflowSubtitle")
-            : tab === "valuation"
-              ? t("reports.valuationSubtitle")
-              : tab === "stocktake"
-                ? t("reports.stocktakeSubtitle")
-                : t("reports.mvSubtitle")}
+        {
+          {
+            sales: t("reports.subtitle"),
+            inflow: t("reports.inflowSubtitle"),
+            valuation: t("reports.valuationSubtitle"),
+            stocktake: t("reports.stocktakeSubtitle"),
+            movement: t("reports.mvSubtitle"),
+            transfers: t("reports.trfSubtitle"),
+            writeoffs: t("reports.woSubtitle"),
+          }[tab]
+        }
       </p>
 
       <div className="flex gap-1 overflow-x-auto border-b border-slate-200 [scrollbar-width:thin]">
@@ -86,6 +92,12 @@ export default function Reports() {
         <button onClick={() => setTab("movement")} className={subTab(tab === "movement")}>
           {t("reports.mvTab")}
         </button>
+        <button onClick={() => setTab("transfers")} className={subTab(tab === "transfers")}>
+          {t("reports.trfTab")}
+        </button>
+        <button onClick={() => setTab("writeoffs")} className={subTab(tab === "writeoffs")}>
+          {t("reports.woTab")}
+        </button>
       </div>
 
       {tab === "sales" ? (
@@ -96,8 +108,12 @@ export default function Reports() {
         <ValuationReport />
       ) : tab === "stocktake" ? (
         <StocktakeReport />
-      ) : (
+      ) : tab === "movement" ? (
         <MovementReport />
+      ) : tab === "transfers" ? (
+        <TransferReport />
+      ) : (
+        <WriteoffReport />
       )}
     </div>
   );
