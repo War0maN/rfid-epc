@@ -32,5 +32,8 @@ function friendly(msg: string): string {
   if (m.includes("invalid login credentials")) return i18n.t("errors.invalidCredentials");
   // Ажлын дугаар давхцсан (unique tenant_id+job_number) — constraint нэрээр танина.
   if (m.includes("jobs_tenant_id_job_number_key")) return i18n.t("errors.jobNumberDuplicate");
+  // Баганын төрөлд тохирохгүй шүүлт/утга (date/тоон баганад текст г.м.).
+  if (m.includes("operator does not exist") || m.includes("invalid input syntax"))
+    return i18n.t("errors.badFilterValue");
   return msg;
 }

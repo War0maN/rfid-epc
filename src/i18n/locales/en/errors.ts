@@ -1,4 +1,5 @@
 export default {
+  badFilterValue: "The filter value does not match the column type — check the value and try again.",
   branchCodeDuplicate: "This code is already used by another branch. Please enter a different code.",
   branchHasEpc:
     "This branch has EPC records and cannot be deleted. Move the items to another branch first.",

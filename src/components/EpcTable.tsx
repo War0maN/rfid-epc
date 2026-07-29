@@ -8,6 +8,7 @@ import {
   type EpcSort,
 } from "../lib/queries";
 import { listAttributeDefs, dedupAttrs, type AttributeDef } from "../lib/catalog";
+import { listBranches, type Branch } from "../lib/branches";
 import { downloadCsv, toCsv } from "../lib/exportCsv";
 import { epcHexToUri, epcHexToTagUri } from "../lib/epc";
 import { supabase } from "../lib/supabaseClient";
@@ -117,6 +118,8 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
   const [deleteModal, setDeleteModal] = useState(false);
   // Динамик шинж чанарын багана + нуух/гаргах удирдлага.
   const [attrDefs, setAttrDefs] = useState<AttributeDef[]>([]);
+  // Салбарын шүүлтийн dropdown-д (нэрээр яг тэнцүү шүүнэ).
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(loadHidden);
   const [showColPicker, setShowColPicker] = useState(false);
 
@@ -127,6 +130,9 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
     let active = true;
     listAttributeDefs()
       .then((d) => active && setAttrDefs(d))
+      .catch(() => {});
+    listBranches()
+      .then((b) => active && setBranches(b))
       .catch(() => {});
     return () => {
       active = false;
@@ -647,10 +653,35 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                         </option>
                       ))}
                     </select>
+                  ) : c.key === "branch" ? (
+                    // Салбар — Төлөвтэй ижил select. (Маш олон салбартай болбол
+                    // хайлттай combobox руу шилжүүлэхээр төлөвлөсөн.)
+                    <select
+                      value={filters[c.key] ?? ""}
+                      onChange={(e) => setFilter(c.key, e.target.value)}
+                      className="w-full min-w-[110px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+                    >
+                      <option value="">{t("common.all")}</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.name}>
+                          {b.name}
+                        </option>
+                      ))}
+                      <option value="__none__">{t("reports.noBranch")}</option>
+                    </select>
+                  ) : c.key === "date" ? (
+                    // Ирсэн огноо — гараар бичүүлэхгүй, календариар сонгуулна.
+                    <input
+                      type="date"
+                      value={filters[c.key] ?? ""}
+                      onChange={(e) => setFilter(c.key, e.target.value)}
+                      className="w-full min-w-[120px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+                    />
                   ) : (
                     <input
                       value={filters[c.key] ?? ""}
                       onChange={(e) => setFilter(c.key, e.target.value)}
+                      inputMode={c.key === "serial" || c.key === "price" || c.key === "cost" ? "numeric" : undefined}
                       placeholder={t("epcTable.filterPlaceholder")}
                       className="w-full min-w-[90px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
                     />

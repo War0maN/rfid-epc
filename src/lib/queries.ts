@@ -264,9 +264,17 @@ function applyEpcFilters(q: EpcQuery, filters: Record<string, string>): EpcQuery
     if (key === "status") {
       // Dropdown-аас төлөвийн код (unprinted/active/...) ирнэ — яг тэнцүүгээр.
       out = out.eq("status", val);
-    } else if (db === "serial") {
-      const n = val.replace(/\D/g, "");
-      if (n) out = out.eq("serial", n);
+    } else if (key === "branch") {
+      // Select-ээс салбарын бүтэн нэр (эсвэл "__none__" = Салбаргүй) ирнэ.
+      out = val === "__none__" ? out.is("branch_name", null) : out.eq("branch_name", val);
+    } else if (db === "arrival_date") {
+      // Date input 'YYYY-MM-DD' — text ilike нь date баганад operator алдаа өгдөг.
+      if (/^\d{4}-\d{2}-\d{2}$/.test(val)) out = out.eq("arrival_date", val);
+    } else if (db === "serial" || db === "price" || db === "cost") {
+      // Тоон багана — view-ийн *_text mirror дээр "агуулсан" шүүлт
+      // (бусадтай ижил UX; эрэмбэ нь тоон багана дээрээ хэвээр).
+      const n = val.replace(/[^0-9.]/g, "");
+      if (n) out = out.ilike(`${db}_text`, `%${n}%`);
     } else {
       out = out.ilike(db, `%${val}%`);
     }

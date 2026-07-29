@@ -1,4 +1,5 @@
 export default {
+  badFilterValue: "筛选值与列类型不匹配 — 请检查后重试。",
   branchCodeDuplicate: "该编码已被其他分店使用，请输入其他编码。",
   branchHasEpc: "该分店存在 EPC 记录，无法删除。请先将商品调拨到其他分店。",
   supabaseConfigMissing:

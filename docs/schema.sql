@@ -825,6 +825,9 @@ select
   e.created_at, e.printed_at, e.status, e.job_id, e.product_id,
   e.branch_id, b.name as branch_name,
   p.name, p.gtin, p.sku, p.price, p.cost,
+  -- Тоон багануудын текст хувилбар — "агуулсан" (ilike) шүүлтэд
+  -- (PostgREST шүүлтэд cast дэмждэггүй тул view талд бэлдэнэ).
+  e.serial::text as serial_text, p.price::text as price_text, p.cost::text as cost_text,
   p.category_id,
   -- 3 түвшний ангилал (дээдээс доош). leaf нь L1/L2/L3-ийн аль нь ч байж болно.
   coalesce(c3.name, c2.name, c1.name) as category_l1,
