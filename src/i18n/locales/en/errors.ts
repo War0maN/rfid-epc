@@ -9,4 +9,8 @@ export default {
   emailRateLimit: "Email sending rate limit reached. Please try again later (~1 hour).",
   invalidCredentials: "Incorrect email or password.",
   jobNumberDuplicate: "This job number is already registered. Please use a different one.",
+  boundaryTitle: "Something went wrong while rendering this section.",
+  boundaryHint:
+    "Other tabs still work. Copy the details below to help pin down the cause.",
+  boundaryRetry: "Try again",
 };

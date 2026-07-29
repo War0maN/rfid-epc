@@ -66,6 +66,9 @@ export async function fetchLabelSeries(from: string, to: string): Promise<LabelS
   if (error) throw error;
   return ((data ?? []) as LabelSeriesRow[]).map((r) => ({
     ...r,
+    // day дутуу/null ирвэл ч мөрийг хаяхгүй — бүлэглэлтэд "(Огноогүй)" болно
+    // (өмнө нь энд .slice дуудаад бүтэн апп цагаан дэлгэц болдог байсан).
+    day: typeof r.day === "string" ? r.day : "",
     first_prints: num(r.first_prints),
     reprints: num(r.reprints),
   }));
@@ -98,20 +101,21 @@ export function groupLabels(
 ): GroupedLabels[] {
   const acc = new Map<string, GroupedLabels>();
   for (const r of rows) {
+    const day = r.day || "";
     let key: string;
     let label: string;
     switch (group) {
       case "day":
-        key = r.day;
-        label = r.day;
+        key = day || "__none__";
+        label = day || i18n.t("platform.noDay");
         break;
       case "tenant":
         key = r.tenant_id;
         label = tenantName.get(r.tenant_id) ?? i18n.t("platform.unknownTenant");
         break;
       default:
-        key = r.day.slice(0, 7);
-        label = key;
+        key = day ? day.slice(0, 7) : "__none__";
+        label = day ? key : i18n.t("platform.noDay");
     }
     const cur = acc.get(key) ?? { key, label, firstPrints: 0, reprints: 0, total: 0 };
     cur.firstPrints += r.first_prints;

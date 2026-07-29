@@ -7,4 +7,7 @@ export default {
   emailRateLimit: "邮件发送已达频率限制，请稍后（约1小时后）重试。",
   invalidCredentials: "邮箱或密码错误。",
   jobNumberDuplicate: "该任务编号已存在，请使用其他编号。",
+  boundaryTitle: "渲染此部分时出错。",
+  boundaryHint: "其他标签页仍可正常使用。复制下方信息有助于定位原因。",
+  boundaryRetry: "重试",
 };

@@ -26,6 +26,7 @@ export default {
   thLastSignIn: "Last sign-in",
   noTenants: "No companies.",
   unknownTenant: "(Unknown)",
+  noDay: "(No date)",
   never: "—",
 
   // Label usage

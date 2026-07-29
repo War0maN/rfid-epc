@@ -26,6 +26,7 @@ export default {
   thLastSignIn: "最近登录",
   noTenants: "暂无公司。",
   unknownTenant: "（未知）",
+  noDay: "（无日期）",
   never: "—",
 
   // 标签使用

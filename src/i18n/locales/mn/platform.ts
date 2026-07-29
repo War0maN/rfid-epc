@@ -26,6 +26,7 @@ export default {
   thLastSignIn: "Сүүлд нэвтэрсэн",
   noTenants: "Компани алга.",
   unknownTenant: "(Тодорхойгүй)",
+  noDay: "(Огноогүй)",
   never: "—",
 
   // Шошгоны хэрэглээ

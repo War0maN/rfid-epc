@@ -22,6 +22,7 @@ import Inventory from "./components/Inventory";
 import Transactions from "./components/Transactions";
 import Branches from "./components/Branches";
 import OrgSettings from "./components/OrgSettings";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { lazy, Suspense } from "react";
 // Шошгоны дизайнер (Konva/bwip-js том) — зөвхөн нээх үед ачаална.
 const Labels = lazy(() => import("./components/Labels"));
@@ -295,6 +296,9 @@ function App() {
             ))}
           </div>
         )}
+        {/* Нэг табын render алдаа бүтэн аппыг цагаан дэлгэц болгохгүй —
+            алдаа тухайн табд хязгаарлагдаж, таб солиход цэвэрлэгдэнэ. */}
+        <ErrorBoundary resetKey={activeTab}>
         {activeTab === "create" && (
           <CreateJobForm
             allowedBranches={allowedBranches}
@@ -400,6 +404,7 @@ function App() {
         {activeTab === "org" && profile.role === "admin" && <OrgSettings />}
         {activeTab === "audit" && <AuditLog />}
         {activeTab === "members" && profile.role === "admin" && <Members />}
+        </ErrorBoundary>
       </main>
     </div>
   );
