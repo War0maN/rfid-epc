@@ -112,15 +112,24 @@ async function parseFile(
   const buffer = await file.arrayBuffer();
   const raw = await readXlsxFile(buffer);
 
-  let rows: unknown[][];
+  // read-excel-file нь ОЛОН sheet-тэй файлд [{sheet, data}, ...] буцаадаг.
+  // Эхнийхийг сохроор авч болохгүй: загварын "Тайлбар" хуудас эхэнд гарч
+  // ирэх тохиолдол бий (Excel-д хадгалахад дараалал эргэдэг) — тэр үед
+  // "Тоо ширхэг багана олдсонгүй" гэсэн төөрөгдүүлсэн алдаа өгдөг байсан.
+  // Тиймээс толгой нь ТААРСАН эхний sheet-ийг сонгоно.
+  let sheets: unknown[][][];
   if (Array.isArray(raw) && (raw.length === 0 || Array.isArray(raw[0]))) {
-    rows = raw as unknown as unknown[][];
+    sheets = [raw as unknown as unknown[][]];
   } else if (Array.isArray(raw) && raw[0] && typeof raw[0] === "object" && "data" in raw[0]) {
-    rows = (raw[0] as { data: unknown[][] }).data;
+    sheets = (raw as unknown as { data: unknown[][] }[]).map((s) => s.data);
   } else {
     throw new Error(i18n.t("importer.readFailed"));
   }
-  if (rows.length < 2) throw new Error(i18n.t("importer.needHeaderAndRow"));
+
+  const usable = sheets.filter((s) => s.length >= 2);
+  if (usable.length === 0) throw new Error(i18n.t("importer.needHeaderAndRow"));
+  // Тоо ширхгийн багана нь packing list-ийг зааврын хуудаснаас ялгах шинж.
+  const rows = usable.find((s) => parseHeader(s[0]).piece >= 0) ?? usable[0];
 
   const col = parseHeader(rows[0]);
   if (col.piece < 0) throw new Error(i18n.t("importer.pieceColumnMissing"));
