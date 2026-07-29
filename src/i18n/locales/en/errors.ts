@@ -13,4 +13,8 @@ export default {
   boundaryHint:
     "Other tabs still work. Copy the details below to help pin down the cause.",
   boundaryRetry: "Try again",
+  staleChunkTitle: "A new version of the app is available.",
+  staleChunkHint:
+    "The app was updated while this page was open, so this section could not load. Reloading the page fixes it.",
+  staleChunkReload: "Reload page",
 };

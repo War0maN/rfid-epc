@@ -10,4 +10,7 @@ export default {
   boundaryTitle: "渲染此部分时出错。",
   boundaryHint: "其他标签页仍可正常使用。复制下方信息有助于定位原因。",
   boundaryRetry: "重试",
+  staleChunkTitle: "应用有新版本。",
+  staleChunkHint: "页面打开期间应用已更新，因此该部分无法加载。重新加载页面即可解决。",
+  staleChunkReload: "重新加载页面",
 };

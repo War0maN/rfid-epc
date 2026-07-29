@@ -37,6 +37,28 @@ export default class ErrorBoundary extends Component<Props, State> {
   render() {
     const { error } = this.state;
     if (!error) return this.props.children;
+
+    // Lazy chunk татагдаагүй (dev server дахин асаасан, эсвэл Vercel-д шинэ
+    // deploy гарч хуучин chunk устсан). Дахин render хийгээд нэмэргүй —
+    // хуудсыг бүтэн ачаалж шинэ chunk-ийн нэрийг авах хэрэгтэй.
+    const isStaleChunk = /dynamically imported module|Importing a module script failed|ChunkLoadError/i.test(
+      error.message
+    );
+    if (isStaleChunk) {
+      return (
+        <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-800">{i18n.t("errors.staleChunkTitle")}</p>
+          <p className="text-sm text-amber-700">{i18n.t("errors.staleChunkHint")}</p>
+          <button
+            onClick={() => location.reload()}
+            className="h-9 rounded-lg bg-amber-600 px-3 text-sm font-medium text-white hover:bg-amber-700"
+          >
+            {i18n.t("errors.staleChunkReload")}
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4">
         <p className="text-sm font-semibold text-red-800">{i18n.t("errors.boundaryTitle")}</p>
