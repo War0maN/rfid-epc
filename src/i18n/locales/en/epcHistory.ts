@@ -10,10 +10,12 @@ export default {
   sold: "Sold",
   other: "Other",
   returned: "Return",
+  reprinted: "Reprinted",
   // Human-readable detail lines
   noBranch: "(No branch)",
   branchDetail: "Branch: {{branch}}",
   printedDetail: "Label printed and registered in stock",
   transferCancelDetail: "Returned to {{branch}}",
   returnedDetail: "Returned to active — Branch: {{branch}}",
+  reprintedDetail: "Label reprinted (status unchanged)",
 };

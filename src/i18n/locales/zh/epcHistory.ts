@@ -10,10 +10,12 @@ export default {
   sold: "已售",
   other: "其他",
   returned: "退货",
+  reprinted: "重新打印",
   // 详情文本
   noBranch: "（无分店）",
   branchDetail: "分店：{{branch}}",
   printedDetail: "标签已打印并登记入库",
   transferCancelDetail: "已退回 {{branch}}",
   returnedDetail: "已恢复为有效 — 分店：{{branch}}",
+  reprintedDetail: "标签已重新打印（状态未变）",
 };

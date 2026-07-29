@@ -16,6 +16,7 @@ export default {
   tabAudit: "Аудит",
   tabMembers: "Хэрэглэгчид",
   groupAdmin: "Удирдлага",
+  tabPlatform: "Платформ",
   signOut: "Гарах",
   loading: "Ачаалж байна…",
   reportsLoading: "Тайлан ачаалж байна…",

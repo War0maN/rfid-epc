@@ -251,7 +251,11 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
     return fetchEpcAllMatching(debounced, sort);
   }
 
-  /** Өгсөн EPC-үүдийг хэвлэгдсэн (printed_at) + Идэвхтэй (status) болгоно. */
+  /**
+   * Өгсөн EPC-үүдийг хэвлэгдсэн (printed_at) + Идэвхтэй (status) болгоно.
+   * mark_printed RPC — дахин хэвлэхэд ч print_count нэмэгдэнэ (физик
+   * зарцуулагдсан шошгыг тоолох; printed_at/төлөв нь хэвээр үлдэнэ).
+   */
   async function markPrinted(rows: EpcRow[]) {
     if (rows.length === 0) return;
     const ids = rows.map((r) => r.id);
@@ -273,11 +277,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
     });
     try {
       for (let i = 0; i < ids.length; i += 500) {
-        const { error: e } = await supabase
-          .from("epc_codes")
-          .update({ printed_at: now, status: "active" })
-          .in("id", ids.slice(i, i + 500))
-          .is("printed_at", null);
+        const { error: e } = await supabase.rpc("mark_printed", { p_ids: ids.slice(i, i + 500) });
         if (e) throw e;
       }
       void logAuditEvent(supabase, "print", "epc", null, epcBulkMeta(rows));

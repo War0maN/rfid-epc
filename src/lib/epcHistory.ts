@@ -16,7 +16,8 @@ export type EpcEventType =
   | "transfer_cancel"
   | "sold"
   | "other"
-  | "returned";
+  | "returned"
+  | "reprinted";
 
 /** label нь getter — уншилт бүрд тухайн үеийн хэлээр i18n.t() дуудагдана (API хэвээр). */
 function meta(key: string, cls: string): { label: string; cls: string } {
@@ -38,6 +39,7 @@ export const EVENT_META: Record<EpcEventType, { label: string; cls: string }> = 
   sold: meta("epcHistory.sold", "bg-sky-50 text-sky-700"),
   other: meta("epcHistory.other", "bg-rose-50 text-rose-700"),
   returned: meta("epcHistory.returned", "bg-violet-50 text-violet-700"),
+  reprinted: meta("epcHistory.reprinted", "bg-amber-50 text-amber-700"),
 };
 
 interface RawEvent {
@@ -100,6 +102,9 @@ export async function fetchEpcHistory(epcId: string): Promise<EpcHistoryItem[]> 
         break;
       case "printed":
         detail = i18n.t("epcHistory.printedDetail");
+        break;
+      case "reprinted":
+        detail = i18n.t("epcHistory.reprintedDetail");
         break;
       case "transfer_out":
         detail = `${bn(ev.new_branch)} → ${tx ? bn(tx.to_branch) : "?"}`;

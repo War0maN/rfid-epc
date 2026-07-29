@@ -10,10 +10,12 @@ export default {
   sold: "Борлуулсан",
   other: "Бусад гүйлгээ",
   returned: "Буцаалт",
+  reprinted: "Дахин хэвлэсэн",
   // Хүн уншихуйц detail мөрүүд
   noBranch: "(Салбаргүй)",
   branchDetail: "Салбар: {{branch}}",
   printedDetail: "Шошго хэвлэгдэж, агуулахад бүртгэгдсэн",
   transferCancelDetail: "{{branch}}-д буцсан",
   returnedDetail: "Идэвхтэй болж буцсан — Салбар: {{branch}}",
+  reprintedDetail: "Шошго дахин хэвлэгдсэн (төлөв өөрчлөгдөөгүй)",
 };

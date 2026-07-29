@@ -15,6 +15,7 @@ export default {
   tabAudit: "Audit",
   tabMembers: "Members",
   groupAdmin: "Administration",
+  tabPlatform: "Platform",
   signOut: "Sign out",
   loading: "Loading…",
   reportsLoading: "Loading reports…",

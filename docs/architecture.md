@@ -105,7 +105,7 @@ Append-only event log — `epc_codes`-ийн insert/update дээрх DB trigger
 
 ## 11. Гол хүснэгтүүд
 
-`tenants · profiles · invites · user_branches · user_permissions · branches · categories · attribute_defs · products · serial_counters · object_class_counters · jobs · epc_codes · epc_events · transactions · transaction_items · label_templates · audit_log · receipts · receipt_lines · receipt_scans · stocktakes · stocktake_items · stocktake_scans`
+`tenants · profiles · invites · user_branches · user_permissions · branches · categories · attribute_defs · products · serial_counters · object_class_counters · jobs · epc_codes · epc_events · transactions · transaction_items · label_templates · audit_log · receipts · receipt_lines · receipt_scans · stocktakes · stocktake_items · stocktake_scans · platform_admins`
 
 View: `epc_full · products_full · stock_by_branch · receipt_progress · stocktake_progress · stocktake_missing` (бүгд security_invoker → RLS үйлчилнэ). Тайлангийн RPC: `report_sales · report_inflow · report_stocktake · report_movement` (security invoker).
 
@@ -120,6 +120,23 @@ Phase 0 EPC/шошго/каталог → 1 Бүтээгдэхүүн master → 
 Дээд цэс **7**: Бараа (EPC) [EPC жагсаалт · EPC үүсгэх · EPC-р хүлээн авах · Шошгоны загвар · EPC хайлт] · Бүтээгдэхүүн [Жагсаалт · Ангилал] · Үлдэгдэл · Тооллого · Гүйлгээ [Гүйлгээ · Түүх] · Тайлан [7 таб] · Удирдлага [Салбар · Байгууллага · Аудит · Хэрэглэгчид]. App.tsx NAV бүтэц (дан таб + бүлэг); бүлэг сүүлд нээсэн дэд табаа localStorage `navSub.*`-д санана; бүлгийн бүх хүүхэд эрхээр нуугдвал бүлэг нуугдана.
 
 UI стандарт: дээд цэс **font-semibold**, дэд таб энгийн; хуудас доторх **давтсан том гарчиг байхгүй** (таб өөрөө гарчиг) — зөвхөн жижиг саарал тайлбар текст; баталгаажуулалт үргэлж ConfirmDialog.
+
+## 12б. Платформын хяналт ба шошгоны хэрэглээ (2026-07-29)
+
+**Асуудал:** платформын эзэн (шошго нийлүүлэгч) бүх харилцагчийн хэрэглээг харах хэрэгтэй, гэтэл систем бүхэлдээ RLS-ээр тенант тус бүрд хаалттай.
+
+**Шошгоны тоолол — хоёр өөр тоо.** `epc_codes.printed_at` = АНХ хэвлэсэн огноо; `print_count` = хэвлэсэн нийт удаа. Урагдсан/буруу наасан шошгыг дахин хэвлэхэд физик шошго зарцуулагддаг ч өмнө нь хаана ч тоологддоггүй байсан (client `.is('printed_at', null)` нөхцөлтэй байсан тул хоёр дахь удаа огт бичигддэггүй). Одоо:
+
+- Хэвлэлт зөвхөн `mark_printed(uuid[])` RPC-ээр — security **invoker** тул "epc update" policy (act_print + салбарын scoping) өөрөө хэрэгжинэ, өмнөх шууд update-тай ижил хамгаалалт.
+- Анхны хэвлэлт: `printed_at` тавигдаж Хэвлээгүй→Идэвхтэй (trigger `printed` event). Дахин хэвлэлт: төлөв/printed_at хэвээр (Борлуулсан EPC-г дахин хэвлэхэд төлөв буцахгүй), зөвхөн `print_count` +1 → trigger `reprinted` event.
+- **"Хэдэн бараа шошготой болсон"** = `count(printed_at is not null)`; **"хэдэн шошго зарцуулагдсан"** = `sum(print_count)` ← нийлүүлэлт төлөвлөх тоо.
+- ⚠️ Backfill (`print_count = 1`) нь `app.print_backfill='1'` тугтай явна — үүнгүй бол trigger 0→1 өсөлтийг жинхэнэ дахин хэвлэлт гэж үзээд өмнө хэвлэгдсэн EPC БҮРД хуурамч `reprinted` event бичиж түүхийг бохирдуулна.
+
+**Тенант хооронд харах зам.** `platform_admins` (user_id PK) — RLS асаалттай ч **policy огт алга**: клиент талаас унших ч, нэмэх ч боломжгүй, зөвхөн SQL Editor-оос гараар мөр нэмнэ (өөрийгөө платформын админ болгох зам хаалттай). `is_platform_admin()` + `platform_overview()` + `platform_label_series(from,to)` нь **security definer** (RLS тойрдог) тул эрхийн шалгалт функцийн эхний мөрөнд заавал. OUT параметрүүд (`users`/`branches`/`products`...) хүснэгтийн нэртэй давхцдаг тул `#variable_conflict use_column`.
+
+⚠️ Клиентэд **service_role түлхүүр хэзээ ч тавихгүй** — тэр нь бүх харилцагчийн бүх датаг browser-т ил гаргана; энэ RPC зам түүнийг орлоно.
+
+**UI.** `PlatformConsole.tsx` (lazy) — 5 нийлбэр карт, компаниудын хүснэгт (хэрэглэгч/салбар/бараа/EPC/шошго/гүйлгээ/сүүлийн үйлдэл/сүүлд нэвтэрсэн), шошгоны хэрэглээ сар·өдөр·компаниар, CSV ×2. Таб нь `NAV`-д байхгүй — `isPlatformAdmin()` үнэн бол цэсний сүүлд нэмэгдэнэ; RPC байхгүй бол `false` буцаж таб нуугдана (схем Run хийгээгүй суурьт эвдрэхгүй).
 
 ## 13. Хүлээн авалт (receiving, Ү2 — 2026-07)
 

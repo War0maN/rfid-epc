@@ -21,6 +21,7 @@ import importer from "./importer";
 import branches from "./branches";
 import org from "./org";
 import transferNote from "./transferNote";
+import platform from "./platform";
 import errors from "./errors";
 
 export default {
@@ -47,5 +48,6 @@ export default {
   branches,
   org,
   transferNote,
+  platform,
   errors,
 };

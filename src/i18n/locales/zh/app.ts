@@ -15,6 +15,7 @@ export default {
   tabAudit: "审计",
   tabMembers: "成员",
   groupAdmin: "管理",
+  tabPlatform: "平台",
   signOut: "退出",
   loading: "加载中…",
   reportsLoading: "报表加载中…",

@@ -4,6 +4,7 @@ import { LANGS, setLang, type Lang } from "./i18n";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./hooks/useSession";
 import { acceptInvite, fetchMyProfile, fetchMyBranchIds, fetchMyPerms, type MyProfile } from "./lib/tenantAuth";
+import { isPlatformAdmin } from "./lib/platform";
 import { makeCan, TAB_PERM } from "./lib/permissions";
 import Login from "./components/Login";
 import ResetPassword from "./components/ResetPassword";
@@ -26,8 +27,10 @@ import { lazy, Suspense } from "react";
 const Labels = lazy(() => import("./components/Labels"));
 // Тайлан (recharts том) — зөвхөн нээх үед ачаална.
 const Reports = lazy(() => import("./components/Reports"));
+// Платформын хяналт — зөвхөн платформын админд, нээх үед ачаална.
+const PlatformConsole = lazy(() => import("./components/PlatformConsole"));
 
-type Tab = "create" | "receiving" | "products" | "inventory" | "stocktake" | "transactions" | "reports" | "table" | "lookup" | "labels" | "branches" | "org" | "audit" | "members";
+type Tab = "create" | "receiving" | "products" | "inventory" | "stocktake" | "transactions" | "reports" | "table" | "lookup" | "labels" | "branches" | "org" | "audit" | "members" | "platform";
 
 // label = орчуулгын түлхүүр (render дээр t()-ээр уншина).
 type TabDef = { id: Tab; label: string; adminOnly?: boolean };
@@ -107,6 +110,8 @@ function App() {
   const [allowedBranches, setAllowedBranches] = useState<string[] | null>(null);
   // Олгосон эрхүүд: null = бүрэн (админ эсвэл тохиргоогүй).
   const [myPerms, setMyPerms] = useState<string[] | null>(null);
+  // Платформын админ эсэх — тенантын эрхээс ТУСДАА (DB-ийн platform_admins).
+  const [platformAdmin, setPlatformAdmin] = useState(false);
 
   useEffect(() => {
     if (!profile) return;
@@ -135,6 +140,18 @@ function App() {
       active = false;
     };
   }, [profile]);
+
+  // Платформын хяналтын таб харуулах эсэх. Эрхгүй бол RPC false буцаана.
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+    isPlatformAdmin()
+      .then((v) => active && setPlatformAdmin(v))
+      .catch(() => active && setPlatformAdmin(false));
+    return () => {
+      active = false;
+    };
+  }, [session]);
 
   const can = makeCan(myPerms);
 
@@ -180,9 +197,14 @@ function App() {
   // Эрхээр харагдах табууд; идэвхтэй таб нуугдсан бол эхний зөвшөөрөгдсөн рүү.
   const tabVisible = (tb: TabDef) =>
     (!tb.adminOnly || profile.role === "admin") && (!TAB_PERM[tb.id] || can(TAB_PERM[tb.id]));
-  const visibleNav: NavItem[] = NAV.map((n) =>
-    isGroup(n) ? { ...n, children: n.children.filter(tabVisible) } : n
-  ).filter((n) => (isGroup(n) ? n.children.length > 0 : tabVisible(n)));
+  // Платформын таб нь тенантын эрх/TAB_PERM-д хамаарахгүй — зөвхөн
+  // platform_admins-д бүртгэлтэй хүнд, цэсний хамгийн сүүлд нэмэгдэнэ.
+  const nav: NavItem[] = platformAdmin
+    ? [...NAV, { id: "platform", label: "app.tabPlatform" } as TabDef]
+    : NAV;
+  const visibleNav: NavItem[] = nav
+    .map((n) => (isGroup(n) ? { ...n, children: n.children.filter(tabVisible) } : n))
+    .filter((n) => (isGroup(n) ? n.children.length > 0 : tabVisible(n)));
   const visibleTabIds = visibleNav.flatMap((n) => (isGroup(n) ? n.children.map((c) => c.id) : [n.id]));
   const activeTab: Tab = visibleTabIds.includes(tab) ? tab : (visibleTabIds[0] ?? "table");
   // Идэвхтэй таб аль бүлэгт харьяалагдаж байгааг олно (дэд таб бар харуулахад).
@@ -336,6 +358,13 @@ function App() {
             fallback={<div className="py-10 text-center text-slate-400">{t("app.reportsLoading")}</div>}
           >
             <Reports />
+          </Suspense>
+        )}
+        {activeTab === "platform" && platformAdmin && (
+          <Suspense
+            fallback={<div className="py-10 text-center text-slate-400">{t("app.reportsLoading")}</div>}
+          >
+            <PlatformConsole />
           </Suspense>
         )}
         {activeTab === "table" && (

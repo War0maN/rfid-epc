@@ -2635,3 +2635,243 @@ as $$
     join st on st.id = coalesce(p.stocktake_id, x.stocktake_id)
 $$;
 grant execute on function report_stocktake(date, date) to authenticated;
+
+-- ============================================================
+-- ШОШГОНЫ ХЭРЭГЛЭЭ — дахин хэвлэлт тоологдоно
+--   printed_at  = АНХ хэвлэсэн огноо (дахин хэвлэхэд ӨӨРЧЛӨГДӨХГҮЙ).
+--   print_count = хэвлэсэн нийт удаа = ФИЗИК зарцуулагдсан шошго
+--                 (урагдсан/буруу наасан шошгыг дахин хэвлэхэд +1).
+--   Хоёр өөр тоо гарна:
+--     "хэдэн бараа шошготой болсон"  = count(printed_at is not null)
+--     "хэдэн шошго зарцуулагдсан"    = sum(print_count)   ← нийлүүлэлтийн тоо
+--   Өмнө нь дахин хэвлэлт хаана ч тоологддоггүй байсан (client талын
+--   update .is('printed_at', null) нөхцөлтэй байсан тул хоёр дахь удаа
+--   огт бичигддэггүй байв) — mark_printed RPC үүнийг залруулна.
+-- ============================================================
+alter table epc_codes add column if not exists print_count int not null default 0;
+
+-- 'reprinted' event — дахин хэвлэлтийн хугацааны цуваа (хэзээ, хэн) гаргахад.
+alter table epc_events drop constraint if exists epc_events_event_check;
+alter table epc_events add constraint epc_events_event_check
+  check (event in ('created','printed','status_change','transfer_out','transfer_in',
+                   'transfer_cancel','sold','other','returned','reprinted'));
+
+-- Trigger: print_count өсөхөд ч ажиллана. Анхны хэвлэлт нь unprinted→active
+-- шилжилтээр 'printed' болж бичигддэг тул давхар бичигдэхгүй — төлөв/салбар
+-- өөрчлөгдөөгүй хэрнээ print_count өссөн үед л 'reprinted'.
+create or replace function epc_event_trigger()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_event  text;
+  v_tx     uuid := nullif(current_setting('app.tx_id', true), '')::uuid;
+  v_reason text := nullif(current_setting('app.reason', true), '');
+begin
+  if tg_op = 'INSERT' then
+    insert into epc_events (tenant_id, epc_id, event, new_status, new_branch, actor_id)
+    values (new.tenant_id, new.id, 'created', new.status, new.branch_id, auth.uid());
+    return new;
+  end if;
+  if new.status is distinct from old.status or new.branch_id is distinct from old.branch_id then
+    v_event := case
+      when old.status = 'unprinted' and new.status = 'active' then 'printed'
+      when new.status = 'transferring' then 'transfer_out'
+      when old.status = 'transferring' and new.branch_id is distinct from old.branch_id then 'transfer_in'
+      when old.status = 'transferring' and new.status = 'active' then 'transfer_cancel'
+      -- Борлуулсан/Бусад гүйлгээнээс Идэвхтэй рүү буцах = Буцаалт (гүйлгээгээр ч, гараар ч).
+      when old.status in ('sold','other') and new.status = 'active' then 'returned'
+      when new.status = 'sold' then 'sold'
+      when new.status = 'other' then 'other'
+      else 'status_change'
+    end;
+    insert into epc_events (tenant_id, epc_id, event, old_status, new_status,
+                            old_branch, new_branch, tx_id, reason, actor_id)
+    values (new.tenant_id, new.id, v_event, old.status, new.status,
+            old.branch_id, new.branch_id, v_tx, v_reason, auth.uid());
+  elsif new.print_count > old.print_count
+        and current_setting('app.print_backfill', true) is distinct from '1' then
+    insert into epc_events (tenant_id, epc_id, event, old_status, new_status,
+                            old_branch, new_branch, reason, actor_id)
+    values (new.tenant_id, new.id, 'reprinted', old.status, new.status,
+            old.branch_id, new.branch_id, v_reason, auth.uid());
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists epc_events_on_update on epc_codes;
+create trigger epc_events_on_update
+  after update of status, branch_id, print_count on epc_codes
+  for each row execute function epc_event_trigger();
+
+-- ---------- Backfill: өмнө хэвлэгдсэн EPC бүр дор хаяж нэг удаа хэвлэгдсэн ----------
+-- ⚠️ app.print_backfill туг ЗААВАЛ: үүнгүй бол trigger нь 0→1 өсөлтийг жинхэнэ
+-- дахин хэвлэлт гэж үзээд өмнө хэвлэгдсэн EPC БҮРД хуурамч 'reprinted' event
+-- бичих байсан (түүхийг бохирдуулна). Idempotent: print_count > 0 болсон мөр
+-- дахин Run хийхэд таарахгүй тул нэг л удаа ажиллана.
+select set_config('app.print_backfill', '1', false);
+update epc_codes set print_count = 1 where printed_at is not null and print_count = 0;
+select set_config('app.print_backfill', '', false);
+
+-- Шошгоны хэрэглээний цуваа (platform_label_series) хурдан байхад — хэвлэлтийн
+-- event-үүд epc_events-ийн багахан хэсэг тул хэсэгчилсэн индекс.
+create index if not exists epc_events_print_idx
+  on epc_events (created_at)
+  where event in ('printed','reprinted');
+
+-- ---------- Хэвлэлтийг тэмдэглэх RPC ----------
+-- security INVOKER — "epc update" policy (act_print эрх + салбарын scoping)
+-- өөрөө хэрэгжинэ, өөрөөр хэлбэл өмнөх шууд update-тай ЯГ ижил хамгаалалт.
+-- Анхны хэвлэлт: printed_at тавигдаж, Хэвлээгүй → Идэвхтэй болно.
+-- Дахин хэвлэлт: printed_at хэвээр, төлөв хэвээр (Борлуулсан/Шилжүүлж буй
+-- EPC-г дахин хэвлэхэд төлөв нь буцахгүй), зөвхөн print_count нэмэгдэнэ.
+create or replace function mark_printed(p_ids uuid[])
+returns int
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare v_n int;
+begin
+  update epc_codes
+     set printed_at  = coalesce(printed_at, now()),
+         status      = case when status = 'unprinted' then 'active' else status end,
+         print_count = print_count + 1
+   where id = any(p_ids);
+  get diagnostics v_n = row_count;
+  return v_n;
+end $$;
+grant execute on function mark_printed(uuid[]) to authenticated;
+
+-- ============================================================
+-- ПЛАТФОРМЫН ХЯНАЛТ (нэгдсэн самбар) — тенант хоорондын нэгтгэл
+--   Систем бүхэлдээ RLS-ээр тенант тус бүрд хаалттай. Платформын эзэн
+--   (шошго нийлүүлэгч) БҮХ харилцагчийн хэрэглээг харах хэрэгтэй тул
+--   тусдаа, хатуу хязгаарлагдсан зам гаргав:
+--     * platform_admins — гар аргаар (энэ SQL Editor-оос) л мөр нэмнэ.
+--       Клиент талаас нэмэх/унших зам ЗОРИУД байхгүй (policy огт алга) —
+--       өөрийгөө платформын админ болгох боломж хаалттай.
+--     * platform_* функцууд security definer (RLS тойрдог) тул эрхийн
+--       шалгалтыг функц бүрийн ЭХНИЙ мөрөнд заавал хийнэ.
+--   ⚠️ Клиентэд service_role түлхүүр ХЭЗЭЭ Ч тавихгүй — тэр нь бүх
+--   харилцагчийн бүх датаг browser-т ил гаргана. Энэ зам түүнийг орлоно.
+--
+--   Платформын админ нэмэх (гараар):
+--     insert into platform_admins (user_id, note)
+--     select id, 'Платформын эзэн' from auth.users where email = 'таны@имэйл';
+-- ============================================================
+create table if not exists platform_admins (
+  user_id    uuid primary key references auth.users(id) on delete cascade,
+  note       text,
+  created_at timestamptz not null default now()
+);
+alter table platform_admins enable row level security;
+-- Policy ЗОРИУД алга: хүснэгт зөвхөн security definer функц дотроос уншигдана.
+
+create or replace function is_platform_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from platform_admins where user_id = auth.uid());
+$$;
+grant execute on function is_platform_admin() to authenticated;
+
+-- ---------- Тенант тус бүрийн нэгтгэл ----------
+-- Нэг мөр = нэг харилцагч компани. Мөр цөөн (компанийн тоо) тул нэг
+-- удаагийн бүрэн нэгтгэл хангалттай; epc_codes дээрх нэгтгэл нь tenant_id-аар
+-- бүлэглэсэн ганц дамжилт (мөр бүрд дэд асуулга дуудахгүй).
+create or replace function platform_overview()
+returns table (
+  tenant_id      uuid,
+  tenant_name    text,
+  created_at     timestamptz,
+  users          bigint,
+  branches       bigint,
+  products       bigint,
+  epc_total      bigint,
+  epc_printed    bigint,
+  labels_printed bigint,
+  epc_active     bigint,
+  epc_sold       bigint,
+  tx_count       bigint,
+  last_activity  timestamptz,
+  last_sign_in   timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+-- OUT параметрүүд (users/branches/products/created_at...) хүснэгт/баганын
+-- нэртэй давхцаж болзошгүй тул хоёрдмол утгад БАГАНА нь ялна.
+#variable_conflict use_column
+begin
+  if not is_platform_admin() then
+    raise exception 'Зөвшөөрөлгүй: платформын хяналтыг зөвхөн платформын админ харна.';
+  end if;
+  return query
+  select t.id, t.name, t.created_at,
+         coalesce(u.n, 0), coalesce(b.n, 0), coalesce(pr.n, 0),
+         coalesce(e.total, 0), coalesce(e.printed, 0), coalesce(e.labels, 0),
+         coalesce(e.active, 0), coalesce(e.sold, 0),
+         coalesce(x.n, 0),
+         greatest(e.last_epc, x.last_tx),
+         u.last_sign_in
+    from tenants t
+    left join (select p.tenant_id, count(*) as n, max(au.last_sign_in_at) as last_sign_in
+                 from profiles p left join auth.users au on au.id = p.id
+                group by p.tenant_id) u on u.tenant_id = t.id
+    left join (select br.tenant_id, count(*) as n from branches br group by br.tenant_id) b on b.tenant_id = t.id
+    left join (select p2.tenant_id, count(*) as n from products p2 group by p2.tenant_id) pr on pr.tenant_id = t.id
+    left join (select ec.tenant_id,
+                      count(*)                                            as total,
+                      count(*) filter (where ec.printed_at is not null)   as printed,
+                      coalesce(sum(ec.print_count), 0)                    as labels,
+                      count(*) filter (where ec.status = 'active')        as active,
+                      count(*) filter (where ec.status = 'sold')          as sold,
+                      max(ec.created_at)                                  as last_epc
+                 from epc_codes ec group by ec.tenant_id) e on e.tenant_id = t.id
+    left join (select tr.tenant_id, count(*) as n, max(tr.created_at) as last_tx
+                 from transactions tr group by tr.tenant_id) x on x.tenant_id = t.id
+   order by t.created_at;
+end $$;
+grant execute on function platform_overview() to authenticated;
+
+-- ---------- Шошгоны хэрэглээ хугацаагаар ----------
+-- Эх сурвалж = epc_events ('printed' анхны хэвлэлт, 'reprinted' дахин хэвлэлт).
+-- Анхны хэвлэлтийн түүх backfill-ээр printed_at-аас сэргээгдсэн тул өнгөрсөн
+-- хугацаа ч зөв; дахин хэвлэлт зөвхөн энэ өөрчлөлтөөс хойш тоологдоно.
+create or replace function platform_label_series(p_from date, p_to date)
+returns table (
+  tenant_id    uuid,
+  day          date,
+  first_prints bigint,
+  reprints     bigint
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  if not is_platform_admin() then
+    raise exception 'Зөвшөөрөлгүй: платформын хяналтыг зөвхөн платформын админ харна.';
+  end if;
+  return query
+  select ev.tenant_id,
+         ev.created_at::date,
+         count(*) filter (where ev.event = 'printed'),
+         count(*) filter (where ev.event = 'reprinted')
+    from epc_events ev
+   where ev.event in ('printed','reprinted')
+     and ev.created_at >= p_from
+     and ev.created_at < p_to + 1   -- p_to өдрийг дуустал
+   group by ev.tenant_id, ev.created_at::date;
+end $$;
+grant execute on function platform_label_series(date, date) to authenticated;
