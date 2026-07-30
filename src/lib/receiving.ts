@@ -181,6 +181,40 @@ export async function fetchProgress(receiptId: string): Promise<ProgressRow[]> {
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 }
 
+export interface MatchedScan {
+  epc_hex: string;
+  scanned_at: string;
+  scanned_by_email: string | null;
+}
+
+/**
+ * Тухайн барааны амжилттай (matched) уншилтууд — явцын хүснэгтийн
+ * "Уншигдсан" тоон дээр дарахад гарах дэлгэрэнгүй жагсаалт.
+ */
+export async function fetchMatchedScans(receiptId: string, productId: string): Promise<MatchedScan[]> {
+  const { data, error } = await supabase
+    .from("receipt_scans")
+    .select("epc_hex, scanned_at, scanned_by")
+    .eq("receipt_id", receiptId)
+    .eq("product_id", productId)
+    .eq("outcome", "matched")
+    .order("scanned_at", { ascending: false });
+  if (error) throw error;
+  const rows = (data ?? []) as { epc_hex: string; scanned_at: string; scanned_by: string | null }[];
+  // Хэн уншсаныг имэйлээр (жижиг lookup — profiles RLS-ээр өөрийн тенант л).
+  const ids = [...new Set(rows.map((r) => r.scanned_by).filter((v): v is string => !!v))];
+  const emailMap = new Map<string, string | null>();
+  if (ids.length > 0) {
+    const { data: profs } = await supabase.from("profiles").select("id, email").in("id", ids);
+    for (const p of (profs ?? []) as { id: string; email: string | null }[]) emailMap.set(p.id, p.email);
+  }
+  return rows.map((r) => ({
+    epc_hex: r.epc_hex,
+    scanned_at: r.scanned_at,
+    scanned_by_email: r.scanned_by ? (emailMap.get(r.scanned_by) ?? null) : null,
+  }));
+}
+
 /** Асуудалтай уншилтууд (matched-аас бусад нь) — тайлбарлаж харуулахад. */
 export async function fetchScanIssues(receiptId: string): Promise<ScanIssue[]> {
   const { data, error } = await supabase

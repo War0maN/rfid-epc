@@ -34,6 +34,10 @@ export default {
   colRemainder: "Үлдэгдэл",
   total: "НИЙТ",
   issuesTitle: "Асуудалтай уншилт ({{n}})",
+  scannedEpcs: "Уншигдсан EPC",
+  scannedAt: "Уншсан цаг",
+  scannedBy: "Уншсан хэрэглэгч",
+  noScans: "Уншилт алга.",
   printHint: "Үүсгэсэн EPC-үүдийг хэвлэх: Бараа (EPC) хуудаснаас {{job}} ажлаар шүүж Хэвлэх.",
 
   // Уншилтын үр дүн

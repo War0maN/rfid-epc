@@ -29,6 +29,10 @@ export default {
   colRemainder: "剩余",
   total: "合计",
   issuesTitle: "异常扫描（{{n}}）",
+  scannedEpcs: "已扫描 EPC",
+  scannedAt: "扫描时间",
+  scannedBy: "扫描人",
+  noScans: "暂无扫描。",
   printHint: "打印已生成的 EPC：在商品 (EPC) 页按任务 {{job}} 筛选后打印。",
 
   resMatched: "已登记：{{n}}",

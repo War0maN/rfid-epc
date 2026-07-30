@@ -31,6 +31,10 @@ export default {
   colRemainder: "Remaining",
   total: "TOTAL",
   issuesTitle: "Problem scans ({{n}})",
+  scannedEpcs: "Scanned EPCs",
+  scannedAt: "Scanned at",
+  scannedBy: "Scanned by",
+  noScans: "No scans.",
   printHint: "To print the generated EPCs: filter Items (EPC) by job {{job}} and Print.",
 
   resMatched: "Registered: {{n}}",

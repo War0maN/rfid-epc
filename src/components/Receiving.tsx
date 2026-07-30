@@ -11,13 +11,16 @@ import {
   submitScans,
   fetchProgress,
   fetchScanIssues,
+  fetchMatchedScans,
   generateForRemainder,
   closeReceipt,
   type ReceiptListItem,
   type ProgressRow,
   type ScanIssue,
   type ScanCounts,
+  type MatchedScan,
 } from "../lib/receiving";
+import { toCsv, downloadCsv } from "../lib/exportCsv";
 
 const ctl =
   "h-9 rounded border border-slate-300 px-2 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200";
@@ -70,6 +73,45 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
   // Хаах модал: product_id -> үлдэгдэлд EPC үүсгэх эсэх
   const [closeModal, setCloseModal] = useState(false);
   const [genChecks, setGenChecks] = useState<Map<string, boolean>>(new Map());
+
+  // Уншигдсан EPC-ийн модал (Уншигдсан тоон дээр дарахад — Үлдэгдэлтэй ижил хэв маяг).
+  const [scanModal, setScanModal] = useState<ProgressRow | null>(null);
+  const [scanList, setScanList] = useState<MatchedScan[] | null>(null);
+
+  // Модал нээгдэхэд тухайн барааны уншилтуудыг татна (Inventory-тэй ижил хэв маяг).
+  useEffect(() => {
+    if (!scanModal || !current) return;
+    let active = true;
+    fetchMatchedScans(current.id, scanModal.product_id)
+      .then((d) => active && setScanList(d))
+      .catch((e) => active && setError(errorMessage(e)));
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanModal]);
+
+  function openScanModal(p: ProgressRow) {
+    setScanList(null);
+    setScanModal(p);
+  }
+
+  function handleScanListExport() {
+    if (!scanModal || !scanList || scanList.length === 0) return;
+    const csv = toCsv(
+      scanList.map((s) => ({
+        epc: s.epc_hex,
+        at: s.scanned_at,
+        by: s.scanned_by_email ?? "",
+      })),
+      [
+        { key: "epc", label: "EPC" },
+        { key: "at", label: t("receiving.scannedAt") },
+        { key: "by", label: t("receiving.scannedBy") },
+      ]
+    );
+    downloadCsv(`scans-${current?.job_number ?? "receipt"}-${scanModal.sku || scanModal.product_id}.csv`, csv);
+  }
 
   const visibleBranches = useMemo(
     () => (allowedBranches ? branches.filter((b) => allowedBranches.includes(b.id)) : branches),
@@ -339,7 +381,17 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
                         <td className={td + " font-mono"}>{p.sku || "—"}</td>
                         <td className={td + " text-right tabular-nums"}>{p.expected}</td>
                         <td className={td + " text-right tabular-nums " + (p.scanned > 0 ? "text-emerald-700" : "")}>
-                          {p.scanned}
+                          {p.scanned > 0 ? (
+                            // Тоон дээр дарж уншигдсан EPC жагсаалт (Үлдэгдэлтэй ижил).
+                            <button
+                              onClick={() => openScanModal(p)}
+                              className="underline decoration-dotted underline-offset-2 hover:text-emerald-900"
+                            >
+                              {p.scanned}
+                            </button>
+                          ) : (
+                            p.scanned
+                          )}
                         </td>
                         <td className={td + " text-right tabular-nums"}>{p.generated}</td>
                         <td className={td + " text-right font-semibold tabular-nums " + (rem > 0 ? "text-amber-700" : "text-emerald-700")}>
@@ -388,6 +440,93 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
 
         {current.status === "closed" && totals.generated > 0 && (
           <p className="text-xs text-slate-400">{t("receiving.printHint", { job: current.job_number })}</p>
+        )}
+
+        {/* Уншигдсан EPC-ийн модал */}
+        {scanModal && (
+          <div
+            className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4"
+            onClick={() => setScanModal(null)}
+          >
+            <div
+              className="max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                <div className="min-w-0">
+                  <h3 className="truncate font-semibold text-slate-900">
+                    {scanModal.name || scanModal.sku || t("common.product")}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {scanModal.sku && (
+                      <>
+                        SKU: <span className="font-mono">{scanModal.sku}</span> ·{" "}
+                      </>
+                    )}
+                    {scanModal.gtin && (
+                      <>
+                        {t("common.barcode")}: <span className="font-mono">{scanModal.gtin}</span> ·{" "}
+                      </>
+                    )}
+                    {t("receiving.scannedEpcs")} {scanList ? `(${scanList.length})` : "…"}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={handleScanListExport}
+                    disabled={!scanList || scanList.length === 0}
+                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {t("common.exportCsv")}
+                  </button>
+                  <button
+                    onClick={() => setScanModal(null)}
+                    className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-[65vh] overflow-auto">
+                {!scanList ? (
+                  <p className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</p>
+                ) : scanList.length === 0 ? (
+                  <p className="px-4 py-10 text-center text-slate-400">{t("receiving.noScans")}</p>
+                ) : (
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr>
+                        <th className="sticky top-0 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          EPC (hex)
+                        </th>
+                        <th className="sticky top-0 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          {t("receiving.scannedAt")}
+                        </th>
+                        <th className="sticky top-0 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          {t("receiving.scannedBy")}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scanList.map((s) => (
+                        <tr key={s.epc_hex} className="hover:bg-slate-50">
+                          <td className="border-b border-slate-100 px-3 py-1.5 font-mono text-xs text-slate-700">
+                            {s.epc_hex}
+                          </td>
+                          <td className="border-b border-slate-100 px-3 py-1.5 text-slate-700">
+                            {new Date(s.scanned_at).toLocaleString()}
+                          </td>
+                          <td className="border-b border-slate-100 px-3 py-1.5 text-slate-700">
+                            {s.scanned_by_email ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Хаах модал */}
