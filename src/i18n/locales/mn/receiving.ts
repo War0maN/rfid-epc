@@ -38,6 +38,13 @@ export default {
   scannedAt: "Уншсан цаг",
   scannedBy: "Уншсан хэрэглэгч",
   noScans: "Уншилт алга.",
+  filteredRows: "Шүүгдсэн: {{n}} / {{total}} мөр",
+  noFilterMatch: "Шүүлтэд тохирох мөр алга.",
+  statusAll: "Бүгд",
+  statusMissing: "Дутуу",
+  statusComplete: "Бүрэн",
+  statusOver: "Илүү",
+  issuesTruncated: "… дахин {{n}} мөр (эхний 200-г харуулав)",
   printHint: "Үүсгэсэн EPC-үүдийг хэвлэх: Бараа (EPC) хуудаснаас {{job}} ажлаар шүүж Хэвлэх.",
 
   // Уншилтын үр дүн

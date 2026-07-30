@@ -21,6 +21,7 @@ import {
   type MatchedScan,
 } from "../lib/receiving";
 import { toCsv, downloadCsv } from "../lib/exportCsv";
+import { logAuditEvent } from "../lib/audit";
 
 const ctl =
   "h-9 rounded border border-slate-300 px-2 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200";
@@ -77,6 +78,15 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
   // Уншигдсан EPC-ийн модал (Уншигдсан тоон дээр дарахад — Үлдэгдэлтэй ижил хэв маяг).
   const [scanModal, setScanModal] = useState<ProgressRow | null>(null);
   const [scanList, setScanList] = useState<MatchedScan[] | null>(null);
+
+  // Явцын хүснэгтийн шүүлт (ProductList-тэй ижил: толгойн доор оролтууд).
+  // Төлөв = Үлдэгдэл баганаар: Дутуу (rem>0) / Бүрэн (rem=0, илүүгүй) / Илүү (уншсан>хүлээгдэж).
+  type ProgStatus = "all" | "missing" | "complete" | "over";
+  const [progName, setProgName] = useState("");
+  const [progSku, setProgSku] = useState("");
+  const [progStatus, setProgStatus] = useState<ProgStatus>("all");
+  // Асуудалтай уншилтын ангиллын шүүлт (жагсаалт том байж болно — 200-аар таслана).
+  const [issueOutcome, setIssueOutcome] = useState<string>("all");
 
   // Модал нээгдэхэд тухайн барааны уншилтуудыг татна (Inventory-тэй ижил хэв маяг).
   useEffect(() => {
@@ -290,6 +300,88 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
     [progress]
   );
 
+  // Шүүгдсэн явц — бүх шүүлт client талд (мөр цөөн). Төлөв нь мөрийн
+  // үлдэгдэл/илүүгээр: Дутуу=rem>0, Илүү=уншсан>хүлээгдэж, Бүрэн=бусад.
+  const shownProgress = useMemo(() => {
+    const nameQ = progName.trim().toLowerCase();
+    const skuQ = progSku.trim().toLowerCase();
+    return progress.filter((p) => {
+      if (nameQ && !(p.name || p.gtin || "").toLowerCase().includes(nameQ)) return false;
+      if (skuQ && !(p.sku || "").toLowerCase().includes(skuQ)) return false;
+      const rem = p.expected - p.scanned - p.generated;
+      if (progStatus === "missing") return rem > 0;
+      if (progStatus === "over") return p.scanned > p.expected;
+      if (progStatus === "complete") return rem <= 0 && p.scanned <= p.expected;
+      return true;
+    });
+  }, [progress, progName, progSku, progStatus]);
+
+  // Хүснэгтийн НИЙТ мөр шүүлтээ дагана (харагдаж буйгаа нэгтгэнэ).
+  const shownTotals = useMemo(
+    () =>
+      shownProgress.reduce(
+        (s, p) => ({
+          expected: s.expected + p.expected,
+          scanned: s.scanned + p.scanned,
+          generated: s.generated + p.generated,
+        }),
+        { expected: 0, scanned: 0, generated: 0 }
+      ),
+    [shownProgress]
+  );
+
+  // Асуудалтай уншилт: ангилал бүрийн тоо + сонгосон ангиллын жагсаалт.
+  const issueCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of issues) m.set(s.outcome, (m.get(s.outcome) ?? 0) + 1);
+    return m;
+  }, [issues]);
+  const shownIssues = useMemo(
+    () => (issueOutcome === "all" ? issues : issues.filter((s) => s.outcome === issueOutcome)),
+    [issues, issueOutcome]
+  );
+
+  function handleProgressExport() {
+    if (!current) return;
+    const csv = toCsv(
+      [
+        ...shownProgress.map((p) => ({
+          name: p.name || p.gtin || "",
+          sku: p.sku || "",
+          gtin: p.gtin || "",
+          expected: p.expected,
+          scanned: p.scanned,
+          generated: p.generated,
+          remainder: p.expected - p.scanned - p.generated,
+        })),
+        {
+          name: t("receiving.total"),
+          sku: "",
+          gtin: "",
+          expected: shownTotals.expected,
+          scanned: shownTotals.scanned,
+          generated: shownTotals.generated,
+          remainder: shownTotals.expected - shownTotals.scanned - shownTotals.generated,
+        },
+      ],
+      [
+        { key: "name", label: t("common.product") },
+        { key: "sku", label: "SKU" },
+        { key: "gtin", label: t("common.barcode") },
+        { key: "expected", label: t("receiving.colExpected") },
+        { key: "scanned", label: t("receiving.colScanned") },
+        { key: "generated", label: t("receiving.colGenerated") },
+        { key: "remainder", label: t("receiving.colRemainder") },
+      ]
+    );
+    downloadCsv(`receiving-${current.job_number}.csv`, csv);
+    void logAuditEvent(supabase, "export_csv", "report", null, {
+      report: "receiving_progress",
+      receipt: current.job_number,
+      rows: shownProgress.length,
+    });
+  }
+
   // ============ Дэлгэрэнгүй горим ============
   if (current) {
     const remainderTotal = totals.expected - totals.scanned - totals.generated;
@@ -351,7 +443,23 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
           </div>
         )}
 
-        {/* Явцын хүснэгт */}
+        {/* Явцын хүснэгт — толгойн доор шүүлт (ProductList-тэй ижил) + CSV */}
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-slate-500">
+            {(progName || progSku || progStatus !== "all") && (
+              <>
+                {t("receiving.filteredRows", { n: shownProgress.length, total: progress.length })}
+              </>
+            )}
+          </p>
+          <button
+            onClick={handleProgressExport}
+            disabled={shownProgress.length === 0}
+            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {t("common.exportCsv")}
+          </button>
+        </div>
         <div className="overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="min-w-full text-sm">
             <thead>
@@ -363,6 +471,39 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
                 <th className={th + " text-right"}>{t("receiving.colGenerated")}</th>
                 <th className={th + " text-right"}>{t("receiving.colRemainder")}</th>
               </tr>
+              <tr>
+                <th className="border-b border-r border-slate-200 bg-white p-1 last:border-r-0">
+                  <input
+                    value={progName}
+                    onChange={(e) => setProgName(e.target.value)}
+                    placeholder={t("products.filterPlaceholder")}
+                    className="h-7 w-full rounded border border-slate-200 px-2 text-xs font-normal outline-none focus:border-indigo-400"
+                  />
+                </th>
+                <th className="border-b border-r border-slate-200 bg-white p-1 last:border-r-0">
+                  <input
+                    value={progSku}
+                    onChange={(e) => setProgSku(e.target.value)}
+                    placeholder={t("products.filterPlaceholder")}
+                    className="h-7 w-full rounded border border-slate-200 px-2 text-xs font-normal outline-none focus:border-indigo-400"
+                  />
+                </th>
+                <th className="border-b border-r border-slate-200 bg-white p-1 last:border-r-0" />
+                <th className="border-b border-r border-slate-200 bg-white p-1 last:border-r-0" />
+                <th className="border-b border-r border-slate-200 bg-white p-1 last:border-r-0" />
+                <th className="border-b border-r border-slate-200 bg-white p-1 last:border-r-0">
+                  <select
+                    value={progStatus}
+                    onChange={(e) => setProgStatus(e.target.value as ProgStatus)}
+                    className="h-7 w-full rounded border border-slate-200 px-1 text-xs font-normal outline-none focus:border-indigo-400"
+                  >
+                    <option value="all">{t("receiving.statusAll")}</option>
+                    <option value="missing">{t("receiving.statusMissing")}</option>
+                    <option value="complete">{t("receiving.statusComplete")}</option>
+                    <option value="over">{t("receiving.statusOver")}</option>
+                  </select>
+                </th>
+              </tr>
             </thead>
             <tbody>
               {progress.length === 0 ? (
@@ -371,9 +512,15 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
                     {t("common.loading")}
                   </td>
                 </tr>
+              ) : shownProgress.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                    {t("receiving.noFilterMatch")}
+                  </td>
+                </tr>
               ) : (
                 <>
-                  {progress.map((p) => {
+                  {shownProgress.map((p) => {
                     const rem = p.expected - p.scanned - p.generated;
                     return (
                       <tr key={p.product_id} className="hover:bg-slate-50">
@@ -400,13 +547,16 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
                       </tr>
                     );
                   })}
+                  {/* Нийт = харагдаж буй (шүүгдсэн) мөрүүдийн нэгтгэл */}
                   <tr className="bg-slate-50 font-semibold">
                     <td className={td}>{t("receiving.total")}</td>
                     <td className={td} />
-                    <td className={td + " text-right tabular-nums"}>{totals.expected}</td>
-                    <td className={td + " text-right tabular-nums"}>{totals.scanned}</td>
-                    <td className={td + " text-right tabular-nums"}>{totals.generated}</td>
-                    <td className={td + " text-right tabular-nums"}>{remainderTotal}</td>
+                    <td className={td + " text-right tabular-nums"}>{shownTotals.expected}</td>
+                    <td className={td + " text-right tabular-nums"}>{shownTotals.scanned}</td>
+                    <td className={td + " text-right tabular-nums"}>{shownTotals.generated}</td>
+                    <td className={td + " text-right tabular-nums"}>
+                      {shownTotals.expected - shownTotals.scanned - shownTotals.generated}
+                    </td>
                   </tr>
                 </>
               )}
@@ -414,7 +564,9 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
           </table>
         </div>
 
-        {/* Асуудалтай уншилтууд */}
+        {/* Асуудалтай уншилтууд — ангиллын тоо + шүүлт. Агуулахын хажуугийн
+            бараа (жагсаалтад байхгүй) олон мянга байж болох тул жагсаалтыг
+            200-аар таслана; бүрэн задаргаа нь тоогоор харагдана. */}
         {issues.length > 0 && (
           <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4">
             <button
@@ -423,17 +575,42 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
             >
               {showIssues ? "▾" : "▸"} {t("receiving.issuesTitle", { n: issues.length })}
             </button>
+            <p className="mt-1 text-xs text-amber-700">
+              {[...issueCounts.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .map(([o, n]) => `${t(`receiving.outcome.${o}`)}: ${n.toLocaleString()}`)
+                .join(" · ")}
+            </p>
             {showIssues && (
-              <ul className="mt-2 space-y-1 text-xs text-slate-700">
-                {issues.map((s) => (
-                  <li key={s.epc_hex} className="font-mono">
-                    {s.epc_hex}
-                    <span className="ml-2 font-sans text-slate-500">
-                      {t(`receiving.outcome.${s.outcome}`)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <select
+                  value={issueOutcome}
+                  onChange={(e) => setIssueOutcome(e.target.value)}
+                  className="mt-2 h-8 rounded border border-amber-200 bg-white px-2 text-xs outline-none focus:border-indigo-400"
+                >
+                  <option value="all">{t("receiving.statusAll")}</option>
+                  {[...issueCounts.keys()].map((o) => (
+                    <option key={o} value={o}>
+                      {t(`receiving.outcome.${o}`)} ({issueCounts.get(o)})
+                    </option>
+                  ))}
+                </select>
+                <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                  {shownIssues.slice(0, 200).map((s) => (
+                    <li key={s.epc_hex} className="font-mono">
+                      {s.epc_hex}
+                      <span className="ml-2 font-sans text-slate-500">
+                        {t(`receiving.outcome.${s.outcome}`)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {shownIssues.length > 200 && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    {t("receiving.issuesTruncated", { n: shownIssues.length - 200 })}
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}

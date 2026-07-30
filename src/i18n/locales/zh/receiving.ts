@@ -33,6 +33,13 @@ export default {
   scannedAt: "扫描时间",
   scannedBy: "扫描人",
   noScans: "暂无扫描。",
+  filteredRows: "已筛选：{{n}} / {{total}} 行",
+  noFilterMatch: "没有符合筛选的行。",
+  statusAll: "全部",
+  statusMissing: "缺少",
+  statusComplete: "完成",
+  statusOver: "超出",
+  issuesTruncated: "… 另有 {{n}} 行（仅显示前 200 行）",
   printHint: "打印已生成的 EPC：在商品 (EPC) 页按任务 {{job}} 筛选后打印。",
 
   resMatched: "已登记：{{n}}",

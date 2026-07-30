@@ -35,6 +35,13 @@ export default {
   scannedAt: "Scanned at",
   scannedBy: "Scanned by",
   noScans: "No scans.",
+  filteredRows: "Filtered: {{n}} / {{total}} rows",
+  noFilterMatch: "No rows match the filter.",
+  statusAll: "All",
+  statusMissing: "Missing",
+  statusComplete: "Complete",
+  statusOver: "Over",
+  issuesTruncated: "… {{n}} more rows (first 200 shown)",
   printHint: "To print the generated EPCs: filter Items (EPC) by job {{job}} and Print.",
 
   resMatched: "Registered: {{n}}",
