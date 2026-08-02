@@ -90,6 +90,9 @@ export async function submitStocktakeScans(
     const { data, error } = await supabase.rpc("stocktake_scan", {
       p_stocktake: stocktakeId,
       p_hexes: hexes.slice(i, i + 500),
+      // Вебийн wedge/гар оролт = 'manual'; C5 native апп 'device' илгээдэг —
+      // тайланд ялгагдана (гараар шивж "тоологдсон" болгох залилангийн сэжиг).
+      p_source: "manual",
     });
     if (error) throw error;
     const counts = (data ?? {}) as Record<string, number>;

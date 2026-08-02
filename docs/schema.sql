@@ -2875,3 +2875,98 @@ begin
    group by ev.tenant_id, ev.created_at::date;
 end $$;
 grant execute on function platform_label_series(date, date) to authenticated;
+
+-- ============================================================
+-- Ү6: ТООЛЛОГЫН СКАНГИЙН ЭХ СУРВАЛЖ (source) — залилангаас сэргийлнэ
+--   Худалдагч дутуу барааны EPC-г ГАРААР шивж "тоологдсон" болгох эрсдэлтэй.
+--   source = 'device' (C5 уншигч) | 'manual' (вебийн wedge/гар оролт) —
+--   тайланд ялгаж харуулах суурь; native апп нэвтэрсэн хойно гар оролтыг
+--   бүр хязгаарлаж болно.
+--   ⚠️ Хуучин 2 параметрт stocktake_scan-ыг ЗААВАЛ drop хийнэ: default-тай
+--   3 параметрт хувилбартай зэрэгцвэл PostgREST аль нь гэдгийг ялгаж чадахгүй
+--   (ambiguous) болно. Хуучин клиент (2 арг) шинэ функцэд default-аар таарна.
+-- ============================================================
+alter table stocktake_scans add column if not exists source text not null default 'manual'
+  check (source in ('manual','device'));
+
+drop function if exists stocktake_scan(uuid, text[]);
+create function stocktake_scan(p_stocktake uuid, p_hexes text[], p_source text default 'manual')
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant  uuid := current_tenant_id();
+  v_st      stocktakes%rowtype;
+  v_hex     text;
+  v_epc     uuid;
+  v_prod    uuid;
+  v_status  text;
+  v_branch  uuid;
+  v_outcome text;
+  v_counts  jsonb := '{}'::jsonb;
+  v_skipped int := 0;
+begin
+  if v_tenant is null then raise exception 'Нэвтрээгүй байна.'; end if;
+  if p_source not in ('manual','device') then
+    raise exception 'source буруу: % (manual/device байх ёстой).', p_source;
+  end if;
+  select * into v_st from stocktakes where id = p_stocktake and tenant_id = v_tenant;
+  if not found then raise exception 'Тооллого олдсонгүй.'; end if;
+  if v_st.status <> 'open' then
+    raise exception 'Энэ тооллого хаагдсан тул уншилт нэмэх боломжгүй.';
+  end if;
+  if not (is_tenant_admin() or has_perm('act_stocktake')) then
+    raise exception 'Танд тооллого хийх эрх байхгүй.';
+  end if;
+  if not has_branch_access(v_st.branch_id) then
+    raise exception 'Энэ салбарт тооллого хийх эрхгүй.';
+  end if;
+  if coalesce(array_length(p_hexes, 1), 0) < 1 then
+    return jsonb_build_object('skipped', 0);
+  end if;
+  if array_length(p_hexes, 1) > 2000 then
+    raise exception 'Нэг илгээлтэд дээд тал нь 2000 уншилт (багцалж илгээнэ үү).';
+  end if;
+
+  for v_hex in (select distinct upper(btrim(h)) from unnest(p_hexes) h
+                where btrim(coalesce(h, '')) <> '')
+  loop
+    if exists (select 1 from stocktake_scans
+               where stocktake_id = p_stocktake and epc_hex = v_hex) then
+      v_skipped := v_skipped + 1;
+      continue;
+    end if;
+
+    v_epc := null; v_prod := null; v_status := null; v_branch := null;
+    if v_hex !~ '^[0-9A-F]{24}$' then
+      v_outcome := 'unknown';
+    else
+      select i.epc_id, i.product_id into v_epc, v_prod
+        from stocktake_items i
+       where i.stocktake_id = p_stocktake and i.epc_hex = v_hex;
+      if v_epc is not null then
+        v_outcome := 'found';
+      else
+        select e.id, e.product_id, e.status, e.branch_id
+          into v_epc, v_prod, v_status, v_branch
+          from epc_codes e
+         where e.tenant_id = v_tenant and e.epc_hex = v_hex;
+        v_outcome := case when v_epc is null then 'unknown' else 'not_expected' end;
+      end if;
+    end if;
+
+    insert into stocktake_scans (stocktake_id, tenant_id, epc_hex, outcome, epc_id, product_id,
+                                 scan_status, scan_branch, source)
+    values (p_stocktake, v_tenant, v_hex, v_outcome, v_epc, v_prod,
+            case when v_outcome = 'not_expected' then v_status end,
+            case when v_outcome = 'not_expected' then v_branch end,
+            p_source);
+    v_counts := jsonb_set(v_counts, array[v_outcome],
+                          to_jsonb(coalesce((v_counts ->> v_outcome)::int, 0) + 1));
+  end loop;
+
+  return v_counts || jsonb_build_object('skipped', v_skipped);
+end $$;
+grant execute on function stocktake_scan(uuid, text[], text) to authenticated;
