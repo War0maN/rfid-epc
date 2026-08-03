@@ -1,0 +1,45 @@
+# ============================================================
+# Автомат шалгалт — GitHub рүү код орох бүрд өөрөө ажиллана.
+# Локал дээр commit-ийн өмнө хийдэг 4 шалгалтыг яг давтана:
+#   төрлийн шалгалт → код цэвэрлэгээ → тест → build.
+# Аль нэг нь унавал GitHub дээр улаан ✗ гарч, имэйл ирнэ.
+# ============================================================
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # GitHub-ийн Actions хуудаснаас гараар ажиллуулах
+
+# Нэг branch дээр хурдан хоёр push хийвэл хуучныг нь зогсооно.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Багцуудыг суулгах
+        run: npm ci
+
+      - name: Төрлийн шалгалт (tsc)
+        run: npx tsc -b
+
+      - name: Код цэвэрлэгээ (eslint)
+        run: npx eslint .
+
+      - name: Тест (vitest)
+        run: npm test
+
+      # Vercel deploy унахаас өмнө энд баригдана.
+      - name: Build
+        run: npm run build
