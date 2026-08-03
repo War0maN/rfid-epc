@@ -1,5 +1,7 @@
 # Chipmo Inventory
 
+[![CI](https://github.com/War0maN/rfid-epc/actions/workflows/ci.yml/badge.svg)](https://github.com/War0maN/rfid-epc/actions/workflows/ci.yml)
+
 Импортын барааны packing list-ээс GS1 стандартын **RFID EPC** (SGTIN-96 / GID-96) код үүсгэж, шошго хэвлэж, барааны бүрэн амьдралын мөчлөгийг (үлдэгдэл · борлуулалт · шилжүүлэг · буцаалт · тайлан) ширхэг бүрээр нь мөрддөг **олон компанийн (multi-tenant)** веб систем.
 
 ## Гол боломжууд
