@@ -5,7 +5,7 @@ import i18n from "../i18n";
 import { labelMap } from "../i18n/labelMap";
 import { fetchAuditLog, type AuditRow } from "../lib/audit";
 import { labelOf } from "../lib/epcStatus";
-import { TX_TYPE_LABEL, TX_STATUS_LABEL, type TxType, type TxStatus } from "../lib/transactions";
+import { TX_TYPE_LABEL, TX_TYPE_BADGE, TX_STATUS_LABEL, type TxType, type TxStatus } from "../lib/transactions";
 
 /** Үйлдлийн шошго (i18n) + өнгө. */
 const ACTION_LABEL: Record<string, string> = labelMap({
@@ -30,6 +30,31 @@ const ACTION_CLS: Record<string, string> = {
   export_zpl: "bg-slate-100 text-slate-700",
 };
 const DEFAULT_CLS = "bg-slate-100 text-slate-700";
+
+/**
+ * Үйлдэл баганын шошго + өнгө. Гүйлгээний мөрөнд (DB trigger-ийн insert/update)
+ * ерөнхий "Нэмсэн/Зассан" биш ЖИНХЭНЭ үйлдлийг харуулна: Борлуулалт/Шилжүүлэг/
+ * Буцаалт/Бусад гүйлгээ; шилжүүлгийн төлөв солигдоход "Хүлээн авсан/Цуцалсан".
+ * (2026-08-02 хэрэглэгчийн хүсэлт — "Нэмсэн" нь бараа нэмсэнтэй ижил харагдаж
+ * төөрөгдүүлж байсан.) Зөвхөн харагдац — DB-д юу ч өөрчлөгдөхгүй.
+ */
+function actionMeta(r: AuditRow): { label: string; cls: string } {
+  if (r.entity === "transaction") {
+    const after = r.after ?? {};
+    const before = r.before ?? {};
+    const type = (after.type ?? before.type) as TxType | undefined;
+    if (r.action === "insert" && type && TX_TYPE_LABEL[type]) {
+      return { label: TX_TYPE_LABEL[type], cls: TX_TYPE_BADGE[type] ?? DEFAULT_CLS };
+    }
+    if (r.action === "update" && before.status === "pending") {
+      if (after.status === "done")
+        return { label: i18n.t("audit.action.transferReceived"), cls: "bg-emerald-50 text-emerald-700" };
+      if (after.status === "cancelled")
+        return { label: i18n.t("audit.action.transferCancelled"), cls: "bg-slate-100 text-slate-600" };
+    }
+  }
+  return { label: ACTION_LABEL[r.action] ?? r.action, cls: ACTION_CLS[r.action] ?? DEFAULT_CLS };
+}
 
 const ENTITY_LABEL: Record<string, string> = labelMap({
   job: "audit.entity.job",
@@ -187,6 +212,8 @@ function describe(row: AuditRow): string {
   if (row.entity === "category") return (src.name as string) || "";
   if (row.entity === "attribute") return (src.label as string) || "";
   if (row.entity === "branch") return (src.name as string) || "";
+  // Гүйлгээ: дугаараар нь (жишээ нь № SAL-0003) — дэлгэрэнгүй нь модалд.
+  if (row.entity === "transaction") return src.tx_number ? `№ ${src.tx_number}` : "";
   return "";
 }
 
@@ -269,10 +296,7 @@ export default function AuditLog() {
               </tr>
             ) : (
               rows.map((r) => {
-                const am = {
-                  label: ACTION_LABEL[r.action] ?? r.action,
-                  cls: ACTION_CLS[r.action] ?? DEFAULT_CLS,
-                };
+                const am = actionMeta(r);
                 return (
                   <tr key={r.id} className="cursor-pointer hover:bg-slate-50" onClick={() => openDetail(r)}>
                     <td className="whitespace-nowrap px-4 py-2 text-slate-500">
@@ -311,11 +335,10 @@ export default function AuditLog() {
                 <h3 className="flex flex-wrap items-center gap-2 font-semibold text-slate-900">
                   <span
                     className={
-                      "whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " +
-                      (ACTION_CLS[detail.action] ?? DEFAULT_CLS)
+                      "whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + actionMeta(detail).cls
                     }
                   >
-                    {ACTION_LABEL[detail.action] ?? detail.action}
+                    {actionMeta(detail).label}
                   </span>
                   {ENTITY_LABEL[detail.entity] ?? detail.entity}
                   {describe(detail) && <span className="font-normal text-slate-500">· {describe(detail)}</span>}

@@ -35,6 +35,8 @@ export default {
     statusChange: "Төлөв өөрчилсөн",
     exportCsv: "CSV татсан",
     exportZpl: "ZPL татсан",
+    transferReceived: "Шилжүүлэг хүлээн авсан",
+    transferCancelled: "Шилжүүлэг цуцалсан",
   },
   entity: {
     job: "Ажил",

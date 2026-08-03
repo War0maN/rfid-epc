@@ -35,6 +35,8 @@ export default {
     statusChange: "Changed status",
     exportCsv: "Exported CSV",
     exportZpl: "Exported ZPL",
+    transferReceived: "Transfer received",
+    transferCancelled: "Transfer cancelled",
   },
   entity: {
     job: "Job",

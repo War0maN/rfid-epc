@@ -34,6 +34,8 @@ export default {
     statusChange: "状态变更",
     exportCsv: "导出 CSV",
     exportZpl: "导出 ZPL",
+    transferReceived: "调拨已接收",
+    transferCancelled: "调拨已取消",
   },
   entity: {
     job: "任务",
