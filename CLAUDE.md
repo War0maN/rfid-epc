@@ -5,8 +5,9 @@ RFID EPC Generator: Vite + React 19 + TS + Tailwind + Supabase (Postgres/RLS/Aut
 ## Ажлын урсгал
 
 - Схемийн эх сурвалж = `docs/schema.sql` (migration-style, **idempotent**). Схем өөрчилбөл хэрэглэгч Supabase SQL Editor дээр файлыг бүхэлд нь дахин Run хийнэ — үүнийг өөрчлөлт бүрт сануул.
-- Git: feature branch → хэрэглэгч гараар туршина → commit → `main`-д **зөвхөн fast-forward** merge → GitHub push. Commit-ийн өмнө `npx tsc -b` + eslint заавал цэвэр.
+- Git: feature branch → хэрэглэгч гараар туршина → commit → `main`-д **зөвхөн fast-forward** merge → GitHub push. Commit-ийн өмнө `npx tsc -b` + eslint + `npm test` заавал цэвэр.
 - Туршилт: `npm run dev` (localhost:5173/5174), хэрэглэгч UI-гаас туршиж баталгаажуулдаг.
+- **Автомат тест (vitest, `npm test`):** зөвхөн ЦЭВЭР функцүүдэд — EPC кодлол/задлалт (`lib/epc.ts`), тайлангийн бүлэглэлт/томьёо (movement/stocktakeReport/txReports), format/exportCsv/permissions/epcStatus, 3 хэлний түлхүүрийн паритет. DB/RLS/UI тест ҮГҮЙ (тэдгээрийг хэрэглэгч UI-гаас туршдаг). Орчин: node + `src/test/setup.ts` (localStorage хуурамч) + `vitest.config.ts`-ийн хуурамч VITE_SUPABASE_* — тест сүлжээнд хандахгүй. Шинэ цэвэр функц нэмбэл `<файл>.test.ts` дагалдуулна.
 
 ## Халдашгүй зарчмууд
 
