@@ -19,7 +19,7 @@ export default {
   pendingInvites: "Pending invites ({{n}})",
   permModalTitle: "Configure permissions",
   permModalHint:
-    "{{email}} — only the selected menus/actions are allowed (in both UI and DB).<strong> Checking everything grants full permissions</strong> (default).",
+    "{{email}} — only the selected menus/actions are allowed (in both UI and DB). <strong>If nothing is selected, this person will see nothing.</strong>",
   permCountOf: "{{picked}}/{{total}} permissions",
   branchModalTitle: "Assign branches",
   branchModalHint:
@@ -27,4 +27,12 @@ export default {
   branchCount: "{{n}} branches",
   dismiss: "Cancel",
   saving: "Saving…",
+  noPerms: "No permissions",
+  modeFull: "Full access",
+  modeScoped: "Selected permissions",
+  modeFullNote: "Every menu, every action and every branch is open.",
+  noPermsWarn: "Nothing selected — this person will see nothing.",
+  confirmFull:
+    "Grant FULL access to {{email}}?\n\nEvery menu, every action (import, printing, sales, transfers, write-offs) and every branch will be open.",
+  allBranchesWarn: "No branches assigned, so data from all branches is visible.",
 };

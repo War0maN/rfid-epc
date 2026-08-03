@@ -19,7 +19,7 @@ export default {
   pendingInvites: "Хүлээгдэж буй урилга ({{n}})",
   permModalTitle: "Эрх тохируулах",
   permModalHint:
-    "{{email}} — сонгосон цэс/үйлдэл л зөвшөөрөгдөнө (UI + DB хоёуланд).<strong> Бүгдийг чеклэвэл бүрэн эрх</strong> (default) болно.",
+    "{{email}} — сонгосон цэс/үйлдэл л зөвшөөрөгдөнө (UI + DB хоёуланд). <strong>Юу ч сонгохгүй бол энэ хүн юу ч харахгүй.</strong>",
   permCountOf: "{{picked}}/{{total}} эрх",
   branchModalTitle: "Салбар хуваарилах",
   branchModalHint:
@@ -27,4 +27,12 @@ export default {
   branchCount: "{{n}} салбар",
   dismiss: "Болих",
   saving: "Хадгалж байна…",
+  noPerms: "Эрхгүй",
+  modeFull: "Бүрэн эрх",
+  modeScoped: "Сонгосон эрх",
+  modeFullNote: "Бүх цэс, бүх үйлдэл, бүх салбар нээлттэй.",
+  noPermsWarn: "Юу ч сонгоогүй — энэ хүн юу ч харахгүй.",
+  confirmFull:
+    "{{email}} хэрэглэгчид БҮРЭН эрх олгох уу?\n\nБүх цэс, бүх үйлдэл (импорт, хэвлэлт, борлуулалт, шилжүүлэг, актлалт) болон бүх салбар нээлттэй болно.",
+  allBranchesWarn: "Салбар хуваарилаагүй тул бүх салбарын өгөгдлийг харна.",
 };

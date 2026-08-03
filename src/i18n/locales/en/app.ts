@@ -22,4 +22,7 @@ export default {
   designerLoading: "Loading designer…",
   subProducts: "List",
   subCatalog: "Categories",
+  noAccessTitle: "No permissions granted",
+  noAccessHint:
+    "Ask your organization admin to grant the menus/actions you need for your work. Reload this page once they have.",
 };

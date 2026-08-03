@@ -119,7 +119,8 @@ function App() {
     let active = true;
     void (async () => {
       try {
-        if (profile.role === "admin") {
+        // Админ, эсвэл ИЛ "бүрэн эрх" горимд байгаа гишүүн — хязгааргүй.
+        if (profile.role === "admin" || profile.access_mode === "full") {
           if (active) {
             setAllowedBranches(null);
             setMyPerms(null);
@@ -129,11 +130,13 @@ function App() {
         const [ids, perms] = await Promise.all([fetchMyBranchIds(), fetchMyPerms()]);
         if (!active) return;
         setAllowedBranches(ids.length > 0 ? ids : null);
-        setMyPerms(perms.length > 0 ? perms : null);
+        // ХООСОН массив = ямар ч эрхгүй (null = бүрэн эрх — хоёрыг бүү хутга).
+        setMyPerms(perms);
       } catch {
+        // Татаж чадаагүй үед ХААЛТТАЙ тал руу — эрхийг таамаглахгүй.
         if (active) {
           setAllowedBranches(null);
-          setMyPerms(null);
+          setMyPerms([]);
         }
       }
     })();
@@ -207,6 +210,9 @@ function App() {
     .map((n) => (isGroup(n) ? { ...n, children: n.children.filter(tabVisible) } : n))
     .filter((n) => (isGroup(n) ? n.children.length > 0 : tabVisible(n)));
   const visibleTabIds = visibleNav.flatMap((n) => (isGroup(n) ? n.children.map((c) => c.id) : [n.id]));
+  // Эрх огт олгоогүй гишүүн (fail-closed default) — хоосон таб рүү оруулахын
+  // оронд юу хийхийг нь ойлгомжтой хэлнэ.
+  const noAccess = visibleTabIds.length === 0;
   const activeTab: Tab = visibleTabIds.includes(tab) ? tab : (visibleTabIds[0] ?? "table");
   // Идэвхтэй таб аль бүлэгт харьяалагдаж байгааг олно (дэд таб бар харуулахад).
   const activeGroup = visibleNav.filter(isGroup).find((g) => g.children.some((c) => c.id === activeTab));
@@ -298,6 +304,13 @@ function App() {
         )}
         {/* Нэг табын render алдаа бүтэн аппыг цагаан дэлгэц болгохгүй —
             алдаа тухайн табд хязгаарлагдаж, таб солиход цэвэрлэгдэнэ. */}
+        {noAccess && (
+          <div className="mx-auto max-w-md rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+            <p className="text-sm font-medium text-slate-800">{t("app.noAccessTitle")}</p>
+            <p className="mt-2 text-sm text-slate-500">{t("app.noAccessHint")}</p>
+          </div>
+        )}
+        {!noAccess && (
         <ErrorBoundary resetKey={activeTab}>
         {activeTab === "create" && (
           <CreateJobForm
@@ -405,6 +418,7 @@ function App() {
         {activeTab === "audit" && <AuditLog />}
         {activeTab === "members" && profile.role === "admin" && <Members />}
         </ErrorBoundary>
+        )}
       </main>
     </div>
   );

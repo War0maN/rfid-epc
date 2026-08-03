@@ -7,14 +7,17 @@ import {
   cancelInvite,
   listInvites,
   listMembers,
+  setMemberAccessMode,
   setMemberBranches,
   setMemberPerms,
+  type AccessMode,
   type Invite,
   type Member,
   type Role,
 } from "../lib/tenantAuth";
 import { listBranches, type Branch } from "../lib/branches";
 import { ALL_PERMS, PERM_GROUPS } from "../lib/permissions";
+import ConfirmDialog from "./ConfirmDialog";
 
 const inputCls =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200";
@@ -41,10 +44,13 @@ export default function Members() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [branchSaving, setBranchSaving] = useState(false);
 
-  // Эрхийн модал: гишүүн + түр сонголт.
+  // Эрхийн модал: гишүүн + горим + түр сонголт.
   const [permModal, setPermModal] = useState<Member | null>(null);
+  const [permMode, setPermMode] = useState<AccessMode>("scoped");
   const [pickedPerms, setPickedPerms] = useState<Set<string>>(new Set());
   const [permSaving, setPermSaving] = useState(false);
+  // "Бүрэн эрх" рүү шилжүүлэхийн өмнөх баталгаажуулалт.
+  const [confirmFull, setConfirmFull] = useState(false);
 
   const branchName = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
 
@@ -119,8 +125,10 @@ export default function Members() {
   }
 
   function openPermModal(m: Member) {
-    // Тохиргоогүй (бүрэн эрх) бол бүгд чеклэгдсэн байдлаар харуулна.
-    setPickedPerms(new Set(m.perms.length > 0 ? m.perms : ALL_PERMS));
+    setPermMode(m.access_mode);
+    // Бүрэн эрхтэй гишүүнд бүгдийг чеклэсэн харагдац — "Сонгосон эрх" рүү
+    // шилжихэд юу ч алдагдахгүй, хэрэггүйг нь тайлж хасна.
+    setPickedPerms(new Set(m.access_mode === "full" ? ALL_PERMS : m.perms));
     setPermModal(m);
   }
 
@@ -133,14 +141,15 @@ export default function Members() {
     });
   }
 
-  async function handleSavePerms() {
+  async function savePerms() {
     if (!permModal) return;
     setPermSaving(true);
     setError(null);
     try {
-      // Бүгд чеклэгдсэн = бүрэн эрх (default) — хоосон болгож хадгална.
-      const perms = pickedPerms.size === ALL_PERMS.length ? [] : [...pickedPerms];
-      await setMemberPerms(permModal.id, perms);
+      // Бүрэн эрх = горимын тугаар; сонгосон эрх = яг чеклэсэн жагсаалт
+      // (хоосон бол энэ хүн юу ч хийж чадахгүй — далд "бүрэн" гэж үзэхгүй).
+      if (permMode === "full") await setMemberAccessMode(permModal.id, "full");
+      else await setMemberPerms(permModal.id, [...pickedPerms]);
       setPermModal(null);
       reload();
     } catch (err) {
@@ -150,10 +159,44 @@ export default function Members() {
     }
   }
 
+  function handleSavePerms() {
+    if (!permModal) return;
+    // Бүрэн эрх шинээр олгож байвал ил баталгаажуулна.
+    if (permMode === "full" && permModal.access_mode !== "full") setConfirmFull(true);
+    else void savePerms();
+  }
+
+  /** Эрхийн байдлын шошго: бүрэн / N эрх / эрхгүй (анхаарал татсан улаан). */
+  function permBadge(m: Member) {
+    if (m.access_mode === "full") {
+      return <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">{t("members.fullPerms")}</span>;
+    }
+    if (m.perms.length === 0) {
+      return <span className="rounded bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">{t("members.noPerms")}</span>;
+    }
+    return (
+      <span className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+        {t("members.permCount", { n: m.perms.length })}
+      </span>
+    );
+  }
+
   /** Гишүүний хуваарилалтыг chip-үүдээр (хоосон = Бүгд). */
   function branchChips(m: Member) {
     if (m.branch_ids.length === 0) {
-      return <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">{t("members.allBranches")}</span>;
+      // Олон салбартай үед "бүх салбар" нь анзаарууштай — шар өнгөөр сануулна.
+      const warn = branches.length > 1;
+      return (
+        <span
+          className={
+            "rounded px-2 py-0.5 text-xs " +
+            (warn ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700")
+          }
+          title={warn ? t("members.allBranchesWarn") : undefined}
+        >
+          {t("members.allBranches")}
+        </span>
+      );
     }
     return m.branch_ids.map((id) => (
       <span key={id} className="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
@@ -220,16 +263,7 @@ export default function Members() {
                 {m.role === "operator" ? (
                   <>
                     {branchChips(m)}
-                    <span
-                      className={
-                        "rounded px-2 py-0.5 text-xs " +
-                        (m.perms.length === 0
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-amber-50 text-amber-700")
-                      }
-                    >
-                      {m.perms.length === 0 ? t("members.fullPerms") : t("members.permCount", { n: m.perms.length })}
-                    </span>
+                    {permBadge(m)}
                     <button
                       onClick={() => openBranchModal(m)}
                       className="ml-1 text-xs font-medium text-indigo-600 hover:underline"
@@ -290,7 +324,35 @@ export default function Members() {
             <p className="mt-1 text-xs text-slate-500">
               <Trans i18nKey="members.permModalHint" values={{ email: permModal.email }} />
             </p>
-            <div className="mt-3 grid max-h-80 grid-cols-1 gap-4 overflow-auto sm:grid-cols-2">
+            {/* Горим: бүрэн эрх (нэг дарахад бүгд) эсвэл сонгосон эрх. */}
+            <div className="mt-3 flex gap-1 rounded-lg bg-slate-100 p-1">
+              {(
+                [
+                  { id: "full" as const, label: "members.modeFull" },
+                  { id: "scoped" as const, label: "members.modeScoped" },
+                ]
+              ).map((o) => (
+                <button
+                  key={o.id}
+                  onClick={() => setPermMode(o.id)}
+                  className={
+                    "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition " +
+                    (permMode === o.id
+                      ? "bg-white text-indigo-700 shadow-sm"
+                      : "text-slate-600 hover:text-slate-800")
+                  }
+                >
+                  {t(o.label)}
+                </button>
+              ))}
+            </div>
+
+            <div
+              className={
+                "mt-3 grid max-h-80 grid-cols-1 gap-4 overflow-auto sm:grid-cols-2 " +
+                (permMode === "full" ? "pointer-events-none opacity-40" : "")
+              }
+            >
               {PERM_GROUPS.map((g) => (
                 <div key={g.title}>
                   <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{t(g.title)}</p>
@@ -302,7 +364,8 @@ export default function Members() {
                       >
                         <input
                           type="checkbox"
-                          checked={pickedPerms.has(p.key)}
+                          disabled={permMode === "full"}
+                          checked={permMode === "full" || pickedPerms.has(p.key)}
                           onChange={() => togglePerm(p.key)}
                         />
                         {t(p.label)}
@@ -313,11 +376,15 @@ export default function Members() {
               ))}
             </div>
             <div className="mt-4 flex items-center justify-between gap-2">
-              <span className="text-xs text-slate-500">
-                {pickedPerms.size === ALL_PERMS.length
-                  ? t("members.fullPerms")
-                  : t("members.permCountOf", { picked: pickedPerms.size, total: ALL_PERMS.length })}
-              </span>
+              {permMode === "full" ? (
+                <span className="text-xs text-slate-500">{t("members.modeFullNote")}</span>
+              ) : pickedPerms.size === 0 ? (
+                <span className="text-xs font-medium text-red-600">{t("members.noPermsWarn")}</span>
+              ) : (
+                <span className="text-xs text-slate-500">
+                  {t("members.permCountOf", { picked: pickedPerms.size, total: ALL_PERMS.length })}
+                </span>
+              )}
               <div className="flex gap-2">
                 <button
                   onClick={() => setPermModal(null)}
@@ -383,6 +450,20 @@ export default function Members() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Бүрэн эрх олгохын өмнөх баталгаажуулалт (ConfirmDialog — window.confirm хориотой). */}
+      {confirmFull && permModal && (
+        <ConfirmDialog
+          message={t("members.confirmFull", { email: permModal.email ?? "—" })}
+          confirmLabel={t("members.modeFull")}
+          busy={permSaving}
+          onConfirm={() => {
+            setConfirmFull(false);
+            void savePerms();
+          }}
+          onCancel={() => setConfirmFull(false)}
+        />
       )}
     </div>
   );

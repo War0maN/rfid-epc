@@ -11,20 +11,30 @@ import { supabase } from "./supabaseClient";
 
 export type Role = "admin" | "operator";
 
+/**
+ * Эрхийн горим (fail-closed, 2026-08-04):
+ *   full   — бүх эрхтэй (админ гараар олгоно; хуучин хэрэглэгчид ингэж backfill хийгдсэн)
+ *   scoped — ЗӨВХӨН олгосон эрхүүд; хоосон бол юу ч хийж чадахгүй (шинэ гишүүний default)
+ * Салбарын хуваарилалт үүнээс ТУСДАА: хоосон = бүх салбар (өмнөх шигээ).
+ */
+export type AccessMode = "full" | "scoped";
+
 export interface MyProfile {
   id: string;
   tenant_id: string;
   email: string | null;
   role: Role;
+  access_mode: AccessMode;
 }
 
 export interface Member {
   id: string;
   email: string | null;
   role: Role;
+  access_mode: AccessMode;
   created_at: string;
   branch_ids: string[]; // хуваарилагдсан салбарууд (хоосон = бүгд/хязгааргүй)
-  perms: string[]; // олгосон эрхүүд (хоосон = бүрэн default)
+  perms: string[]; // олгосон эрхүүд (зөвхөн scoped горимд хүчинтэй)
 }
 
 export interface Invite {
@@ -96,11 +106,22 @@ export async function acceptInvite(): Promise<string | null> {
 export async function fetchMyProfile(): Promise<MyProfile | null> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, tenant_id, email, role")
+    .select("*")
     .eq("id", (await supabase.auth.getUser()).data.user?.id ?? "")
     .maybeSingle();
   if (error) throw error;
-  return (data as MyProfile) ?? null;
+  if (!data) return null;
+  return { ...(data as MyProfile), access_mode: readAccessMode(data) };
+}
+
+/**
+ * access_mode-ыг уншина. Багана БАЙХГҮЙ (schema.sql-ийг хараахан Run
+ * хийгээгүй) үед 'full' — тэр үед DB талын has_perm() ч хуучин "мөргүй =
+ * бүрэн" логикоороо ажиллаж байгаа тул хоёр тал зөрөхгүй. Схемийг Run
+ * хийсний дараа хоёулаа зэрэг хаалттай болно.
+ */
+function readAccessMode(row: unknown): AccessMode {
+  return (row as { access_mode?: string }).access_mode === "scoped" ? "scoped" : "full";
 }
 
 // ---------- Admin: гишүүд ба урилга ----------
@@ -108,7 +129,7 @@ export async function fetchMyProfile(): Promise<MyProfile | null> {
 /** Тенантын бүх гишүүн + салбар/эрхийн тохиргоо (RLS-ээр зөвхөн өөрийн тенант). */
 export async function listMembers(): Promise<Member[]> {
   const [{ data, error }, { data: ub, error: ubErr }, { data: up, error: upErr }] = await Promise.all([
-    supabase.from("profiles").select("id, email, role, created_at").order("created_at", { ascending: true }),
+    supabase.from("profiles").select("*").order("created_at", { ascending: true }),
     supabase.from("user_branches").select("user_id, branch_id"),
     supabase.from("user_permissions").select("user_id, perm"),
   ]);
@@ -129,12 +150,17 @@ export async function listMembers(): Promise<Member[]> {
   }
   return ((data ?? []) as Omit<Member, "branch_ids" | "perms">[]).map((m) => ({
     ...m,
+    access_mode: readAccessMode(m),
     branch_ids: branchByUser.get(m.id) ?? [],
     perms: permByUser.get(m.id) ?? [],
   }));
 }
 
-/** Гишүүний эрхүүдийг тохируулна (админ; атом replace, хоосон = бүрэн default). */
+/**
+ * Гишүүний эрхүүдийг тохируулна (админ; атом replace). Дуудахад тухайн
+ * гишүүн ИЛ `scoped` горимд орно — өгсөн жагсаалт цорын ганц үнэн болно
+ * (хоосон = юу ч хийж чадахгүй).
+ */
 export async function setMemberPerms(userId: string, perms: string[]): Promise<void> {
   const { error } = await supabase.rpc("set_member_perms", {
     p_user: userId,
@@ -143,7 +169,16 @@ export async function setMemberPerms(userId: string, perms: string[]): Promise<v
   if (error) throw error;
 }
 
-/** Өөрийн эрхүүд (хоосон = бүрэн default). */
+/** Гишүүнийг бүрэн эрхтэй / сонгосон эрхтэй горимд шилжүүлнэ (админ). */
+export async function setMemberAccessMode(userId: string, mode: AccessMode): Promise<void> {
+  const { error } = await supabase.rpc("set_member_access_mode", {
+    p_user: userId,
+    p_mode: mode,
+  });
+  if (error) throw error;
+}
+
+/** Өөрийн эрхүүд (зөвхөн scoped горимд хүчинтэй — App нь access_mode-оор шийднэ). */
 export async function fetchMyPerms(): Promise<string[]> {
   const uid = (await supabase.auth.getUser()).data.user?.id;
   if (!uid) return [];

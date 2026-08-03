@@ -22,4 +22,7 @@ export default {
   designerLoading: "设计器加载中…",
   subProducts: "列表",
   subCatalog: "分类",
+  noAccessTitle: "尚未授予权限",
+  noAccessHint:
+    "请联系您所在机构的管理员，授予工作所需的菜单/操作权限。授权后请重新加载本页。",
 };

@@ -19,7 +19,7 @@ export default {
   pendingInvites: "待处理邀请 ({{n}})",
   permModalTitle: "设置权限",
   permModalHint:
-    "{{email}} — 仅允许所选菜单/操作（UI 与数据库两侧）。<strong>全部勾选即为全部权限</strong>（默认）。",
+    "{{email}} — 仅允许所选菜单/操作（UI 与数据库两侧）。<strong>若不选择任何权限，此人将看不到任何内容。</strong>",
   permCountOf: "{{picked}}/{{total}} 项权限",
   branchModalTitle: "分配分店",
   branchModalHint:
@@ -27,4 +27,12 @@ export default {
   branchCount: "{{n}} 家分店",
   dismiss: "取消",
   saving: "保存中…",
+  noPerms: "无权限",
+  modeFull: "全部权限",
+  modeScoped: "指定权限",
+  modeFullNote: "所有菜单、所有操作、所有分店均开放。",
+  noPermsWarn: "未选择任何权限 — 此人将看不到任何内容。",
+  confirmFull:
+    "确定授予 {{email}} 全部权限吗？\n\n所有菜单、所有操作（导入、打印、销售、调拨、报废）以及所有分店都将开放。",
+  allBranchesWarn: "未分配分店，因此可查看所有分店的数据。",
 };

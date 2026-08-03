@@ -2970,3 +2970,104 @@ begin
   return v_counts || jsonb_build_object('skipped', v_skipped);
 end $$;
 grant execute on function stocktake_scan(uuid, text[], text) to authenticated;
+
+-- ============================================================
+-- Эрхийн default-ыг ХААЛТТАЙ болгох (fail-closed, 2026-08-04)
+--   Асуудал: user_permissions-д мөргүй хэрэглэгч = БҮРЭН эрхтэй байсан.
+--   Backward compatible байлгах гэсэн энэ семантик нь шинээр уригдсан
+--   ажилтан бүрд чимээгүйхэн бүрэн эрх өгдөг байв (fail-open).
+--
+--   Шийдэл: "тохиргоогүй" гэдэг далд төлвийг арилгаж, хэрэглэгч бүрд
+--   ИЛ горим (`profiles.access_mode`) өгнө:
+--     'full'   = бүх эрх (админ гараар олгоно; хуучин хэрэглэгчид)
+--     'scoped' = ЗӨВХӨН user_permissions-д олгосон эрхүүд (хоосон = юу ч үгүй)
+--
+--   ⚠️ Салбарын scoping (`has_branch_access`) ХЭВЭЭР: мөргүй = бүх салбар.
+--   Ихэнх тенант нэг салбартай тул хаалттай болгох нь дэмий саад болно;
+--   мөн эрх нь эхлээд хаадаг тул шинэ хүн ямар ч байсан юу ч харахгүй.
+--   Хэрэглэгчид жагсаалтад "Бүх салбар" гэж ИЛ харагддаг (далд биш).
+-- ============================================================
+
+-- 1) Горимын багана.
+--    ⚠️ Багана НЭМЭГДЭХ мөчид default нь 'full' тул одоо байгаа БҮХ мөр
+--    (өнөөдөр ажиллаж буй ажилчид, мобайл апп ашиглагчид) 'full' болж
+--    зан төлөв нь ЯГ хэвээр үлдэнэ. Дараа нь default-ыг 'scoped' болгож
+--    ЦААШИД нэгдэх хүмүүсийг хаалттай эхлүүлнэ. Дахин Run хийхэд
+--    "add column if not exists" алгасагдах тул backfill давтагдахгүй.
+alter table profiles add column if not exists access_mode text not null default 'full';
+alter table profiles alter column access_mode set default 'scoped';
+alter table profiles drop constraint if exists profiles_access_mode_chk;
+alter table profiles add  constraint profiles_access_mode_chk
+  check (access_mode in ('full', 'scoped'));
+
+-- 2) Эрхийн шалгагч — "мөргүй = бүрэн" семантикийг ХАСЛАА.
+--    Профайлгүй (онбординг дунд) хэрэглэгчийг 'scoped' гэж үзнэ; тэр үед
+--    current_tenant_id() null тул RLS ямар ч байсан бүгдийг хаана.
+create or replace function has_perm(p text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select is_tenant_admin()
+      or coalesce((select access_mode from profiles where id = auth.uid()), 'scoped') = 'full'
+      or exists (select 1 from user_permissions where user_id = auth.uid() and perm = p)
+$$;
+grant execute on function has_perm(text) to authenticated;
+
+-- 3) Эрх тохируулах = тухайн хэрэглэгчийг ИЛ 'scoped' горимд оруулна
+--    (checkbox-оор заасан жагсаалт нь цорын ганц үнэн болно).
+create or replace function set_member_perms(p_user uuid, p_perms text[])
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid := current_tenant_id();
+begin
+  if not is_tenant_admin() then
+    raise exception 'Зөвхөн админ эрх тохируулна.';
+  end if;
+  if not exists (select 1 from profiles where id = p_user and tenant_id = v_tenant) then
+    raise exception 'Гишүүн олдсонгүй.';
+  end if;
+  delete from user_permissions where user_id = p_user and tenant_id = v_tenant;
+  insert into user_permissions (tenant_id, user_id, perm)
+  select v_tenant, p_user, x.perm
+    from unnest(coalesce(p_perms, '{}'::text[])) as x(perm);
+  update profiles set access_mode = 'scoped'
+   where id = p_user and tenant_id = v_tenant;
+end $$;
+grant execute on function set_member_perms(uuid, text[]) to authenticated;
+
+-- 4) Горимыг шууд солих (Хэрэглэгчид → Эрх модалын "Бүрэн эрх" сонголт).
+--    'full' болгоход олгосон эрхийн мөрүүдийг цэвэрлэнэ — тэдгээр нь
+--    цаашид хүчингүй тул үлдээвэл дараа буцаж 'scoped' болгоход
+--    хуучирсан жагсаалт сэргэж эргэлзээ төрүүлнэ.
+create or replace function set_member_access_mode(p_user uuid, p_mode text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid := current_tenant_id();
+begin
+  if not is_tenant_admin() then
+    raise exception 'Зөвхөн админ эрхийн горим солино.';
+  end if;
+  if p_mode not in ('full', 'scoped') then
+    raise exception 'Эрхийн горим буруу (%).', p_mode;
+  end if;
+  if not exists (select 1 from profiles where id = p_user and tenant_id = v_tenant) then
+    raise exception 'Гишүүн олдсонгүй.';
+  end if;
+  if p_mode = 'full' then
+    delete from user_permissions where user_id = p_user and tenant_id = v_tenant;
+  end if;
+  update profiles set access_mode = p_mode
+   where id = p_user and tenant_id = v_tenant;
+end $$;
+grant execute on function set_member_access_mode(uuid, text) to authenticated;
