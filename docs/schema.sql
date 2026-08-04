@@ -2889,8 +2889,12 @@ grant execute on function platform_label_series(date, date) to authenticated;
 alter table stocktake_scans add column if not exists source text not null default 'manual'
   check (source in ('manual','device'));
 
+--   ⚠️ 3 параметрт хувилбарыг "create OR REPLACE"-ээр үүсгэнэ: энгийн
+--   "create function" байсан тул файлыг ДАХИН Run хийхэд "function
+--   stocktake_scan already exists with same argument types" (42723) гэж
+--   унаж, схемийн шинэчлэл бүхэлдээ зогсдог байсан (2026-08-04-нд илэрсэн).
 drop function if exists stocktake_scan(uuid, text[]);
-create function stocktake_scan(p_stocktake uuid, p_hexes text[], p_source text default 'manual')
+create or replace function stocktake_scan(p_stocktake uuid, p_hexes text[], p_source text default 'manual')
 returns jsonb
 language plpgsql
 security definer
