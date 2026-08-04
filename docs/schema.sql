@@ -23,6 +23,7 @@
 --   stocktake_scan()                 → §"Ү6: тооллогын скангийн эх сурвалж" (3 параметрт)
 --   create_tx_draft(), tx_draft_scan(), tx_draft_lock(), policy "tx drafts/
 --   draft items read"                → §"Шат 2б: Шилжүүлгийн ДААЛГАВАР" (төгсгөлд)
+--   tx_drafts type constraint        → §"Шат 3: Борлуулалт/Буцаалт" (хамгийн төгсгөлд)
 --
 -- Шинэ өөрчлөлт нэмэхдээ: аль болох НЭГ тодорхойлолтыг нь засаж
 -- (create or replace) шинэ давхарга бүү үүсгэ; давхарга зайлшгүй бол
@@ -3344,10 +3345,15 @@ declare
   v_tx     uuid;
   v_number text;
 begin
+  -- Хүчингүй болсныг хасах нөхцөл төрлөөс хамаарна (scan-тай ижил дүрэм):
+  -- return-д Борлуулсан/Бусад хэвээр байгаа нь хүчинтэй, бусдад Идэвхтэй.
   delete from tx_draft_items i
    using epc_codes e
    where i.draft_id = p_draft and e.id = i.epc_id
-     and (e.status <> 'active' or e.branch_id is distinct from v_d.from_branch);
+     and ((case when v_d.type = 'return'
+                then e.status not in ('sold','other')
+                else e.status <> 'active' end)
+          or e.branch_id is distinct from v_d.from_branch);
   get diagnostics v_pruned = row_count;
 
   select array_agg(epc_id) into v_ids from tx_draft_items where draft_id = p_draft;
@@ -3499,7 +3505,8 @@ declare
   v_line   record;
 begin
   if v_tenant is null then raise exception 'Нэвтрээгүй байна.'; end if;
-  if p_type not in ('transfer','other') then
+  -- Шат 3 (2026-08-05): sale/return нэмэгдсэн (мобайл борлуулалт/буцаалт).
+  if p_type not in ('transfer','other','sale','return') then
     raise exception 'Ноорогийн төрөл буруу (%).', p_type;
   end if;
   if p_type = 'transfer' and not has_perm('act_transfer') then
@@ -3507,6 +3514,12 @@ begin
   end if;
   if p_type = 'other' and not has_perm('act_other') then
     raise exception 'Танд бусад гүйлгээ хийх эрх байхгүй.';
+  end if;
+  if p_type = 'sale' and not has_perm('act_sale') then
+    raise exception 'Танд борлуулалт хийх эрх байхгүй.';
+  end if;
+  if p_type = 'return' and not has_perm('act_return') then
+    raise exception 'Танд буцаалт хийх эрх байхгүй.';
   end if;
   if p_to_branch is not null
      and not exists (select 1 from branches where id = p_to_branch and tenant_id = v_tenant) then
@@ -3588,7 +3601,13 @@ begin
                 where draft_id = p_draft and epc_id = v_epc.id) then
       v_already := v_already + 1; continue;
     end if;
-    if v_epc.status <> 'active' then v_not_active := v_not_active + 1; continue; end if;
+    -- Төлөвийн шаардлага төрлөөс хамаарна (вебийн statusesFor-той ижил):
+    -- return = Борлуулсан/Бусад л буцаагдана; бусад төрөлд Идэвхтэй л орно.
+    if (case when v_d.type = 'return'
+             then v_epc.status not in ('sold','other')
+             else v_epc.status <> 'active' end) then
+      v_not_active := v_not_active + 1; continue;
+    end if;
     if v_d.from_locked and v_epc.branch_id is distinct from v_d.from_branch then
       v_wrong_branch := v_wrong_branch + 1; continue;
     end if;
@@ -3666,3 +3685,15 @@ select l.draft_id,
   left join (select draft_id, product_id, count(*) as cnt
                from tx_draft_items group by draft_id, product_id) c
     on c.draft_id = l.draft_id and c.product_id = l.product_id;
+
+-- ============================================================
+-- Шат 3 (2026-08-05): Борлуулалт/Буцаалт мобайлоос — ноорог-сагсны
+--   төрөлд sale/return нэмэгдэв. Функцүүд (create_tx_draft, tx_draft_scan,
+--   submit_tx_draft) дээрх тодорхойлолтдоо ЗАСАГДСАН (шинэ давхаргагүй):
+--   return-ийн сагсанд Борлуулсан/Бусад таг л орно (вебийн statusesFor-той
+--   ижил), бусад төрөлд Идэвхтэй. create_transaction аль хэдийн 4 төрлөө
+--   дэмждэг тул submit өөрчлөлтгүй ажиллана (SAL/RTN дугаар, эрх, event).
+-- ============================================================
+alter table tx_drafts drop constraint if exists tx_drafts_type_check;
+alter table tx_drafts add constraint tx_drafts_type_check
+  check (type in ('transfer','other','sale','return'));

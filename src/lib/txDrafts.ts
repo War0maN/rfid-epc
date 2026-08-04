@@ -8,12 +8,14 @@
 import { supabase } from "./supabaseClient";
 import { labelMap } from "../i18n/labelMap";
 
-export type DraftType = "transfer" | "other";
+export type DraftType = "transfer" | "other" | "sale" | "return";
 export type DraftStatus = "open" | "submitted" | "cancelled";
 
 export const DRAFT_TYPE_LABEL: Record<DraftType, string> = labelMap({
   transfer: "transactions.type.transfer",
   other: "transactions.type.other",
+  sale: "transactions.type.sale",
+  return: "transactions.type.return",
 });
 
 export interface DraftLine {
