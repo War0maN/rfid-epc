@@ -3105,3 +3105,283 @@ begin
    where id = p_user and tenant_id = v_tenant;
 end $$;
 grant execute on function set_member_access_mode(uuid, text) to authenticated;
+
+-- ============================================================
+-- Шат 2 (2026-08-04): Мобайл шилжүүлэг/актлалтын НООРОГ-САГС
+--   C5 апп дээр уншсан таг бүр серверт шууд бичигдэнэ (апп унтарсан ч
+--   сагс алдагдахгүй, дараа нь үргэлжлүүлнэ); "Илгээх" дарахад
+--   create_transaction-ээр ЖИНХЭНЭ гүйлгээ болно (бүх эрх/төлөв/салбарын
+--   шалгалт тэнд давхар хийгдэнэ). Ноорог нь түүхэн баримт БИШ ажлын
+--   сагс тул items нь draft-аа дагаж устдаг (cascade зөв хэрэглээ);
+--   гэхдээ DELETE policy огт байхгүй — цуцлалт нь status='cancelled'.
+--   Шат 3-д sale/return төрөл нэмэгдэнэ (бүтэц бэлэн).
+-- ============================================================
+
+create table if not exists tx_drafts (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references tenants(id) default current_tenant_id(),
+  type         text not null check (type in ('transfer','other')),
+  -- Эх салбар: ЭХНИЙ уншигдсан тагийн салбараар түгжигдэнэ (нэг гүйлгээ =
+  -- нэг салбар). Сагс хоосорвол тайлагдана. null + locked = "Салбаргүй" bucket.
+  from_branch  uuid references branches(id),
+  from_locked  boolean not null default false,
+  to_branch    uuid references branches(id), -- transfer-т submit хүртэл солиж болно
+  note         text,
+  status       text not null default 'open' check (status in ('open','submitted','cancelled')),
+  tx_id        uuid references transactions(id), -- submit болсны дараах гүйлгээ
+  created_by   uuid default auth.uid() references profiles(id),
+  created_at   timestamptz not null default now(),
+  submitted_at timestamptz
+);
+create index if not exists tx_drafts_tenant_status_idx on tx_drafts (tenant_id, status);
+
+create table if not exists tx_draft_items (
+  draft_id  uuid not null references tx_drafts(id) on delete cascade,
+  tenant_id uuid not null default current_tenant_id(),
+  -- EPC уствал сагснаас чимээгүй хасагдана (cascade зөв: сагс = ажлын
+  -- жагсаалт, түүх биш; гүйлгээтэй EPC transaction_items FK-ээр хэзээ ч
+  -- устдаггүй тул submitted ноорогийн мөрөнд энэ cascade хүрэхгүй).
+  epc_id    uuid not null references epc_codes(id) on delete cascade,
+  epc_hex   text not null,
+  added_at  timestamptz not null default now(),
+  primary key (draft_id, epc_id) -- idempotent: дахин уншигдвал алгасна
+);
+
+alter table tx_drafts      enable row level security;
+alter table tx_draft_items enable row level security;
+
+-- Унших: өөрийн үүсгэсэн ноорог, эсвэл админ бүгдийг. Бичилт ЗӨВХӨН RPC-ээр
+-- (insert/update/delete policy огт байхгүй).
+drop policy if exists "tx drafts read" on tx_drafts;
+create policy "tx drafts read" on tx_drafts
+  for select using (
+    tenant_id = current_tenant_id()
+    and ((select is_tenant_admin()) or created_by = (select auth.uid()))
+  );
+drop policy if exists "tx draft items read" on tx_draft_items;
+create policy "tx draft items read" on tx_draft_items
+  for select using (
+    exists (select 1 from tx_drafts d
+             where d.id = draft_id
+               and d.tenant_id = current_tenant_id()
+               and ((select is_tenant_admin()) or d.created_by = (select auth.uid())))
+  );
+
+-- ---------- RPC 1: Ноорог үүсгэх ----------
+create or replace function create_tx_draft(p_type text, p_to_branch uuid, p_note text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid := current_tenant_id();
+  v_id     uuid;
+begin
+  if v_tenant is null then raise exception 'Нэвтрээгүй байна.'; end if;
+  if p_type not in ('transfer','other') then
+    raise exception 'Ноорогийн төрөл буруу (%).', p_type;
+  end if;
+  if p_type = 'transfer' and not has_perm('act_transfer') then
+    raise exception 'Танд шилжүүлэг хийх эрх байхгүй.';
+  end if;
+  if p_type = 'other' and not has_perm('act_other') then
+    raise exception 'Танд бусад гүйлгээ хийх эрх байхгүй.';
+  end if;
+  if p_to_branch is not null
+     and not exists (select 1 from branches where id = p_to_branch and tenant_id = v_tenant) then
+    raise exception 'Очих салбар олдсонгүй.';
+  end if;
+  insert into tx_drafts (tenant_id, type, to_branch, note)
+  values (v_tenant, p_type,
+          case when p_type = 'transfer' then p_to_branch end,
+          nullif(btrim(coalesce(p_note, '')), ''))
+  returning id into v_id;
+  return v_id;
+end $$;
+grant execute on function create_tx_draft(text, uuid, text) to authenticated;
+
+-- ---------- Дотоод туслах: ноорогийг түгжиж авах (creator/админ, open) ----------
+create or replace function tx_draft_lock(p_draft uuid)
+returns tx_drafts
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_d tx_drafts;
+begin
+  select * into v_d from tx_drafts
+   where id = p_draft and tenant_id = current_tenant_id()
+   for update;
+  if not found then raise exception 'Ноорог олдсонгүй.'; end if;
+  if v_d.status <> 'open' then raise exception 'Ноорог хаагдсан байна.'; end if;
+  if v_d.created_by is distinct from auth.uid() and not is_tenant_admin() then
+    raise exception 'Энэ ноорогт хандах эрхгүй.';
+  end if;
+  return v_d;
+end $$;
+-- Дотоод туслах тул authenticated-д grant ХИЙХГҮЙ.
+revoke execute on function tx_draft_lock(uuid) from public, authenticated;
+
+-- ---------- RPC 2: Ноорог засах (очих салбар / тэмдэглэл) ----------
+create or replace function update_tx_draft(p_draft uuid, p_to_branch uuid, p_note text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_d tx_drafts := tx_draft_lock(p_draft);
+begin
+  if p_to_branch is not null
+     and not exists (select 1 from branches where id = p_to_branch and tenant_id = v_d.tenant_id) then
+    raise exception 'Очих салбар олдсонгүй.';
+  end if;
+  update tx_drafts
+     set to_branch = case when type = 'transfer' then p_to_branch else to_branch end,
+         note      = nullif(btrim(coalesce(p_note, '')), '')
+   where id = p_draft;
+end $$;
+grant execute on function update_tx_draft(uuid, uuid, text) to authenticated;
+
+-- ---------- RPC 3: Уншсан hex-үүдийг сагслах (idempotent, ангилдаг) ----------
+--   Буцаана: {added, already, not_active, wrong_branch, no_access, unknown, skipped}
+create or replace function tx_draft_scan(p_draft uuid, p_hexes text[])
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_d            tx_drafts := tx_draft_lock(p_draft);
+  v_raw          text;
+  v_hex          text;
+  v_epc          record;
+  v_added        int := 0;
+  v_already      int := 0;
+  v_not_active   int := 0;
+  v_wrong_branch int := 0;
+  v_no_access    int := 0;
+  v_unknown      int := 0;
+  v_skipped      int := 0;
+begin
+  foreach v_raw in array coalesce(p_hexes, '{}'::text[]) loop
+    v_hex := upper(regexp_replace(coalesce(v_raw, ''), '[\s:.\-]', '', 'g'));
+    if v_hex !~ '^[0-9A-F]{24}$' then v_skipped := v_skipped + 1; continue; end if;
+
+    select e.id, e.status, e.branch_id into v_epc
+      from epc_codes e
+     where e.tenant_id = v_d.tenant_id and e.epc_hex = v_hex;
+    if v_epc.id is null then v_unknown := v_unknown + 1; continue; end if;
+    if exists (select 1 from tx_draft_items
+                where draft_id = p_draft and epc_id = v_epc.id) then
+      v_already := v_already + 1; continue;
+    end if;
+    if v_epc.status <> 'active' then v_not_active := v_not_active + 1; continue; end if;
+    if v_d.from_locked and v_epc.branch_id is distinct from v_d.from_branch then
+      v_wrong_branch := v_wrong_branch + 1; continue;
+    end if;
+    if not has_branch_access(v_epc.branch_id) then v_no_access := v_no_access + 1; continue; end if;
+
+    if not v_d.from_locked then
+      update tx_drafts set from_branch = v_epc.branch_id, from_locked = true
+       where id = p_draft;
+      v_d.from_branch := v_epc.branch_id;
+      v_d.from_locked := true;
+    end if;
+    insert into tx_draft_items (draft_id, tenant_id, epc_id, epc_hex)
+    values (p_draft, v_d.tenant_id, v_epc.id, v_hex);
+    v_added := v_added + 1;
+  end loop;
+  return jsonb_build_object(
+    'added', v_added, 'already', v_already, 'not_active', v_not_active,
+    'wrong_branch', v_wrong_branch, 'no_access', v_no_access,
+    'unknown', v_unknown, 'skipped', v_skipped
+  );
+end $$;
+grant execute on function tx_draft_scan(uuid, text[]) to authenticated;
+
+-- ---------- RPC 4: Сагснаас хасах ----------
+create or replace function tx_draft_remove(p_draft uuid, p_epc_ids uuid[])
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_d   tx_drafts := tx_draft_lock(p_draft);
+  v_cnt int;
+begin
+  delete from tx_draft_items
+   where draft_id = p_draft and epc_id = any(coalesce(p_epc_ids, '{}'::uuid[]));
+  get diagnostics v_cnt = row_count;
+  -- Сагс хоосорвол эх салбарын түгжээ тайлагдана (өөр салбараас дахин эхэлж болно).
+  if not exists (select 1 from tx_draft_items where draft_id = p_draft) then
+    update tx_drafts set from_branch = null, from_locked = false where id = p_draft;
+  end if;
+  return v_cnt;
+end $$;
+grant execute on function tx_draft_remove(uuid, uuid[]) to authenticated;
+
+-- ---------- RPC 5: Илгээх = жинхэнэ гүйлгээ ----------
+--   Сагсанд орсноос хойш өөрчлөгдсөн (зарагдсан, шилжсэн) тагуудыг эхлээд
+--   хасаад (pruned), үлдсэнийг create_transaction-д өгнө — эрх/төлөв/салбар/
+--   дугаарлалт/event бүгд тэндээ (нэг эх сурвалж). Буцаана:
+--   {tx_id, tx_number, submitted, pruned}
+create or replace function submit_tx_draft(p_draft uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_d      tx_drafts := tx_draft_lock(p_draft);
+  v_pruned int;
+  v_ids    uuid[];
+  v_tx     uuid;
+  v_number text;
+begin
+  delete from tx_draft_items i
+   using epc_codes e
+   where i.draft_id = p_draft and e.id = i.epc_id
+     and (e.status <> 'active' or e.branch_id is distinct from v_d.from_branch);
+  get diagnostics v_pruned = row_count;
+
+  select array_agg(epc_id) into v_ids from tx_draft_items where draft_id = p_draft;
+  if v_ids is null then
+    raise exception 'Сагс хоосон байна — илгээх таг алга (хасагдсан: %).', coalesce(v_pruned, 0);
+  end if;
+
+  v_tx := create_transaction(
+    v_d.type,
+    case when v_d.type = 'transfer' then v_d.to_branch end,
+    v_d.note,
+    v_ids
+  );
+
+  update tx_drafts
+     set status = 'submitted', tx_id = v_tx, submitted_at = now()
+   where id = p_draft;
+  select tx_number into v_number from transactions where id = v_tx;
+
+  return jsonb_build_object(
+    'tx_id', v_tx, 'tx_number', v_number,
+    'submitted', coalesce(array_length(v_ids, 1), 0), 'pruned', coalesce(v_pruned, 0)
+  );
+end $$;
+grant execute on function submit_tx_draft(uuid) to authenticated;
+
+-- ---------- RPC 6: Цуцлах ----------
+create or replace function cancel_tx_draft(p_draft uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_d tx_drafts := tx_draft_lock(p_draft);
+begin
+  update tx_drafts set status = 'cancelled' where id = p_draft;
+end $$;
+grant execute on function cancel_tx_draft(uuid) to authenticated;
