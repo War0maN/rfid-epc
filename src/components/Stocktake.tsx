@@ -16,9 +16,11 @@ import {
   fetchStocktakeProgress,
   fetchStocktakeExtras,
   fetchMissing,
+  fetchScanSourceCounts,
   closeStocktake,
   writeOffMissing,
   absorbExtras,
+  type ScanSourceCounts,
   type StocktakeListItem,
   type StocktakeProgressRow,
   type StocktakeExtraDetail,
@@ -55,6 +57,8 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
   const [progress, setProgress] = useState<StocktakeProgressRow[]>([]);
   const [extras, setExtras] = useState<StocktakeExtraDetail[]>([]);
   const [missing, setMissing] = useState<MissingEpc[]>([]);
+  // Тоологдсоны эх сурвалж (C5 апп / веб) — null = татаж чадаагүй (нуугдана).
+  const [sourceCounts, setSourceCounts] = useState<ScanSourceCounts | null>(null);
   // Дутуу/Илүү картын тоон дээр дарахад нээгдэх дэлгэрэнгүй модал
   const [detailModal, setDetailModal] = useState<"missing" | "extras" | null>(null);
   // Актлах сонголт (epc_id) + заавал бичих тайлбар
@@ -110,11 +114,19 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
   }, []);
 
   const loadDetail = useCallback((id: string) => {
-    Promise.all([fetchStocktakeProgress(id), fetchStocktakeExtras(id), fetchMissing(id)])
-      .then(([p, ex, mi]) => {
+    Promise.all([
+      fetchStocktakeProgress(id),
+      fetchStocktakeExtras(id),
+      fetchMissing(id),
+      // Туслах мэдээлэл — унавал (жишээ нь source багана Run хийгдээгүй
+      // суурьт) бүхэл дэлгэцийг алдаа болгохгүй, зүгээр л нуугдана.
+      fetchScanSourceCounts(id).catch(() => null),
+    ])
+      .then(([p, ex, mi, sc]) => {
         setProgress(p);
         setExtras(ex);
         setMissing(mi);
+        setSourceCounts(sc);
       })
       .catch((e) => setError(errorMessage(e)));
   }, []);
@@ -124,6 +136,7 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
     setProgress([]);
     setExtras([]);
     setMissing([]);
+    setSourceCounts(null);
     setAbChecked(new Set());
     setDetailModal(null);
     setLastResult(null);
@@ -418,6 +431,25 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
               </span>
               <span className="text-slate-400">/{totals.expected.toLocaleString()}</span>
             </p>
+            {/* Эх сурвалжийн задаргаа (Ү6): вебээс (гараар шивэх боломжтой
+                суваг) уншилт байвал шараар анзаарагдана. */}
+            {sourceCounts && sourceCounts.device + sourceCounts.manual > 0 && (
+              <p className="mt-1.5 flex flex-wrap gap-1.5" title={t("stocktake.srcHint")}>
+                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+                  {t("stocktake.srcDevice", { n: sourceCounts.device.toLocaleString() })}
+                </span>
+                <span
+                  className={
+                    "rounded px-1.5 py-0.5 text-xs " +
+                    (sourceCounts.manual > 0
+                      ? "bg-amber-50 font-medium text-amber-700"
+                      : "bg-slate-100 text-slate-600")
+                  }
+                >
+                  {t("stocktake.srcManual", { n: sourceCounts.manual.toLocaleString() })}
+                </span>
+              </p>
+            )}
           </div>
           <button
             onClick={() => {

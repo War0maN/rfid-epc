@@ -103,6 +103,31 @@ export async function submitStocktakeScans(
   return total;
 }
 
+/** Тоологдсон уншилтын эх сурвалжийн задаргаа (Ү6-ийн source багана). */
+export interface ScanSourceCounts {
+  device: number; // C5 уншигчийн апп
+  manual: number; // веб (wedge/гар оролт) — гараар шивэх боломжтой суваг
+}
+
+/**
+ * Тоологдсон (found) уншилтууд хаанаас ирснийг тоолно. Худалдагч дутуу
+ * барааны EPC-г вебээс гараар шивж "тоологдсон" болгох залилангийн сэжгийг
+ * ил гаргах зорилготой: уншигчийн апп-аас ирээгүй уншилт их байвал нягтална.
+ */
+export async function fetchScanSourceCounts(stocktakeId: string): Promise<ScanSourceCounts> {
+  const count = (src: string) =>
+    supabase
+      .from("stocktake_scans")
+      .select("*", { count: "exact", head: true })
+      .eq("stocktake_id", stocktakeId)
+      .eq("outcome", "found")
+      .eq("source", src);
+  const [d, m] = await Promise.all([count("device"), count("manual")]);
+  if (d.error) throw d.error;
+  if (m.error) throw m.error;
+  return { device: d.count ?? 0, manual: m.count ?? 0 };
+}
+
 /** Явц (бараагаар) — нэр/SKU-гаар баяжуулсан, дутуу ихтэй нь эхэндээ. */
 export async function fetchStocktakeProgress(stocktakeId: string): Promise<StocktakeProgressRow[]> {
   const { data, error } = await supabase

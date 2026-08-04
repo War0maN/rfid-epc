@@ -57,4 +57,8 @@ export default {
   writeOffReasonPlaceholder: "E.g. lost, damaged, not found…",
   openExists: "This branch already has an open stocktake ({{number}}) — close it first.",
   writeOffDone: "{{n}} EPCs written off (Other).",
+  srcDevice: "Scanner app: {{n}}",
+  srcManual: "Web: {{n}}",
+  srcHint:
+    "Every scan records where it came from. Scanner app = the C5 device (tag physically read); Web = input on this page (reader plugged into a computer, or typed BY HAND). A high web count is worth checking — missing items may have been typed in as counted.",
 };

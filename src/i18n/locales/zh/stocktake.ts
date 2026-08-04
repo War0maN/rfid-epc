@@ -53,4 +53,8 @@ export default {
   writeOffReasonPlaceholder: "例如：丢失、损坏、未找到…",
   openExists: "该分店已有进行中的盘点（{{number}}）——请先关闭。",
   writeOffDone: "已核销 {{n}} 个 EPC（其他）。",
+  srcDevice: "扫描枪应用：{{n}}",
+  srcManual: "网页：{{n}}",
+  srcHint:
+    "每次扫描都会记录来源。扫描枪应用 = C5 设备（实际读取标签）；网页 = 本页面输入（读卡器接电脑或手动键入）。网页数量偏高时请核查——缺失商品可能被手动键入充作已盘点。",
 };
