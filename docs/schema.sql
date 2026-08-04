@@ -19,8 +19,10 @@
 --   epc_block_active_delete()        → §"Устгалын бодлого" (FK-ийн дараах, 2 дахь)
 --   epc_event_trigger() + epc_events_on_update
 --                                    → §"reprinted event" (шошгоны тоолол)
---   has_perm(), set_member_perms()   → §"Эрхийн default-ыг ХААЛТТАЙ болгох" (төгсгөлд)
+--   has_perm(), set_member_perms()   → §"Эрхийн default-ыг ХААЛТТАЙ болгох"
 --   stocktake_scan()                 → §"Ү6: тооллогын скангийн эх сурвалж" (3 параметрт)
+--   create_tx_draft(), tx_draft_scan(), tx_draft_lock(), policy "tx drafts/
+--   draft items read"                → §"Шат 2б: Шилжүүлгийн ДААЛГАВАР" (төгсгөлд)
 --
 -- Шинэ өөрчлөлт нэмэхдээ: аль болох НЭГ тодорхойлолтыг нь засаж
 -- (create or replace) шинэ давхарга бүү үүсгэ; давхарга зайлшгүй бол
@@ -3385,3 +3387,282 @@ begin
   update tx_drafts set status = 'cancelled' where id = p_draft;
 end $$;
 grant execute on function cancel_tx_draft(uuid) to authenticated;
+
+-- ============================================================
+-- Шат 2б (2026-08-05): Шилжүүлгийн ДААЛГАВАР (picking list)
+--   Вебээс "аль салбараас аль руу, ямар бараа хэдэн ширхэг" гэсэн
+--   даалгавар үүсгэнэ; ажилтан уншигч дээрээ сонгоод ялгаж уншуулна.
+--   2026-08-05-нд хэрэглэгчтэй тохирсон дүрмүүд:
+--     * жагсаалтад байхгүй бараа / тооноос илүү таг → САГСАНД ОРОХГҮЙ
+--       (not_on_list / over_qty гэж тоологдоно) — төлөвлөгөө хатуу;
+--     * дутуу байхад илгээж болно (баталгаажуулалт UI талд);
+--     * мөргүй (жагсаалтгүй) ноорог = чөлөөт сагс, өмнөх зан төлөв хэвээр.
+--   Даалгаврыг ӨӨР ажилтан гүйцэтгэдэг тул уншилт/түгжээ нь
+--   "үүсгэгч эсвэл админ"-аас "эх салбарт хандах эрхтэй хэн ч" болж өргөснө.
+-- ============================================================
+
+create table if not exists tx_draft_lines (
+  draft_id   uuid not null references tx_drafts(id) on delete cascade,
+  tenant_id  uuid not null default current_tenant_id(),
+  product_id uuid not null references products(id),
+  qty        int  not null check (qty > 0),
+  primary key (draft_id, product_id)
+);
+
+-- Сагсны мөрөнд бараа шууд хадгалагдана (over_qty тоолоход join хэрэггүй).
+alter table tx_draft_items add column if not exists product_id uuid references products(id);
+update tx_draft_items i set product_id = e.product_id
+  from epc_codes e where e.id = i.epc_id and i.product_id is null;
+create index if not exists tx_draft_items_product_idx on tx_draft_items (draft_id, product_id);
+
+alter table tx_draft_lines enable row level security;
+
+-- ---------- RLS: даалгаврыг гүйцэтгэгч нь харна ----------
+-- Үүсгэгч/админ + эх салбарт нь хандах эрхтэй гишүүд (хуваарилалтгүй гишүүн
+-- бүх салбар — салбарын scoping-ийн ерөнхий дүрэмтэй ижил). from_branch
+-- хоосон (шинэ чөлөөт сагс) үед үүсгэгч/админ л харна.
+drop policy if exists "tx drafts read" on tx_drafts;
+create policy "tx drafts read" on tx_drafts
+  for select using (
+    tenant_id = current_tenant_id()
+    and ((select is_tenant_admin())
+      or created_by = (select auth.uid())
+      or (from_branch is not null and (
+            (select not exists (select 1 from user_branches where user_id = auth.uid()))
+            or from_branch in (select branch_id from user_branches where user_id = auth.uid()))))
+  );
+drop policy if exists "tx draft items read" on tx_draft_items;
+create policy "tx draft items read" on tx_draft_items
+  for select using (
+    exists (select 1 from tx_drafts d
+             where d.id = draft_id
+               and d.tenant_id = current_tenant_id()
+               and ((select is_tenant_admin())
+                 or d.created_by = (select auth.uid())
+                 or (d.from_branch is not null and (
+                       (select not exists (select 1 from user_branches where user_id = auth.uid()))
+                       or d.from_branch in (select branch_id from user_branches where user_id = auth.uid())))))
+  );
+drop policy if exists "tx draft lines read" on tx_draft_lines;
+create policy "tx draft lines read" on tx_draft_lines
+  for select using (
+    exists (select 1 from tx_drafts d
+             where d.id = draft_id
+               and d.tenant_id = current_tenant_id()
+               and ((select is_tenant_admin())
+                 or d.created_by = (select auth.uid())
+                 or (d.from_branch is not null and (
+                       (select not exists (select 1 from user_branches where user_id = auth.uid()))
+                       or d.from_branch in (select branch_id from user_branches where user_id = auth.uid())))))
+  );
+
+-- ---------- Түгжээ: гүйцэтгэгчид нээлттэй болгож өргөснө ----------
+create or replace function tx_draft_lock(p_draft uuid)
+returns tx_drafts
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_d tx_drafts;
+begin
+  select * into v_d from tx_drafts
+   where id = p_draft and tenant_id = current_tenant_id()
+   for update;
+  if not found then raise exception 'Ноорог олдсонгүй.'; end if;
+  if v_d.status <> 'open' then raise exception 'Ноорог хаагдсан байна.'; end if;
+  if not (v_d.created_by = auth.uid()
+          or is_tenant_admin()
+          or (v_d.from_branch is not null and has_branch_access(v_d.from_branch))) then
+    raise exception 'Энэ ноорогт хандах эрхгүй.';
+  end if;
+  return v_d;
+end $$;
+revoke execute on function tx_draft_lock(uuid) from public, authenticated;
+
+-- ---------- create_tx_draft: эх салбар + жагсаалттай үүсгэх ----------
+-- ⚠️ Гарын үсэг өөрчлөгдсөн тул хуучин 3 параметртыг ЗААВАЛ drop (үгүй бол
+-- хоёр хувилбар зэрэгцэж PostgREST ambiguous — Ү6-ийн сургамж).
+drop function if exists create_tx_draft(text, uuid, text);
+create or replace function create_tx_draft(
+  p_type text, p_to_branch uuid, p_note text,
+  p_from_branch uuid default null, p_lines jsonb default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant uuid := current_tenant_id();
+  v_id     uuid;
+  v_line   record;
+begin
+  if v_tenant is null then raise exception 'Нэвтрээгүй байна.'; end if;
+  if p_type not in ('transfer','other') then
+    raise exception 'Ноорогийн төрөл буруу (%).', p_type;
+  end if;
+  if p_type = 'transfer' and not has_perm('act_transfer') then
+    raise exception 'Танд шилжүүлэг хийх эрх байхгүй.';
+  end if;
+  if p_type = 'other' and not has_perm('act_other') then
+    raise exception 'Танд бусад гүйлгээ хийх эрх байхгүй.';
+  end if;
+  if p_to_branch is not null
+     and not exists (select 1 from branches where id = p_to_branch and tenant_id = v_tenant) then
+    raise exception 'Очих салбар олдсонгүй.';
+  end if;
+  if p_from_branch is not null then
+    if not exists (select 1 from branches where id = p_from_branch and tenant_id = v_tenant) then
+      raise exception 'Эх салбар олдсонгүй.';
+    end if;
+    if not has_branch_access(p_from_branch) then
+      raise exception 'Энэ салбарт хандах эрхгүй.';
+    end if;
+  end if;
+
+  insert into tx_drafts (tenant_id, type, to_branch, note, from_branch, from_locked)
+  values (v_tenant, p_type,
+          case when p_type = 'transfer' then p_to_branch end,
+          nullif(btrim(coalesce(p_note, '')), ''),
+          p_from_branch,
+          p_from_branch is not null)
+  returning id into v_id;
+
+  -- Жагсаалт: [{"product_id": "...", "qty": N}, ...]
+  if p_lines is not null and jsonb_typeof(p_lines) = 'array' then
+    for v_line in
+      select (x ->> 'product_id')::uuid as product_id, (x ->> 'qty')::int as qty
+        from jsonb_array_elements(p_lines) as x
+    loop
+      if v_line.qty is null or v_line.qty <= 0 then
+        raise exception 'Барааны тоо буруу байна.';
+      end if;
+      if not exists (select 1 from products where id = v_line.product_id and tenant_id = v_tenant) then
+        raise exception 'Бараа олдсонгүй.';
+      end if;
+      insert into tx_draft_lines (draft_id, tenant_id, product_id, qty)
+      values (v_id, v_tenant, v_line.product_id, v_line.qty)
+      on conflict (draft_id, product_id) do update set qty = tx_draft_lines.qty + excluded.qty;
+    end loop;
+  end if;
+  return v_id;
+end $$;
+grant execute on function create_tx_draft(text, uuid, text, uuid, jsonb) to authenticated;
+
+-- ---------- tx_draft_scan: жагсаалттай үед хатуу шүүнэ ----------
+-- Шинэ ангилал: not_on_list (жагсаалтад байхгүй бараа), over_qty (тоо
+-- гүйцсэн) — хоёул САГСАНД ОРОХГҮЙ. Жагсаалтгүй ноорогт өмнөх зан төлөв.
+create or replace function tx_draft_scan(p_draft uuid, p_hexes text[])
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_d            tx_drafts := tx_draft_lock(p_draft);
+  v_has_lines    boolean := exists (select 1 from tx_draft_lines where draft_id = p_draft);
+  v_raw          text;
+  v_hex          text;
+  v_epc          record;
+  v_line_qty     int;
+  v_added        int := 0;
+  v_already      int := 0;
+  v_not_active   int := 0;
+  v_wrong_branch int := 0;
+  v_no_access    int := 0;
+  v_unknown      int := 0;
+  v_not_on_list  int := 0;
+  v_over_qty     int := 0;
+  v_skipped      int := 0;
+begin
+  foreach v_raw in array coalesce(p_hexes, '{}'::text[]) loop
+    v_hex := upper(regexp_replace(coalesce(v_raw, ''), '[\s:.\-]', '', 'g'));
+    if v_hex !~ '^[0-9A-F]{24}$' then v_skipped := v_skipped + 1; continue; end if;
+
+    select e.id, e.status, e.branch_id, e.product_id into v_epc
+      from epc_codes e
+     where e.tenant_id = v_d.tenant_id and e.epc_hex = v_hex;
+    if v_epc.id is null then v_unknown := v_unknown + 1; continue; end if;
+    if exists (select 1 from tx_draft_items
+                where draft_id = p_draft and epc_id = v_epc.id) then
+      v_already := v_already + 1; continue;
+    end if;
+    if v_epc.status <> 'active' then v_not_active := v_not_active + 1; continue; end if;
+    if v_d.from_locked and v_epc.branch_id is distinct from v_d.from_branch then
+      v_wrong_branch := v_wrong_branch + 1; continue;
+    end if;
+    if not has_branch_access(v_epc.branch_id) then v_no_access := v_no_access + 1; continue; end if;
+
+    if v_has_lines then
+      select qty into v_line_qty from tx_draft_lines
+       where draft_id = p_draft and product_id = v_epc.product_id;
+      if v_line_qty is null then v_not_on_list := v_not_on_list + 1; continue; end if;
+      if (select count(*) from tx_draft_items
+           where draft_id = p_draft and product_id = v_epc.product_id) >= v_line_qty then
+        v_over_qty := v_over_qty + 1; continue;
+      end if;
+    end if;
+
+    if not v_d.from_locked then
+      update tx_drafts set from_branch = v_epc.branch_id, from_locked = true
+       where id = p_draft;
+      v_d.from_branch := v_epc.branch_id;
+      v_d.from_locked := true;
+    end if;
+    insert into tx_draft_items (draft_id, tenant_id, epc_id, epc_hex, product_id)
+    values (p_draft, v_d.tenant_id, v_epc.id, v_hex, v_epc.product_id);
+    v_added := v_added + 1;
+  end loop;
+  return jsonb_build_object(
+    'added', v_added, 'already', v_already, 'not_active', v_not_active,
+    'wrong_branch', v_wrong_branch, 'no_access', v_no_access,
+    'unknown', v_unknown, 'not_on_list', v_not_on_list, 'over_qty', v_over_qty,
+    'skipped', v_skipped
+  );
+end $$;
+grant execute on function tx_draft_scan(uuid, text[]) to authenticated;
+
+-- ---------- Даалгаврын жагсаалт солих (веб — ажил засварлахад) ----------
+create or replace function set_tx_draft_lines(p_draft uuid, p_lines jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_d    tx_drafts := tx_draft_lock(p_draft);
+  v_line record;
+begin
+  delete from tx_draft_lines where draft_id = p_draft;
+  if p_lines is not null and jsonb_typeof(p_lines) = 'array' then
+    for v_line in
+      select (x ->> 'product_id')::uuid as product_id, (x ->> 'qty')::int as qty
+        from jsonb_array_elements(p_lines) as x
+    loop
+      if v_line.qty is null or v_line.qty <= 0 then
+        raise exception 'Барааны тоо буруу байна.';
+      end if;
+      if not exists (select 1 from products where id = v_line.product_id and tenant_id = v_d.tenant_id) then
+        raise exception 'Бараа олдсонгүй.';
+      end if;
+      insert into tx_draft_lines (draft_id, tenant_id, product_id, qty)
+      values (p_draft, v_d.tenant_id, v_line.product_id, v_line.qty)
+      on conflict (draft_id, product_id) do update set qty = tx_draft_lines.qty + excluded.qty;
+    end loop;
+  end if;
+end $$;
+grant execute on function set_tx_draft_lines(uuid, jsonb) to authenticated;
+
+-- ---------- Явцын view (веб + уншигч хоёул эндээс) ----------
+drop view if exists tx_draft_progress;
+create view tx_draft_progress with (security_invoker = true) as
+select l.draft_id,
+       l.tenant_id,
+       l.product_id,
+       l.qty as expected,
+       coalesce(c.cnt, 0) as picked
+  from tx_draft_lines l
+  left join (select draft_id, product_id, count(*) as cnt
+               from tx_draft_items group by draft_id, product_id) c
+    on c.draft_id = l.draft_id and c.product_id = l.product_id;
