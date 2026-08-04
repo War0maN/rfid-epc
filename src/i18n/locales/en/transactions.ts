@@ -89,6 +89,10 @@ export default {
     planSummary: "{{products}} products · {{qty}} pcs planned",
     planEmpty: "No products selected",
     creating: "Creating…",
+    excelBtn: "From Excel",
+    excelHint: "Columns: Barcode / SKU / Name + Qty (same headers as the receiving template). Only existing products match — nothing new is created.",
+    excelDone: "Added {{products}} products · {{qty}} pcs from Excel.",
+    excelUnmatched: "{{n}} rows did not match (unknown products, skipped):",
     createBtn: "Assign job",
   },
 };

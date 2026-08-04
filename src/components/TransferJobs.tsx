@@ -10,6 +10,7 @@ import {
   DRAFT_TYPE_LABEL,
   type DraftRow,
 } from "../lib/txDrafts";
+import { parseJobLinesFile } from "../lib/importJobLines";
 import { errorMessage } from "../lib/errorMessage";
 import { makeCan } from "../lib/permissions";
 import ConfirmDialog from "./ConfirmDialog";
@@ -56,6 +57,9 @@ export default function TransferJobs({ allowedBranches = null, perms = null }: P
   const [filter, setFilter] = useState("");
   // Жагсаалт бүрдүүлэх эх үүсвэр: үлдэгдлээс (default) / бүх бараанаас
   const [source, setSource] = useState<"stock" | "all">("stock");
+  // Excel импортын үр дүнгийн мэдээлэл/анхааруулга
+  const [importInfo, setImportInfo] = useState<string | null>(null);
+  const [importWarn, setImportWarn] = useState<string[] | null>(null);
 
   const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const branchName = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
@@ -107,6 +111,8 @@ export default function TransferJobs({ allowedBranches = null, perms = null }: P
     setFilter("");
     setSource("stock");
     setInfo(null);
+    setImportInfo(null);
+    setImportWarn(null);
     // Бараа/үлдэгдлийг модал нээхэд нэг удаа татна (дараа нь кэштэй).
     if (products.length === 0) {
       listProducts().then(setProducts).catch((e) => setError(errorMessage(e)));
@@ -160,6 +166,40 @@ export default function TransferJobs({ allowedBranches = null, perms = null }: P
       setError(errorMessage(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Excel-ээс жагсаалт нэмэх: байгаа бараатай л тулгана (шинэ бараа ҮҮСГЭХГҮЙ). */
+  async function handleExcel(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // ижил файлыг дахин сонгоход ч change ажиллана
+    if (!file) return;
+    setError(null);
+    setImportInfo(null);
+    setImportWarn(null);
+    try {
+      const res = await parseJobLinesFile(file, products);
+      if (res.lines.length > 0) {
+        setLines((m) => {
+          const n = new Map(m);
+          for (const l of res.lines) n.set(l.product_id, (n.get(l.product_id) ?? 0) + l.qty);
+          return n;
+        });
+        // Импортолсон бараа эх салбарт үлдэгдэлгүй байсан ч харагдахын тулд
+        // "Бүх бараанаас" харагдац руу шилжинэ.
+        setSource("all");
+      }
+      setImportInfo(
+        t("transactions.drafts.excelDone", { products: res.lines.length, qty: res.totalQty })
+      );
+      const warns = [...res.unmatched, ...res.skipped];
+      if (warns.length > 0) {
+        setImportWarn(
+          warns.slice(0, 5).concat(warns.length > 5 ? [`… +${warns.length - 5}`] : [])
+        );
+      }
+    } catch (err) {
+      setError(errorMessage(err));
     }
   }
 
@@ -374,7 +414,35 @@ export default function TransferJobs({ allowedBranches = null, perms = null }: P
                     placeholder={t("transactions.drafts.filterPh")}
                     className={ctl + " max-w-xs"}
                   />
+                  <label
+                    className={btn + " cursor-pointer"}
+                    title={t("transactions.drafts.excelHint")}
+                  >
+                    📄 {t("transactions.drafts.excelBtn")}
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                      className="hidden"
+                      disabled={products.length === 0}
+                      onChange={handleExcel}
+                    />
+                  </label>
                 </div>
+                {importInfo && (
+                  <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700">
+                    {importInfo}
+                  </p>
+                )}
+                {importWarn && (
+                  <div className="mt-2 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+                    <p className="font-medium">
+                      {t("transactions.drafts.excelUnmatched", { n: importWarn.length })}
+                    </p>
+                    {importWarn.map((w, i) => (
+                      <p key={i}>· {w}</p>
+                    ))}
+                  </div>
+                )}
 
                 <div className="mt-2 min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200">
                   <table className="w-full">

@@ -47,7 +47,7 @@ export interface ImportJobInput {
   note?: string;
 }
 
-interface CleanRow {
+export interface CleanRow {
   gtin: string | null;
   extKey: string | null;
   sku: string | null;
@@ -105,8 +105,10 @@ function cell(row: unknown[], idx: number): string {
   return v == null ? "" : String(v).trim();
 }
 
-/** Excel файлыг уншиж, цэвэр мөр болгоно. */
-async function parseFile(
+/** Excel файлыг уншиж, цэвэр мөр болгоно. Импорт, хүлээн авалт, шилжүүлгийн
+ *  даалгавар (importJobLines) гурвуул энэ уншигчийг хуваалцана — толгойн
+ *  synonym/sheet сонголтын дүрэм нэг л газар амьдарна. */
+export async function parsePackingRows(
   file: Blob
 ): Promise<{ rows: CleanRow[]; skipped: string[]; hasCost: boolean }> {
   const buffer = await file.arrayBuffer();
@@ -224,7 +226,7 @@ export async function parseAndUpsertProducts(
 ): Promise<{ rows: ParsedProductRow[]; skipped: string[]; productCount: number; categoryCount: number }> {
   // hasCost: "Өртөг" багана файлд БАЙВАЛ л cost-ыг upsert-д оруулна —
   // байхгүй үед бараанд өмнө нь бөглөсөн өртгийг null-ээр дарж бичихгүй.
-  const { rows, skipped, hasCost } = await parseFile(file);
+  const { rows, skipped, hasCost } = await parsePackingRows(file);
 
   const { data: tenant, error: tErr } = await supabase.from("tenants").select("id").single();
   if (tErr) throw tErr;

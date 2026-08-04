@@ -87,6 +87,10 @@ export default {
     planSummary: "{{products}} 种商品 · 共 {{qty}} 件",
     planEmpty: "尚未选择商品",
     creating: "创建中…",
+    excelBtn: "从 Excel",
+    excelHint: "列：条码 / SKU / 名称 + 数量（与收货模板表头一致）。仅匹配已有商品——不会新建商品。",
+    excelDone: "已从 Excel 添加 {{products}} 种商品 · 共 {{qty}} 件。",
+    excelUnmatched: "{{n}} 行未匹配（未登记商品，已跳过）：",
     createBtn: "下达任务",
   },
 };
