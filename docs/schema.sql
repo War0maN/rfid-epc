@@ -2,6 +2,29 @@
 -- Chipmo Inventory — Supabase / Postgres schema
 -- Multi-tenant + RLS + atomic serial allocation
 -- Supabase SQL Editor дотор бүхэлд нь ажиллуулна.
+--
+-- ⚠️ УНШИГЧИД: файл migration-маягийн ДАВХАРГУУДТАЙ — зарим объект
+-- доор дахин тодорхойлогддог тул ХАМГИЙН СҮҮЛД бичигдсэн нь хүчинтэй.
+-- "Эцсийн байдал"-ыг нь мэдэхийн тулд тухайн нэрийг ДООРООС нь дээш хай.
+-- Олон удаа тодорхойлогдсон объектуудын ЭЦСИЙН тодорхойлолт хаана байгааг
+-- энд жагсаав (аль нэгийг нь засах бол ЗААВАЛ эцсийнхийг нь зас —
+-- эхнийхийг нь засвал доорхи нь дарж бичээд "юу ч өөрчлөгдөхгүй"):
+--
+--   policy "epc read"                → §"RLS: салбарын scoping" (Phase 2b)
+--   policy "epc insert"/"epc update" → §"RLS: үйлдлийн эрхүүд" (Phase 2c)
+--   policy "tx read"                 → §"RLS: салбарын scoping" (Phase 2b)
+--   policy "epc events read"         → §"RLS: салбарын scoping" (Phase 2b)
+--   policy products/jobs/categories/attribute_defs/branches
+--                                    → §"RLS: үйлдлийн эрхүүд" (Phase 2c)
+--   epc_block_active_delete()        → §"Устгалын бодлого" (FK-ийн дараах, 2 дахь)
+--   epc_event_trigger() + epc_events_on_update
+--                                    → §"reprinted event" (шошгоны тоолол)
+--   has_perm(), set_member_perms()   → §"Эрхийн default-ыг ХААЛТТАЙ болгох" (төгсгөлд)
+--   stocktake_scan()                 → §"Ү6: тооллогын скангийн эх сурвалж" (3 параметрт)
+--
+-- Шинэ өөрчлөлт нэмэхдээ: аль болох НЭГ тодорхойлолтыг нь засаж
+-- (create or replace) шинэ давхарга бүү үүсгэ; давхарга зайлшгүй бол
+-- энэ жагсаалтад бүртгэ.
 -- ============================================================
 
 create extension if not exists "pgcrypto";
@@ -1619,7 +1642,15 @@ create policy "user branches read" on user_branches
   for select using (tenant_id = current_tenant_id());
 -- write policy байхгүй — зөвхөн set_member_branches RPC (security definer) бичнэ.
 
--- Хандалтын шалгагч: админ / хуваарилалтгүй / NULL салбар → нээлттэй.
+-- Хандалтын шалгагч: админ / хуваарилалтгүй хэрэглэгч → нээлттэй.
+-- ⚠️ 2026-08-04: "p_branch is null → хэнд ч нээлттэй" нөхцөлийг ХАСАВ.
+-- Өмнө нь салбараар хязгаарлагдсан оператор "Салбаргүй" (branch_id null)
+-- EPC-д гүйлгээ хийж чаддаг цоорхой байсан (create_transaction/cancel_transfer
+-- v_from null үед). Одоо: хязгаарлагдсан хэрэглэгчид NULL салбар = false
+-- (сүүлийн exists нь null-тай хэзээ ч таарахгүй); админ/хязгааргүйд хэвээр
+-- нээлттэй. Бусад дуудагч (receipt/stocktake/transfer to_branch) null
+-- дамжуулдаггүй тул зан төлөв нь өөрчлөгдөхгүй. Салбаргүй EPC-г ХАРАХ нь
+-- RLS policy-ийн ил "branch_id is null" нөхцөлөөр хэвээр (зориудын).
 create or replace function has_branch_access(p_branch uuid)
 returns boolean
 language sql
@@ -1629,7 +1660,6 @@ set search_path = public
 as $$
   select is_tenant_admin()
       or not exists (select 1 from user_branches where user_id = auth.uid())
-      or p_branch is null
       or exists (select 1 from user_branches where user_id = auth.uid() and branch_id = p_branch)
 $$;
 grant execute on function has_branch_access(uuid) to authenticated;

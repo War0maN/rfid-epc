@@ -19,4 +19,25 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // "lib = логик, components = UI" — компонент supabase-тэй ШУУД ярихгүй,
+    // өгөгдөл татах/бичих код lib/-д амьдарна (нэг ойлголт = нэг эх сурвалж).
+    // Түвшин нь warn: одоо байгаа 17 файл CI-г унагахгүй (аажмаар цэгцэлнэ),
+    // харин шинэ код бичихэд editor + CI логт анхааруулга харагдана.
+    files: ['src/components/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'warn',
+        {
+          patterns: [
+            {
+              group: ['**/supabaseClient'],
+              message:
+                'Компонентоос supabase-г шууд бүү дуудаарай — өгөгдлийн логикоо src/lib/-ийн функц болгоод түүнийгээ импортлоорой (CLAUDE.md: lib = логик, components = UI).',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ])
