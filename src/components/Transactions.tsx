@@ -23,6 +23,7 @@ import { toCsv, downloadCsv } from "../lib/exportCsv";
 import { errorMessage } from "../lib/errorMessage";
 import ConfirmDialog from "./ConfirmDialog";
 import TransferNoteDialog from "./TransferNoteDialog";
+import TransferJobs from "./TransferJobs";
 import { makeCan, type Perm } from "../lib/permissions";
 
 interface Props {
@@ -63,7 +64,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
   const can = makeCan(perms);
   // Эрхтэй гүйлгээний төрлүүд (dropdown-д зөвхөн эдгээр).
   const allowedTypes = TX_TYPES.filter((t) => can(TYPE_PERM[t]));
-  const [view, setView] = useState<"new" | "history">("new");
+  const [view, setView] = useState<"new" | "jobs" | "history">("new");
 
   const [rows, setRows] = useState<TxRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -383,6 +384,9 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
         <button onClick={() => setView("new")} className={subTab(view === "new")}>
           {t("transactions.title")}
         </button>
+        <button onClick={() => setView("jobs")} className={subTab(view === "jobs")}>
+          {t("transactions.drafts.tab")}
+        </button>
         <button onClick={() => setView("history")} className={subTab(view === "history")}>
           {t("transactions.tabHistory")}
           {pendingCount > 0 && (
@@ -610,6 +614,8 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
           )}
         </div>
       )}
+
+      {view === "jobs" && <TransferJobs allowedBranches={allowedBranches} perms={perms} />}
 
       {view === "history" && (
         <div className="overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
