@@ -998,6 +998,20 @@ create table if not exists transaction_items (
 );
 create index if not exists tx_items_epc_idx on transaction_items (epc_id);
 
+-- Шат 4 (2026-08-05): ХЭСЭГЧЛЭН хүлээн авах — мөр түвшний тэмдэглэгээ.
+-- Гүйлгээний статусын enum-д "хагас" гэдэг утга НЭМЭХГҮЙ: шилжүүлэг бүгд
+-- иртэл 'pending' хэвээр (тайлангийн "гацсан pending" логик эвдрэхгүй),
+-- аль мөр нь хэзээ ирснийг received_at хэлнэ. null = замд яваа.
+alter table transaction_items add column if not exists received_at timestamptz;
+-- Backfill: аль хэдийн дууссан шилжүүлгийн мөрүүд хүлээн авагдсанд тооцогдоно
+-- (received_at is null нөхцөлтэй тул дахин Run хийхэд давтагдахгүй).
+update transaction_items ti
+   set received_at = coalesce(t.completed_at, t.created_at)
+  from transactions t
+ where t.id = ti.transaction_id
+   and t.type = 'transfer' and t.status = 'done'
+   and ti.received_at is null;
+
 alter table transactions      enable row level security;
 alter table transaction_items enable row level security;
 
@@ -1155,16 +1169,25 @@ end;
 $$;
 grant execute on function create_transaction(text, uuid, text, uuid[]) to authenticated;
 
--- ---------- RPC 2: Шилжүүлэг хүлээн авах ----------
-create or replace function receive_transfer(p_tx uuid)
-returns void
+-- ---------- RPC 2: Шилжүүлэг хүлээн авах (Шат 4: хэсэгчлэн) ----------
+-- p_epc_ids null (default) = ҮЛДСЭН БҮГДИЙГ хүлээн авна — вебийн хуучин
+-- "Хүлээн авах" товч өөрчлөлтгүй ажиллана. Заасан бол зөвхөн тэдгээр мөр:
+-- таг очих салбарт Идэвхтэй болж, received_at тэмдэглэгдэнэ; үлдсэн нь
+-- "замд" (transferring) хэвээр — дараа нэмж хүлээн авах / цуцлах боломжтой.
+-- Бүх мөр ирмэгц гүйлгээ автоматаар 'done' болно.
+-- ⚠️ Гарын үсэг өөрчлөгдсөн тул хуучин 1 параметртыг заавал drop.
+drop function if exists receive_transfer(uuid);
+create or replace function receive_transfer(p_tx uuid, p_epc_ids uuid[] default null)
+returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  v_tenant uuid := current_tenant_id();
-  v_tx     transactions%rowtype;
+  v_tenant   uuid := current_tenant_id();
+  v_tx       transactions%rowtype;
+  v_received int;
+  v_left     int;
 begin
   select * into v_tx from transactions
    where id = p_tx and tenant_id = v_tenant
@@ -1187,20 +1210,132 @@ begin
   perform set_config('app.tx_rpc', '1', true);
   perform set_config('app.tx_id', p_tx::text, true);
 
+  -- 1) Мөрийг хүлээн авагдсанд тооцно (зөвхөн замд яваа = transferring).
+  update transaction_items ti
+     set received_at = now()
+    from epc_codes e
+   where ti.transaction_id = p_tx and ti.epc_id = e.id
+     and e.tenant_id = v_tenant and e.status = 'transferring'
+     and ti.received_at is null
+     and (p_epc_ids is null or ti.epc_id = any(p_epc_ids));
+  get diagnostics v_received = row_count;
+
+  -- 2) Таг очих салбарт Идэвхтэй болно (event trigger tx-тэй холбож бичнэ).
   update epc_codes e
      set branch_id = v_tx.to_branch, status = 'active'
     from transaction_items ti
    where ti.transaction_id = p_tx and ti.epc_id = e.id
-     and e.tenant_id = v_tenant and e.status = 'transferring';
+     and e.tenant_id = v_tenant and e.status = 'transferring'
+     and (p_epc_ids is null or e.id = any(p_epc_ids));
 
-  update transactions
-     set status = 'done', completed_at = now()
-   where id = p_tx;
+  -- 3) Бүгд ирсэн бол гүйлгээ хаагдана; үгүй бол pending хэвээр ("замд").
+  select count(*) into v_left
+    from transaction_items
+   where transaction_id = p_tx and received_at is null;
+  if v_left = 0 then
+    update transactions set status = 'done', completed_at = now() where id = p_tx;
+  end if;
+
+  return jsonb_build_object(
+    'received', coalesce(v_received, 0),
+    'remaining', coalesce(v_left, 0),
+    'status', case when v_left = 0 then 'done' else 'pending' end
+  );
 end;
 $$;
-grant execute on function receive_transfer(uuid) to authenticated;
+grant execute on function receive_transfer(uuid, uuid[]) to authenticated;
 
--- ---------- RPC 3: Шилжүүлэг цуцлах (EPC эх салбартаа Идэвхтэй буцна) ----------
+-- ---------- RPC 2б: Шилжүүлэг хүлээн авах СКАН (Шат 4, мобайлд) ----------
+-- Уншсан hex бүрийг ангилна: received (энэ шилжүүлгийн мөр — шууд хүлээн
+-- авагдана) / already (аль хэдийн авсан) / not_in_tx (өөр гүйлгээний/
+-- хамааралгүй таг) / unknown (бүртгэлгүй) / skipped (hex биш). Idempotent —
+-- дахин илгээхэд 'already' болно. Бүгд ирмэгц гүйлгээ автоматаар 'done'.
+create or replace function receive_transfer_scan(p_tx uuid, p_hexes text[])
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tenant    uuid := current_tenant_id();
+  v_tx        transactions%rowtype;
+  v_raw       text;
+  v_hex       text;
+  v_epc       record;
+  v_item      record;
+  v_received  int := 0;
+  v_already   int := 0;
+  v_not_in_tx int := 0;
+  v_unknown   int := 0;
+  v_skipped   int := 0;
+  v_left      int;
+begin
+  select * into v_tx from transactions
+   where id = p_tx and tenant_id = v_tenant
+   for update;
+  if not found then
+    raise exception 'Гүйлгээ олдсонгүй.';
+  end if;
+  if v_tx.type <> 'transfer' or v_tx.status <> 'pending' then
+    raise exception 'Зөвхөн хүлээгдэж буй шилжүүлгийг хүлээн авна.';
+  end if;
+  if not has_branch_access(v_tx.to_branch) then
+    raise exception 'Очих салбарт эрхгүй тул хүлээн авах боломжгүй.';
+  end if;
+  if not has_perm('act_receive') then
+    raise exception 'Танд шилжүүлэг хүлээн авах эрх байхгүй.';
+  end if;
+
+  perform set_config('app.tx_rpc', '1', true);
+  perform set_config('app.tx_id', p_tx::text, true);
+
+  foreach v_raw in array coalesce(p_hexes, '{}'::text[]) loop
+    v_hex := upper(regexp_replace(coalesce(v_raw, ''), '[\s:.\-]', '', 'g'));
+    if v_hex !~ '^[0-9A-F]{24}$' then v_skipped := v_skipped + 1; continue; end if;
+
+    select e.id, e.status into v_epc
+      from epc_codes e
+     where e.tenant_id = v_tenant and e.epc_hex = v_hex;
+    if v_epc.id is null then v_unknown := v_unknown + 1; continue; end if;
+
+    select ti.received_at into v_item
+      from transaction_items ti
+     where ti.transaction_id = p_tx and ti.epc_id = v_epc.id;
+    if not found then v_not_in_tx := v_not_in_tx + 1; continue; end if;
+    if v_item.received_at is not null then v_already := v_already + 1; continue; end if;
+
+    update transaction_items
+       set received_at = now()
+     where transaction_id = p_tx and epc_id = v_epc.id;
+    update epc_codes
+       set branch_id = v_tx.to_branch, status = 'active'
+     where id = v_epc.id and status = 'transferring';
+    v_received := v_received + 1;
+  end loop;
+
+  select count(*) into v_left
+    from transaction_items
+   where transaction_id = p_tx and received_at is null;
+  if v_left = 0 then
+    update transactions set status = 'done', completed_at = now() where id = p_tx;
+  end if;
+
+  return jsonb_build_object(
+    'received', v_received, 'already', v_already, 'not_in_tx', v_not_in_tx,
+    'unknown', v_unknown, 'skipped', v_skipped,
+    'remaining', coalesce(v_left, 0),
+    'status', case when v_left = 0 then 'done' else 'pending' end
+  );
+end;
+$$;
+grant execute on function receive_transfer_scan(uuid, text[]) to authenticated;
+
+-- ---------- RPC 3: Шилжүүлэг цуцлах (Шат 4: ҮЛДЭГДЛИЙГ буцаана) ----------
+-- Зөвхөн ЗАМД ЯВАА (received_at is null) таг эх салбартаа Идэвхтэй буцна —
+-- аль хэдийн хүлээн авагдсан нь очсон салбартаа хэвээр (бодит байдал).
+-- Юу ч хүлээн аваагүй бол бүхэлдээ 'cancelled' (өмнөх семантик); хэсэгчлэн
+-- авсны дараах цуцлалт = "үлдэгдлийг буцаах" тул гүйлгээ 'done' болж хаагдана
+-- (авагдсан хэсэг нь хүчинтэй — аль мөр ирсэн/буцсаныг received_at хэлнэ).
 create or replace function cancel_transfer(p_tx uuid)
 returns void
 language plpgsql
@@ -1208,8 +1343,9 @@ security definer
 set search_path = public
 as $$
 declare
-  v_tenant uuid := current_tenant_id();
-  v_tx     transactions%rowtype;
+  v_tenant   uuid := current_tenant_id();
+  v_tx       transactions%rowtype;
+  v_received int;
 begin
   select * into v_tx from transactions
    where id = p_tx and tenant_id = v_tenant
@@ -1232,14 +1368,20 @@ begin
   perform set_config('app.tx_rpc', '1', true);
   perform set_config('app.tx_id', p_tx::text, true);
 
+  -- Замд яваа таг эх салбартаа буцна (branch_id хөдлөөгүй тул зөвхөн төлөв).
   update epc_codes e
      set status = 'active'
     from transaction_items ti
    where ti.transaction_id = p_tx and ti.epc_id = e.id
      and e.tenant_id = v_tenant and e.status = 'transferring';
 
+  select count(*) into v_received
+    from transaction_items
+   where transaction_id = p_tx and received_at is not null;
+
   update transactions
-     set status = 'cancelled', completed_at = now()
+     set status = case when v_received > 0 then 'done' else 'cancelled' end,
+         completed_at = now()
    where id = p_tx;
 end;
 $$;
