@@ -168,6 +168,8 @@ export async function cancelTransfer(txId: string): Promise<void> {
 export interface TxItem {
   epc_id: string;
   price: number | null;
+  /** Шат 4: шилжүүлгийн мөр хэзээ хүлээн авагдсан (null = замд яваа). */
+  received_at: string | null;
   epc_hex: string;
   serial: number;
   name: string | null;
@@ -178,10 +180,10 @@ export interface TxItem {
 export async function fetchTxItems(txId: string): Promise<TxItem[]> {
   const { data: items, error } = await supabase
     .from("transaction_items")
-    .select("epc_id, price")
+    .select("epc_id, price, received_at")
     .eq("transaction_id", txId);
   if (error) throw error;
-  const list = (items ?? []) as { epc_id: string; price: number | null }[];
+  const list = (items ?? []) as { epc_id: string; price: number | null; received_at: string | null }[];
   if (list.length === 0) return [];
 
   const epcs: { id: string; epc_hex: string; serial: number; name: string | null; sku: string | null }[] = [];
@@ -201,6 +203,7 @@ export async function fetchTxItems(txId: string): Promise<TxItem[]> {
       return {
         epc_id: it.epc_id,
         price: it.price,
+        received_at: it.received_at,
         epc_hex: e?.epc_hex ?? "",
         serial: e?.serial ?? 0,
         name: e?.name ?? null,

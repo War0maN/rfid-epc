@@ -68,6 +68,10 @@ export default {
   colReceipt: "Хүлээн авалт",
   noTransactions: "Гүйлгээ алга.",
   receive: "Хүлээн авах",
+  // Шат 4: хэсэгчлэн хүлээн авах явц
+  receivedProgress: "Ирсэн {{n}}/{{total}}",
+  colReceived: "Ирсэн",
+  inTransit: "Замд",
   drafts: {
     tab: "Даалгавар",
     subtitle:

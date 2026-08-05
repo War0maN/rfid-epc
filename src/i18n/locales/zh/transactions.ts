@@ -59,6 +59,10 @@ export default {
   colReceipt: "接收",
   noTransactions: "暂无交易。",
   receive: "接收",
+  // 第4阶段：部分接收进度
+  receivedProgress: "已接收 {{n}}/{{total}}",
+  colReceived: "已接收",
+  inTransit: "在途",
   drafts: {
     tab: "任务",
     subtitle:

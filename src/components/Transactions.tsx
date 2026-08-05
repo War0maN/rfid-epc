@@ -684,6 +684,18 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                 <p className="text-xs text-slate-500">
                   {new Date(detail.created_at).toLocaleString()} · {TX_STATUS_LABEL[detail.status]} ·{" "}
                   {detailItems ? `${detailItems.length} EPC` : "…"}
+                  {/* Шат 4: шилжүүлгийн хүлээн авалтын явц (хэсэгчлэн авч болно) */}
+                  {detail.type === "transfer" && detailItems && (
+                    <>
+                      {" · "}
+                      <span className={detailItems.every((it) => it.received_at) ? "text-emerald-600" : "font-medium text-amber-600"}>
+                        {t("transactions.receivedProgress", {
+                          n: detailItems.filter((it) => it.received_at).length,
+                          total: detailItems.length,
+                        })}
+                      </span>
+                    </>
+                  )}
                   {detail.note && <> · {detail.note}</>}
                 </p>
               </div>
@@ -718,6 +730,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                       <th className={th}>{t("transactions.colEpcCode")}</th>
                       <th className={th + " text-right"}>Serial</th>
                       <th className={th + " text-right"}>{t("transactions.colItemPrice")}</th>
+                      {detail.type === "transfer" && <th className={th}>{t("transactions.colReceived")}</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -728,6 +741,15 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                         <td className={td + " font-mono text-xs"}>{it.epc_hex}</td>
                         <td className={td + " text-right tabular-nums"}>{it.serial}</td>
                         <td className={td + " text-right tabular-nums"}>{it.price != null ? it.price.toLocaleString() : <span className="text-slate-300">—</span>}</td>
+                        {detail.type === "transfer" && (
+                          <td className={td + " whitespace-nowrap text-xs"}>
+                            {it.received_at ? (
+                              <span className="text-emerald-600">✓ {new Date(it.received_at).toLocaleDateString()}</span>
+                            ) : (
+                              <span className="text-amber-600">{t("transactions.inTransit")}</span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>

@@ -60,6 +60,10 @@ export default {
   colReceipt: "Receipt",
   noTransactions: "No transactions.",
   receive: "Receive",
+  // Phase 4: partial receive progress
+  receivedProgress: "Received {{n}}/{{total}}",
+  colReceived: "Received",
+  inTransit: "In transit",
   drafts: {
     tab: "Jobs",
     subtitle:
