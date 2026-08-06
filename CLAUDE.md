@@ -61,7 +61,7 @@ RFID EPC Generator: Vite + React 19 + TS + Tailwind + Supabase (Postgres/RLS/Aut
 
 ## Хийгдээгүй / мэдэгдэж буй хязгаарлалт
 
-- **Нэгтгэгдээгүй branch-ууд (2026-08-06, хэрэглэгчийн туршилт хүлээгдэж байна):** веб `feature/lucide-icons` → `feature/data-table` (давхарласан, CI хоёул ногоон) — sidebar redesign + Lucide icon + tnks EPC хүснэгт; мобайл `feature/lucide-icons` (build OK, C5 салгаастай байсан тул төхөөрөмжийн visual шалгалт хийгдээгүй). Туршилт болмогц ff-merge. Ачааллын тестийн багаж `scripts/`-д (өмнөх feature/load-test branch push хийгдээгүй үрэгдсэн тул дахин бичигдсэн): хэрэглэгч `scripts/loadtest-seed.sql`-ийг SQL Editor-т Run (LT- угтвартай хиймэл дата, idempotent, цэвэрлэгээний блок доод талд нь коммент) → `LT_EMAIL=... LT_PASSWORD=... node scripts/loadtest.mjs` (URL/anon key .env.local-оос; вебийн жинхэнэ query хэлбэрүүдээр p50/p95 хэмжинэ).
+- **Веб UI шинэчлэл main-д нэгтгэгдсэн (2026-08-06):** sidebar redesign + Lucide + tnks хүснэгтүүд (EPC/Бүтээгдэхүүн/Гүйлгээний түүх, толгойн мөрний шүүлттэй) хэрэглэгч preview дээр туршиж баталгаажуулаад ff-merge хийгдсэн. Хүлээгдэж буй: мобайл `feature/lucide-icons`-ийн C5 нүдэн шалгалт (дараа нь master-т merge); ачааллын тестийн дүн (хэрэглэгч `scripts/loadtest-seed.sql`-ийг SQL Editor-т Run → `LT_EMAIL=... LT_PASSWORD=... node scripts/loadtest.mjs`). Хуучин EpcTable.tsx хэвээр байгаа — дараагийн цэвэрлэгээнд устгаж болно.
 
 - Deploy: **https://rfid-epc.vercel.app** (Vercel team "chipmo", main push бүрт авто-deploy; заавар docs/deploy.md). Resend SMTP тохируулаагүй — built-in имэйл цагт ~2-4 хязгаартай.
 - Урилга имэйл илгээдэггүй (уригдсан хүн өөрөө бүртгүүлдэг).
