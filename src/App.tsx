@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { LANGS, setLang, type Lang } from "./i18n";
 import { supabase } from "./lib/supabaseClient";
@@ -23,6 +23,10 @@ import Transactions from "./components/Transactions";
 import Branches from "./components/Branches";
 import OrgSettings from "./components/OrgSettings";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { AppSidebar } from "./components/app-sidebar";
+import { SiteHeader } from "./components/site-header";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { lazy, Suspense } from "react";
 // Шошгоны дизайнер (Konva/bwip-js том) — зөвхөн нээх үед ачаална.
 const Labels = lazy(() => import("./components/Labels"));
@@ -31,14 +35,14 @@ const Reports = lazy(() => import("./components/Reports"));
 // Платформын хяналт — зөвхөн платформын админд, нээх үед ачаална.
 const PlatformConsole = lazy(() => import("./components/PlatformConsole"));
 
-type Tab = "create" | "receiving" | "products" | "inventory" | "stocktake" | "transactions" | "reports" | "table" | "lookup" | "labels" | "branches" | "org" | "audit" | "members" | "platform";
+export type Tab = "create" | "receiving" | "products" | "inventory" | "stocktake" | "transactions" | "reports" | "table" | "lookup" | "labels" | "branches" | "org" | "audit" | "members" | "platform";
 
 // label = орчуулгын түлхүүр (render дээр t()-ээр уншина).
-type TabDef = { id: Tab; label: string; adminOnly?: boolean };
-// Дээд цэс = дан таб эсвэл бүлэг (дэд табуудтай). Бүлгийн бүх хүүхэд
-// эрхээр нуугдвал бүлэг өөрөө нуугдана.
-type NavGroup = { group: string; label: string; children: TabDef[] };
-type NavItem = TabDef | NavGroup;
+export type TabDef = { id: Tab; label: string; adminOnly?: boolean };
+// Хажуугийн цэс = дан таб эсвэл бүлэг (дэд табуудтай). Бүлгийн бүх хүүхэд
+// эрхээр нуугдвал бүлэг өөрөө нуугдана. (Төрлүүдийг app-sidebar.tsx ашигладаг.)
+export type NavGroup = { group: string; label: string; children: TabDef[] };
+export type NavItem = TabDef | NavGroup;
 
 const NAV: NavItem[] = [
   {
@@ -214,94 +218,50 @@ function App() {
   // оронд юу хийхийг нь ойлгомжтой хэлнэ.
   const noAccess = visibleTabIds.length === 0;
   const activeTab: Tab = visibleTabIds.includes(tab) ? tab : (visibleTabIds[0] ?? "table");
-  // Идэвхтэй таб аль бүлэгт харьяалагдаж байгааг олно (дэд таб бар харуулахад).
-  const activeGroup = visibleNav.filter(isGroup).find((g) => g.children.some((c) => c.id === activeTab));
+  // Идэвхтэй табын нэр — контентын дээд мөрийн гарчигт.
+  const activeLabel = visibleNav
+    .flatMap((n) => (isGroup(n) ? n.children : [n]))
+    .find((d) => d.id === activeTab)?.label;
 
-  // Дэд таб сонгоход бүлэг доторх сүүлийн байрлалыг санана.
+  // Таб сонгоход бүлэг доторх сүүлийн байрлалыг санана.
   const selectTab = (id: Tab, group?: string) => {
     setTab(id);
     if (group) localStorage.setItem(subTabKey(group), id);
   };
-  // Дээд цэснээс бүлэг дарахад: сүүлд нээсэн (эсвэл эхний) дэд таб руу.
-  const openGroup = (g: NavGroup) => {
-    const remembered = localStorage.getItem(subTabKey(g.group));
-    const target = g.children.find((c) => c.id === remembered) ?? g.children[0];
-    if (target) selectTab(target.id, g.group);
-  };
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span className="text-lg font-semibold text-slate-900">Chipmo Inventory</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <select
-              value={i18n.language}
-              onChange={(e) => setLang(e.target.value as Lang)}
-              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700"
-              aria-label="Language"
-            >
-              {LANGS.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-            <span className="hidden text-sm text-slate-500 sm:inline">{session.user.email}</span>
-            <button
-              onClick={() => supabase.auth.signOut()}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-            >
-              {t("app.signOut")}
-            </button>
-          </div>
-        </div>
-
-        {/* Жижиг дэлгэцэнд табууд хэвтээ гүйлгэгдэнэ (C5 г.м.) — таслагдахгүй. */}
-        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 [scrollbar-width:thin]">
-          {visibleNav.map((n) => {
-            const active = isGroup(n) ? activeGroup?.group === n.group : activeTab === n.id;
-            return (
-              <button
-                key={isGroup(n) ? n.group : n.id}
-                onClick={() => (isGroup(n) ? openGroup(n) : setTab(n.id))}
-                className={
-                  // Дээд цэс дэд табаас ялгарч bold — шатлал нүдэнд ил байна.
-                  "whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold transition " +
-                  (active
-                    ? "border-indigo-600 text-indigo-700"
-                    : "border-transparent text-slate-600 hover:text-slate-800")
-                }
-              >
-                {t(n.label)}
-              </button>
-            );
-          })}
-        </nav>
-      </header>
-
-      <main className="mx-auto max-w-6xl px-4 py-6">
-        {/* Идэвхтэй бүлгийн дэд таб бар (Бүтээгдэхүүний дотоод табтай ижил загвар). */}
-        {activeGroup && (
-          <div className="mb-4 flex gap-1 overflow-x-auto border-b border-slate-200 [scrollbar-width:thin]">
-            {activeGroup.children.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => selectTab(c.id, activeGroup.group)}
-                className={
-                  "whitespace-nowrap rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium " +
-                  (activeTab === c.id
-                    ? "border-indigo-600 text-indigo-700"
-                    : "border-transparent text-slate-500 hover:text-slate-700")
-                }
-              >
-                {t(c.label)}
-              </button>
+    <TooltipProvider>
+    <SidebarProvider
+      style={{
+        "--sidebar-width": "calc(var(--spacing) * 72)",
+        "--header-height": "calc(var(--spacing) * 12)",
+      } as CSSProperties}
+    >
+      <AppSidebar
+        variant="inset"
+        nav={visibleNav}
+        activeTab={activeTab}
+        onSelectTab={selectTab}
+        email={session.user.email ?? ""}
+        onSignOut={() => supabase.auth.signOut()}
+      />
+      <SidebarInset>
+        <SiteHeader title={activeLabel ? t(activeLabel) : "Chipmo Inventory"}>
+          <select
+            value={i18n.language}
+            onChange={(e) => setLang(e.target.value as Lang)}
+            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700"
+            aria-label="Language"
+          >
+            {LANGS.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
             ))}
-          </div>
-        )}
+          </select>
+        </SiteHeader>
+
+      <main className="flex-1 px-4 py-6 lg:px-6">
         {/* Нэг табын render алдаа бүтэн аппыг цагаан дэлгэц болгохгүй —
             алдаа тухайн табд хязгаарлагдаж, таб солиход цэвэрлэгдэнэ. */}
         {noAccess && (
@@ -420,7 +380,9 @@ function App() {
         </ErrorBoundary>
         )}
       </main>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
+    </TooltipProvider>
   );
 }
 
