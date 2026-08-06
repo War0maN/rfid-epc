@@ -1,6 +1,6 @@
 // Shared chrome of the tnks data-table (pagination/columns/export).
 export default {
-  filterTitle: "Filters",
+  filterActive: "Filters: {{n}} column(s) active",
   reset: "Reset",
   resetSizes: "Reset column sizes",
   tableSettings: "Table settings",

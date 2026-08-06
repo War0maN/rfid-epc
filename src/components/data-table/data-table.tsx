@@ -174,6 +174,12 @@ interface DataTableProps<TData extends ExportableData, TValue> {
   // Row click callback
   onRowClick?: (rowData: TData, rowIndex: number) => void;
 
+  // Багана бүрийн толгойн ДООР шүүлтийн мөр (хуучин хүснэгтүүдийн хэвшил).
+  // columnId → input/select элемент; null/undefined буцаавал тухайн нүд хоосон.
+  // Өгөгдсөн үед толгойн дараа хоёр дахь мөр зурагдана (өргөн/дараалал/
+  // харагдац үндсэн толгойтой автоматаар зэрэгцэнэ).
+  filterRow?: (columnId: string) => React.ReactNode;
+
   // Subrows configuration
   subRowsConfig?: SubRowsConfig<TData>;
 }
@@ -189,6 +195,7 @@ export function DataTable<TData extends ExportableData, TValue>({
   pageSizeOptions,
   renderToolbarContent,
   onRowClick,
+  filterRow,
   subRowsConfig
 }: DataTableProps<TData, TValue>) {
   // Load table configuration with any overrides
@@ -1243,6 +1250,20 @@ export function DataTable<TData extends ExportableData, TValue>({
                 ))}
               </TableRow>
             ))}
+            {/* Шүүлтийн мөр — багана бүрийн толгойн доор (filterRow өгөгдсөн үед) */}
+            {filterRow && (
+              <TableRow className="hover:bg-transparent">
+                {table.getHeaderGroups()[table.getHeaderGroups().length - 1].headers.map((header) => (
+                  <TableHead
+                    key={`filter-${header.id}`}
+                    className="px-2 pb-2 pt-0 align-top"
+                    style={{ width: header.getSize() }}
+                  >
+                    {filterRow(header.column.id) ?? null}
+                  </TableHead>
+                ))}
+              </TableRow>
+            )}
           </TableHeader>
 
           <TableBody>

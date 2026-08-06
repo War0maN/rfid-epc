@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ChevronDown, ChevronRight, ListFilter, X } from "lucide-react";
+import { ListFilter, X } from "lucide-react";
 import { DataTable } from "@/components/data-table/data-table";
 import { DataTableColumnHeader } from "@/components/data-table/column-header";
 import { supabase } from "../lib/supabaseClient";
@@ -52,9 +52,8 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
   const [info, setInfo] = useState<string | null>(null);
   const [confirmDlg, setConfirmDlg] = useState<{ message: string; action: () => void } | null>(null);
 
-  // Эвхэгддэг баганын шүүлтийн самбар (client-side "агуулсан").
+  // Баганын шүүлт — багана бүрийн толгойн доорх талбарууд (client-side "агуулсан").
   const [filters, setFilters] = useState<Record<string, string>>({});
-  const [showFilters, setShowFilters] = useState(false);
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [form, setForm] = useState<ProductRow | "new" | null>(null);
@@ -272,50 +271,17 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {info && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{info}</p>}
 
-      {/* Баганын шүүлтүүд — client-side "агуулсан" (шинж чанарын баганууд ч мөн) */}
-      <div className="rounded-lg border border-slate-200">
-        <button
-          className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700"
-          onClick={() => setShowFilters((v) => !v)}
-        >
-          {showFilters ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          <ListFilter size={14} />
-          {t("dataTable.filterTitle")}
-          {activeFilterCount > 0 && (
-            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
-              {activeFilterCount}
-            </span>
-          )}
+      {/* Идэвхтэй шүүлтийн мэдээлэл — шүүлтүүд нь багана бүрийн толгойн доор */}
+      {activeFilterCount > 0 && (
+        <p className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-xs text-slate-500">
+          <ListFilter size={13} />
+          <span>{t("dataTable.filterActive", { n: activeFilterCount })}</span>
           <span className="flex-1" />
-          {activeFilterCount > 0 && (
-            <span
-              role="button"
-              className="text-xs text-slate-400 hover:text-slate-700 hover:underline"
-              onClick={(e) => {
-                e.stopPropagation();
-                setFilters({});
-              }}
-            >
-              {t("dataTable.reset")}
-            </span>
-          )}
-        </button>
-        {showFilters && (
-          <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-3 md:grid-cols-4 lg:grid-cols-6">
-            {columnsMeta.map((c) => (
-              <label key={c.key} className="text-xs text-slate-500">
-                {c.label}
-                <input
-                  value={filters[c.key] ?? ""}
-                  onChange={(e) => setF(c.key, e.target.value)}
-                  placeholder="…"
-                  className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
-                />
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
+          <button className="text-slate-400 hover:text-slate-700 hover:underline" onClick={() => setFilters({})}>
+            {t("dataTable.reset")}
+          </button>
+        </p>
+      )}
 
       {loading ? (
         <p className="rounded-xl border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400 shadow-sm">
@@ -325,6 +291,16 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
         <DataTable<Row, unknown>
           getColumns={getColumns}
           fetchDataFn={fetchDataFn}
+          filterRow={(columnId) =>
+            columnsMeta.some((c) => c.key === columnId) ? (
+              <input
+                value={filters[columnId] ?? ""}
+                onChange={(e) => setF(columnId, e.target.value)}
+                placeholder="…"
+                className="w-full rounded border border-slate-200 px-1.5 py-1 text-xs font-normal text-slate-900 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+              />
+            ) : null
+          }
           exportConfig={exportConfig}
           idField="id"
           pageSizeOptions={[25, 50, 100, 250]}

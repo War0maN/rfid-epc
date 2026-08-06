@@ -1,6 +1,6 @@
 // tnks data-table-ийн нийтлэг chrome (хуудаслалт/багана/экспорт).
 export default {
-  filterTitle: "Шүүлт",
+  filterActive: "Шүүлт: {{n}} багана идэвхтэй",
   reset: "Цэвэрлэх",
   resetSizes: "Баганын өргөнийг сэргээх",
   tableSettings: "Хүснэгтийн тохиргоо",

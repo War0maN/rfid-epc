@@ -1,6 +1,6 @@
 // tnks 数据表的通用界面文本（分页/列/导出）。
 export default {
-  filterTitle: "筛选",
+  filterActive: "筛选：{{n}} 列生效",
   reset: "重置",
   resetSizes: "重置列宽",
   tableSettings: "表格设置",

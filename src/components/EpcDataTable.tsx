@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ChevronDown, ChevronRight, ListFilter, Printer, Tags, Trash2 } from "lucide-react";
+import { ListFilter, Printer, Tags, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/data-table/data-table";
 import { DataTableColumnHeader } from "@/components/data-table/column-header";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -226,7 +226,6 @@ export default function EpcDataTable({ refreshKey = 0, isAdmin, perms = null, on
   // ── Баганын шүүлтүүд (хуучин EpcTable-ийн applyEpcFilters түлхүүрүүдээр) ──
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [debouncedFilters, setDebouncedFilters] = useState<Record<string, string>>({});
-  const [showFilters, setShowFilters] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
   /** Одоогийн хайлт+шүүлтэд тохирох НИЙТ мөр (сонголтгүй бөөн үйлдлийн хамрах хүрээ). */
   const [total, setTotal] = useState(0);
@@ -250,6 +249,59 @@ export default function EpcDataTable({ refreshKey = 0, isAdmin, perms = null, on
       return n;
     });
   const activeFilterCount = Object.keys(debouncedFilters).length;
+
+  // Багана толгойн доорх шүүлтийн мөр (хуучин EpcTable-ийн хэвшил):
+  // columnId → шүүлтийн түлхүүр (applyEpcFilters-ийн нэрс).
+  const COL_FILTER_KEY: Record<string, string> = {
+    epc_hex: "epc",
+    serial: "serial",
+    status: "status",
+    name: "name",
+    branch_name: "branch",
+    sku: "sku",
+    price: "price",
+    cost: "cost",
+    gtin: "gtin",
+    category_l1: "cat1",
+    category_l2: "cat2",
+    category_l3: "cat3",
+    box_no: "box",
+    job_number: "job",
+    arrival_date: "date",
+    supplier: "supplier",
+  };
+  const filterCtl =
+    "w-full rounded border border-slate-200 px-1.5 py-1 text-xs font-normal text-slate-900 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200";
+  const filterRow = (columnId: string) => {
+    const key = COL_FILTER_KEY[columnId];
+    if (!key) return null;
+    if (key === "status")
+      return (
+        <select value={filters[key] ?? ""} onChange={(e) => setF(key, e.target.value)} className={filterCtl}>
+          <option value="">{t("epcTable.filterAll")}</option>
+          {EPC_STATUSES.map((st) => (
+            <option key={st} value={st}>{STATUS_LABEL[st]}</option>
+          ))}
+        </select>
+      );
+    if (key === "branch")
+      return (
+        <select value={filters[key] ?? ""} onChange={(e) => setF(key, e.target.value)} className={filterCtl}>
+          <option value="">{t("epcTable.filterAll")}</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.name}>{b.name}</option>
+          ))}
+          <option value="__none__">{t("transactions.noBranch")}</option>
+        </select>
+      );
+    if (key === "date")
+      return (
+        <input type="date" value={filters[key] ?? ""} onChange={(e) => setF(key, e.target.value)} className={filterCtl} />
+      );
+    return (
+      <input value={filters[key] ?? ""} onChange={(e) => setF(key, e.target.value)} placeholder="…" className={filterCtl} />
+    );
+  };
 
   // Бөөн үйлдлийн диалогууд
   const [printRows, setPrintRows] = useState<EpcRow[] | null>(null);
@@ -398,114 +450,23 @@ export default function EpcDataTable({ refreshKey = 0, isAdmin, perms = null, on
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {info && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{info}</p>}
 
-      {/* Баганын шүүлтүүд — server-side (хуучин EpcTable-тэй ижил төрөлжилт) */}
-      <div className="rounded-lg border border-slate-200">
-        <button
-          className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700"
-          onClick={() => setShowFilters((v) => !v)}
-        >
-          {showFilters ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          <ListFilter size={14} />
-          {t("epcTable.filterTitle")}
-          {activeFilterCount > 0 && (
-            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
-              {activeFilterCount}
-            </span>
-          )}
+      {/* Идэвхтэй шүүлтийн мэдээлэл — шүүлтүүд нь багана бүрийн толгойн доор */}
+      {activeFilterCount > 0 && (
+        <p className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-xs text-slate-500">
+          <ListFilter size={13} />
+          <span>{t("epcTable.bulkScopeHint", { n: total.toLocaleString() })}</span>
           <span className="flex-1" />
-          {activeFilterCount > 0 && (
-            <span
-              role="button"
-              className="text-xs text-slate-400 hover:text-slate-700 hover:underline"
-              onClick={(e) => {
-                e.stopPropagation();
-                setFilters({});
-              }}
-            >
-              {t("dataTable.reset")}
-            </span>
-          )}
-        </button>
-        {showFilters && (
-          <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-3 md:grid-cols-4 lg:grid-cols-6">
-            {([
-              ["epc", t("epcTable.colEpcHex"), "text"],
-              ["serial", t("epcTable.colSerial"), "text"],
-              ["name", t("common.product"), "text"],
-              ["sku", t("common.sku"), "text"],
-              ["gtin", t("epcTable.colGtin"), "text"],
-              ["price", t("common.price"), "text"],
-              ["cost", t("common.cost"), "text"],
-              ["cat1", t("epcTable.colCat1"), "text"],
-              ["cat2", t("epcTable.colCat2"), "text"],
-              ["cat3", t("epcTable.colCat3"), "text"],
-              ["box", t("epcTable.colBox"), "text"],
-              ["job", t("epcTable.colJob"), "text"],
-              ["date", t("epcTable.colDate"), "date"],
-              ["supplier", t("epcTable.colSupplier"), "text"],
-            ] as const).map(([key, label, kind]) =>
-              key === "date" ? (
-                <label key={key} className="text-xs text-slate-500">
-                  {label}
-                  <input
-                    type="date"
-                    value={filters[key] ?? ""}
-                    onChange={(e) => setF(key, e.target.value)}
-                    className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
-                  />
-                </label>
-              ) : (
-                <label key={key} className="text-xs text-slate-500">
-                  {label}
-                  <input
-                    value={filters[key] ?? ""}
-                    onChange={(e) => setF(key, e.target.value)}
-                    placeholder={kind === "text" ? "…" : undefined}
-                    className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
-                  />
-                </label>
-              )
-            )}
-            <label className="text-xs text-slate-500">
-              {t("common.status")}
-              <select
-                value={filters["status"] ?? ""}
-                onChange={(e) => setF("status", e.target.value)}
-                className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
-              >
-                <option value="">{t("epcTable.filterAll")}</option>
-                {EPC_STATUSES.map((st) => (
-                  <option key={st} value={st}>{STATUS_LABEL[st]}</option>
-                ))}
-              </select>
-            </label>
-            <label className="text-xs text-slate-500">
-              {t("common.branch")}
-              <select
-                value={filters["branch"] ?? ""}
-                onChange={(e) => setF("branch", e.target.value)}
-                className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
-              >
-                <option value="">{t("epcTable.filterAll")}</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.name}>{b.name}</option>
-                ))}
-                <option value="__none__">{t("transactions.noBranch")}</option>
-              </select>
-            </label>
-          </div>
-        )}
-        {showFilters && (
-          <p className="border-t border-slate-100 px-3 py-1.5 text-xs text-slate-400">
-            {t("epcTable.bulkScopeHint", { n: total.toLocaleString() })}
-          </p>
-        )}
-      </div>
+          <button className="text-slate-400 hover:text-slate-700 hover:underline" onClick={() => setFilters({})}>
+            {t("dataTable.reset")}
+          </button>
+        </p>
+      )}
 
       <DataTable<Row, unknown>
         getColumns={getColumns}
         fetchDataFn={fetchDataFn}
         fetchByIdsFn={(ids) => fetchEpcByIds(ids.map(String)) as Promise<Row[]>}
+        filterRow={filterRow}
         exportConfig={exportConfig}
         idField="id"
         pageSizeOptions={[25, 50, 100, 250]}
