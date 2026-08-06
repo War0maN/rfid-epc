@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Printer } from "lucide-react";
 import { buildNoteHtml } from "../lib/transferNote";
 import { errorMessage } from "../lib/errorMessage";
 
@@ -60,7 +61,7 @@ export default function TransferNoteDialog({ txId, onClose }: Props) {
               disabled={!html}
               className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
             >
-              🖨 {t("transferNote.printPdf")}
+              <Printer size={14} className="inline align-text-bottom" /> {t("transferNote.printPdf")}
             </button>
             <button
               onClick={onClose}

@@ -22,7 +22,7 @@ export default {
   successBody: "EPCs created ({{products}} items, {{boxes}} boxes",
   successCategories: ", {{n}} categories",
   successTail: '). See the "Items (EPC)" tab.',
-  skippedRows: "⚠️ {{n}} rows skipped (missing/invalid barcode).",
+  skippedRows: "{{n}} rows skipped (missing/invalid barcode).",
   skippedExample: "Example: {{sample}}",
   creating: "Creating…",
   submit: "Create job and generate EPCs",

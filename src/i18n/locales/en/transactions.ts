@@ -26,7 +26,7 @@ export default {
   notePlaceholder: "Optional…",
   selectBranchFirst: "Select a branch first — the list of active EPCs in that branch will appear.",
 
-  scanPlaceholder: "📶 Scan / type EPC (Enter) — an RFID reader types directly here",
+  scanPlaceholder: "Scan / type EPC (Enter) — an RFID reader types directly here",
   scanAlreadyInCart: "{{hex}} — already in the cart.",
   scanInvalidFormat: "{{token}} — invalid EPC format.",
   scanNotFound: "{{hex}} — not found in this branch's list.",

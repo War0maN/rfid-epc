@@ -25,7 +25,7 @@ export default {
   notePlaceholder: "选填…",
   selectBranchFirst: "请先选择分店——该分店的有效EPC列表将显示在这里。",
 
-  scanPlaceholder: "📶 扫描/输入EPC（回车）——RFID读写器可直接在此输入",
+  scanPlaceholder: "扫描/输入EPC（回车）——RFID读写器可直接在此输入",
   scanAlreadyInCart: "{{hex}}——已在购物车中。",
   scanInvalidFormat: "{{token}}——EPC格式无效。",
   scanNotFound: "{{hex}}——未在该分店列表中找到。",

@@ -30,7 +30,7 @@ export default {
   selectBranchFirst: "Эхлээд салбараа сонгоно уу — тухайн салбарын идэвхтэй EPC-ийн жагсаалт гарч ирнэ.",
 
   // Скан
-  scanPlaceholder: "📶 EPC уншуулах / шивэх (Enter) — RFID уншигч шууд энд бичнэ",
+  scanPlaceholder: "EPC уншуулах / шивэх (Enter) — RFID уншигч шууд энд бичнэ",
   scanAlreadyInCart: "{{hex}} — сагсанд аль хэдийн байна.",
   scanInvalidFormat: "{{token}} — EPC формат буруу.",
   scanNotFound: "{{hex}} — энэ салбарын жагсаалтаас олдсонгүй.",

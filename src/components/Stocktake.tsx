@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { listBranches, type Branch } from "../lib/branches";
 import { makeCan } from "../lib/permissions";
@@ -384,7 +385,7 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={() => { setCurrent(null); reload(); }} className={btn}>
-            ← {t("stocktake.backToList")}
+            <ArrowLeft size={14} className="inline align-text-bottom" /> {t("stocktake.backToList")}
           </button>
           <div>
             <h2 className="text-lg font-semibold text-slate-900">
@@ -811,7 +812,7 @@ export default function Stocktake({ isAdmin = false, allowedBranches = null, per
         <div className="flex-1" />
         {canAct && (
           <button onClick={() => setShowCreate((s) => !s)} className={primaryBtn}>
-            + {t("stocktake.newBtn")}
+            <Plus size={14} className="inline align-text-bottom" /> {t("stocktake.newBtn")}
           </button>
         )}
       </div>

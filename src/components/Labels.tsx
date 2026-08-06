@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   listTemplates,
@@ -92,7 +93,7 @@ export default function Labels() {
             onClick={() => setEditing(null)}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
           >
-            {t("labels.backToList")}
+            <ArrowLeft size={14} className="inline align-text-bottom" /> {t("labels.backToList")}
           </button>
           <input
             value={editing.name}

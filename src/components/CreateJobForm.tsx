@@ -1,6 +1,7 @@
 import { errorMessage } from "../lib/errorMessage";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { Download } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { importPackingListXlsx } from "../lib/importPackingList";
 import { listBranches, type Branch } from "../lib/branches";
@@ -172,7 +173,7 @@ export default function CreateJobForm({ onCreated, allowedBranches = null }: Pro
               download
               className="text-xs font-medium text-indigo-600 hover:underline"
             >
-              ⬇ {t("importer.templateDownload")}
+              <Download size={14} className="inline align-text-bottom" /> {t("importer.templateDownload")}
             </a>
           </div>
           <input

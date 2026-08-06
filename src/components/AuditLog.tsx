@@ -1,6 +1,7 @@
 import { errorMessage } from "../lib/errorMessage";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
 import i18n from "../i18n";
 import { labelMap } from "../i18n/labelMap";
 import { fetchAuditLog, type AuditRow } from "../lib/audit";
@@ -352,7 +353,7 @@ export default function AuditLog() {
                 onClick={() => setDetail(null)}
                 className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
             <div className="max-h-[65vh] overflow-auto px-4 py-3">
@@ -473,6 +474,7 @@ export default function AuditLog() {
                 onClick={() => setShowRaw((s) => !s)}
                 className="text-xs text-slate-400 hover:text-slate-600 hover:underline"
               >
+                {showRaw ? <ChevronDown size={12} className="inline align-text-bottom" /> : <ChevronRight size={12} className="inline align-text-bottom" />}{" "}
                 {showRaw ? t("audit.hideRawJson") : t("audit.showRawJson")}
               </button>
               {showRaw && (

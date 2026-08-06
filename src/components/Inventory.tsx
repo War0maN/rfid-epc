@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ChevronDown, ChevronsUpDown, ChevronUp, RefreshCw, Settings2, X } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { listProducts, type ProductRow } from "../lib/products";
 import { listBranches, type Branch } from "../lib/branches";
@@ -308,7 +309,7 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
         </label>
         <div className="relative">
           <button onClick={() => setShowColPicker((s) => !s)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-            ⚙ {t("inventory.columns")}
+            <Settings2 size={14} className="inline align-text-bottom" /> {t("inventory.columns")}
           </button>
           {showColPicker && (
             <>
@@ -329,7 +330,7 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
           {t("inventory.exportCsvCount", { n: sorted.length.toLocaleString() })}
         </button>
         <button onClick={reload} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-          ↻ {t("inventory.refresh")}
+          <RefreshCw size={14} className="inline align-text-bottom" /> {t("inventory.refresh")}
         </button>
       </div>
 
@@ -356,7 +357,7 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
                     }
                   >
                     {c.label}
-                    <span className="text-[10px] text-slate-400">{sort?.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
+                    <span className="text-[10px] text-slate-400">{sort?.key === c.key ? (sort.dir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />) : <ChevronsUpDown size={12} />}</span>
                   </button>
                   {c.kind === "info" ? (
                     <input
@@ -452,7 +453,7 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
                 >
                   {t("common.exportCsv")}
                 </button>
-                <button onClick={() => setModal(null)} className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">✕</button>
+                <button onClick={() => setModal(null)} className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={16} /></button>
               </div>
             </div>
             <div className="max-h-[65vh] overflow-auto">

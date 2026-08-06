@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronsUpDown, ChevronUp, Printer, Settings2 } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -506,7 +507,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
             onClick={() => setShowColPicker((s) => !s)}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
           >
-            ⚙ {t("epcTable.columns")}
+            <Settings2 size={14} className="inline align-text-bottom" /> {t("epcTable.columns")}
           </button>
           {showColPicker && (
             <>
@@ -554,7 +555,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
             disabled={busy || outCount === 0}
             className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            🖨 {t("epcTable.printN", { n: outCount.toLocaleString() })}
+            <Printer size={14} className="inline align-text-bottom" /> {t("epcTable.printN", { n: outCount.toLocaleString() })}
           </button>
         )}
         {isAdmin && (
@@ -637,7 +638,7 @@ export default function EpcTable({ refreshKey = 0, isAdmin = false, onLookup, pe
                   >
                     {c.label}
                     <span className="text-[10px] text-slate-400">
-                      {sort?.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+                      {sort?.key === c.key ? (sort.dir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />) : <ChevronsUpDown size={12} />}
                     </span>
                   </button>
                   {c.key === "status" ? (

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine } from "lucide-react";
 import { Stage, Layer, Rect, Text, Image as KonvaImage, Transformer } from "react-konva";
 import type Konva from "konva";
 import {
@@ -404,16 +405,16 @@ export default function LabelDesigner({ template, onChange }: Props) {
             <>
               <span className="mx-1 w-px self-stretch bg-slate-200" />
               <button onClick={() => moveSelected("front")} className={toolBtn} title={t("labels.designer.bringFrontTitle")}>
-                {t("labels.designer.bringFront")}
+                <ArrowUpToLine size={13} className="inline align-text-bottom" /> {t("labels.designer.bringFront")}
               </button>
               <button onClick={() => moveSelected("forward")} className={toolBtn} title={t("labels.designer.forwardTitle")}>
-                ↑
+                <ArrowUp size={13} />
               </button>
               <button onClick={() => moveSelected("backward")} className={toolBtn} title={t("labels.designer.backwardTitle")}>
-                ↓
+                <ArrowDown size={13} />
               </button>
               <button onClick={() => moveSelected("back")} className={toolBtn} title={t("labels.designer.sendBackTitle")}>
-                {t("labels.designer.sendBack")}
+                <ArrowDownToLine size={13} className="inline align-text-bottom" /> {t("labels.designer.sendBack")}
               </button>
               <button onClick={removeSelected} className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50">
                 {t("common.delete")}

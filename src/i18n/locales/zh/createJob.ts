@@ -22,7 +22,7 @@ export default {
   successBody: "个 EPC（{{products}} 个商品，{{boxes}} 个箱子",
   successCategories: "，{{n}} 个分类",
   successTail: "）。请在“商品 (EPC)”标签页查看。",
-  skippedRows: "⚠️ 已跳过 {{n}} 行（条码缺失/无效）。",
+  skippedRows: "已跳过 {{n}} 行（条码缺失/无效）。",
   skippedExample: "示例：{{sample}}",
   creating: "正在创建…",
   submit: "创建任务并生成 EPC",

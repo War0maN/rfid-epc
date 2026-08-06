@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { RefreshCw } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -143,7 +144,7 @@ export default function ValuationReport() {
         <p className="pb-2 text-xs text-slate-400">{t("reports.valuationAsOf", { date: new Date().toLocaleString() })}</p>
         <div className="flex-1" />
         <button onClick={load} className="h-9 rounded-lg border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50">
-          ↻ {t("reports.refresh")}
+          <RefreshCw size={14} className="inline align-text-bottom" /> {t("reports.refresh")}
         </button>
         <button
           onClick={handleExport}

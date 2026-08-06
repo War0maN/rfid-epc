@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from "lucide-react";
 import { labelMap } from "../i18n/labelMap";
 import {
   listCategories,
@@ -197,7 +198,7 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
               className="w-4 shrink-0 text-left text-slate-400 hover:text-slate-700"
               aria-label={isOpen ? "collapse" : "expand"}
             >
-              {isOpen ? "▾" : "▸"}
+              {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </button>
           ) : (
             <span className="w-4 shrink-0" />
@@ -211,8 +212,8 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
                 onKeyDown={(e) => e.key === "Enter" && saveRename()}
                 className={inp + " h-7 max-w-[160px]"}
               />
-              <button onClick={saveRename} className="text-xs text-indigo-600">✓</button>
-              <button onClick={() => setRenameId(null)} className="text-xs text-slate-400">✕</button>
+              <button onClick={saveRename} className="text-xs text-indigo-600"><Check size={14} /></button>
+              <button onClick={() => setRenameId(null)} className="text-xs text-slate-400"><X size={14} /></button>
             </>
           ) : (
             <>
@@ -233,7 +234,7 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
                     className="text-xs text-slate-400 hover:text-indigo-600"
                     title={t("catalog.addLevelTitle", { level: CATEGORY_LEVELS[depth + 1] })}
                   >
-                    ＋
+                    <Plus size={14} />
                   </button>
                 )}
                 <button
@@ -244,9 +245,9 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
                   className="text-xs text-slate-400 hover:text-indigo-600"
                   title={t("catalog.renameTitle")}
                 >
-                  ✎
+                  <Pencil size={13} />
                 </button>
-                <button onClick={() => removeCategory(node)} className="text-xs text-slate-400 hover:text-red-600" title={t("common.delete")}>🗑</button>
+                <button onClick={() => removeCategory(node)} className="text-xs text-slate-400 hover:text-red-600" title={t("common.delete")}><Trash2 size={13} /></button>
               </div>
             </>
           )}
@@ -261,8 +262,8 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
               placeholder={t("catalog.levelNamePlaceholder", { level: addLevel })}
               className={inp + " h-7 max-w-[160px]"}
             />
-            <button onClick={saveAdd} className="text-xs text-indigo-600">✓</button>
-            <button onClick={() => setAddParent(false)} className="text-xs text-slate-400">✕</button>
+            <button onClick={saveAdd} className="text-xs text-indigo-600"><Check size={14} /></button>
+            <button onClick={() => setAddParent(false)} className="text-xs text-slate-400"><X size={14} /></button>
           </div>
         )}
         {isOpen && node.children.map((ch) => renderNode(ch, depth + 1))}
@@ -321,8 +322,8 @@ export default function Catalog({ canEdit = true }: { canEdit?: boolean }) {
                 placeholder={t("catalog.levelNamePlaceholder", { level: addLevel })}
                 className={inp + " h-7"}
               />
-              <button onClick={saveAdd} className="text-xs text-indigo-600">✓</button>
-              <button onClick={() => setAddParent(false)} className="text-xs text-slate-400">✕</button>
+              <button onClick={saveAdd} className="text-xs text-indigo-600"><Check size={14} /></button>
+              <button onClick={() => setAddParent(false)} className="text-xs text-slate-400"><X size={14} /></button>
             </div>
           )}
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Plus, X } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import {
   listCategories,
@@ -267,7 +268,7 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
       <div className="rounded-lg border border-dashed border-slate-300 p-3">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("products.extraAttrsTitle")}</span>
-          <button type="button" onClick={() => setExtra((x) => [...x, { label: "", value: "" }])} className="text-xs text-indigo-600 hover:underline">+ {t("common.add")}</button>
+          <button type="button" onClick={() => setExtra((x) => [...x, { label: "", value: "" }])} className="text-xs text-indigo-600 hover:underline"><Plus size={12} className="inline align-text-bottom" /> {t("common.add")}</button>
         </div>
         {extra.length === 0 ? (
           <p className="text-xs text-slate-400">{t("products.extraAttrsHint")}</p>
@@ -277,7 +278,7 @@ export default function ProductForm({ initial, onSaved, onCancel }: Props) {
               <div key={i} className="flex items-center gap-2">
                 <input value={row.label} onChange={(e) => setExtra((x) => x.map((r, j) => (j === i ? { ...r, label: e.target.value } : r)))} placeholder={t("common.name")} className={inp + " max-w-[180px]"} />
                 <input value={row.value} onChange={(e) => setExtra((x) => x.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))} placeholder={t("products.valuePlaceholder")} className={inp} />
-                <button type="button" onClick={() => setExtra((x) => x.filter((_, j) => j !== i))} className="shrink-0 text-sm text-red-500 hover:text-red-700">✕</button>
+                <button type="button" onClick={() => setExtra((x) => x.filter((_, j) => j !== i))} className="shrink-0 text-sm text-red-500 hover:text-red-700"><X size={14} /></button>
               </div>
             ))}
           </div>

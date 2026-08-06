@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ChevronDown, ChevronsUpDown, ChevronUp, Settings2, X } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { listProducts, deleteProduct, type ProductRow } from "../lib/products";
 import { generateEpcsForProduct } from "../lib/createProduct";
@@ -224,7 +225,7 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
         {/* Багана сонгогч */}
         <div className="relative">
           <button onClick={() => setShowColPicker((s) => !s)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-            ⚙ {t("products.columnsBtn")}
+            <Settings2 size={14} className="inline align-text-bottom" /> {t("products.columnsBtn")}
           </button>
           {showColPicker && (
             <>
@@ -259,7 +260,7 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
                 <th key={c.key} className="sticky top-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-left align-top last:border-r-0">
                   <button onClick={() => toggleSort(c.key)} className="mb-1 flex min-h-[32px] items-start gap-1 text-left text-xs font-semibold uppercase leading-4 tracking-wide text-slate-500 hover:text-indigo-600">
                     {c.label}
-                    <span className="text-[10px] text-slate-400">{sort?.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
+                    <span className="text-[10px] text-slate-400">{sort?.key === c.key ? (sort.dir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />) : <ChevronsUpDown size={12} />}</span>
                   </button>
                   <input
                     value={filters[c.key] ?? ""}
@@ -326,7 +327,7 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
           <div className="my-8 w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-slate-900">{form === "new" ? t("products.addProductTitle") : t("products.editProductTitle")}</h3>
-              <button onClick={() => setForm(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => setForm(null)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
             </div>
             <ProductForm initial={form === "new" ? null : form} onSaved={() => { setForm(null); reload(); }} onCancel={() => setForm(null)} />
           </div>

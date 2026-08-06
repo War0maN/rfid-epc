@@ -1,7 +1,7 @@
 export default {
   // Жагсаалт + шинээр үүсгэх (Labels.tsx)
   defaultName: "Шошго",
-  backToList: "← Жагсаалт",
+  backToList: "Жагсаалт",
   offsetMm: "Offset мм",
   offsetTitle: "Цаасны байрлал тааруулга (хэвлэлтэд хэрэглэнэ)",
   unsavedChanges: "Хадгалаагүй өөрчлөлт",
@@ -44,13 +44,13 @@ export default {
     addBarcode: "+ Баркод/QR",
     addImage: "+ Зураг",
     addRect: "+ Хүрээ",
-    bringFront: "⤒ Урд",
+    bringFront: "Урд",
     bringFrontTitle: "Хамгийн урд (дээр) гаргах",
     forwardTitle: "Нэг шат урагшлуулах",
     backwardTitle: "Нэг шат ухраах",
-    sendBack: "⤓ Ард",
+    sendBack: "Ард",
     sendBackTitle: "Хамгийн ард (доор) явуулах",
-    rfidChip: "📡 RFID чип",
+    rfidChip: "RFID чип",
     canvasHint: "Объект дээр дарж сонгоод чирэх / булангаас нь хэмжээ өөрчлөх / эргүүлэх боломжтой.",
     selectObjectPrompt: "Объект сонгоно уу.",
     objectType: {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, Plus, Printer, RefreshCw, ShoppingCart, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { listBranches, type Branch } from "../lib/branches";
 import { normalizeEpc } from "../lib/epc";
@@ -375,7 +376,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
         <p className="text-sm text-slate-500">{t("transactions.subtitle")}</p>
         <div className="flex-1" />
         <button onClick={reload} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-          ↻ {t("transactions.refresh")}
+          <RefreshCw size={14} className="inline align-text-bottom" /> {t("transactions.refresh")}
         </button>
       </div>
 
@@ -483,7 +484,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
               <div className="rounded-xl border-2 border-indigo-200 bg-white shadow-sm">
                 <div className="flex items-center gap-2 border-b border-indigo-100 bg-indigo-50/60 px-3 py-2">
                   <span className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
-                    🛒 {t("transactions.cart")} ({cartItems.length.toLocaleString()})
+                    <ShoppingCart size={15} className="inline align-text-bottom" /> {t("transactions.cart")} ({cartItems.length.toLocaleString()})
                   </span>
                   <span className="ml-auto text-sm font-semibold text-indigo-900">
                     {cartTotal.toLocaleString()}₮
@@ -593,7 +594,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                                 onClick={() => addItem(a)}
                                 className="rounded border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
                               >
-                                + {t("common.add")}
+                                <Plus size={12} className="inline align-text-bottom" /> {t("common.add")}
                               </button>
                             </td>
                           </tr>
@@ -705,7 +706,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                     onClick={() => setNoteTxId(detail.id)}
                     className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
                   >
-                    🖨 {t("transferNote.noteButton")}
+                    <Printer size={13} className="inline align-text-bottom" /> {t("transferNote.noteButton")}
                   </button>
                 )}
                 <button
@@ -715,7 +716,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                 >
                   {t("common.exportCsv")}
                 </button>
-                <button onClick={() => setDetail(null)} className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">✕</button>
+                <button onClick={() => setDetail(null)} className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={16} /></button>
               </div>
             </div>
             <div className="max-h-[65vh] overflow-auto">
@@ -744,7 +745,7 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
                         {detail.type === "transfer" && (
                           <td className={td + " whitespace-nowrap text-xs"}>
                             {it.received_at ? (
-                              <span className="text-emerald-600">✓ {new Date(it.received_at).toLocaleDateString()}</span>
+                              <span className="text-emerald-600"><Check size={12} className="inline align-text-bottom" /> {new Date(it.received_at).toLocaleDateString()}</span>
                             ) : (
                               <span className="text-amber-600">{t("transactions.inTransit")}</span>
                             )}

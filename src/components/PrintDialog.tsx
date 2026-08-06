@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
 import { listTemplates, type LabelTemplate, type LabelData } from "../lib/labelTemplate";
 import { renderLabelToCanvas, buildBatchZpl, type PrintOffset } from "../lib/labelZpl";
@@ -120,7 +121,7 @@ export default function PrintDialog({ rows, onClose, onPrinted }: Props) {
       <div className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-xl bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">{t("labels.print.title")}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
         </div>
 
         <p className="mb-3 text-sm text-slate-600">

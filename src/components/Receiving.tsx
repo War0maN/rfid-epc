@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ChevronDown, ChevronRight, Download, Plus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabaseClient";
 import { listBranches, type Branch } from "../lib/branches";
@@ -389,7 +390,7 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={() => { setCurrent(null); reload(); }} className={btn}>
-            ← {t("receiving.backToList")}
+            <ArrowLeft size={14} className="inline align-text-bottom" /> {t("receiving.backToList")}
           </button>
           <div>
             <h2 className="text-lg font-semibold text-slate-900">
@@ -573,7 +574,7 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
               onClick={() => setShowIssues((s) => !s)}
               className="text-sm font-medium text-amber-800"
             >
-              {showIssues ? "▾" : "▸"} {t("receiving.issuesTitle", { n: issues.length })}
+              {showIssues ? <ChevronDown size={14} className="inline align-text-bottom" /> : <ChevronRight size={14} className="inline align-text-bottom" />} {t("receiving.issuesTitle", { n: issues.length })}
             </button>
             <p className="mt-1 text-xs text-amber-700">
               {[...issueCounts.entries()]
@@ -660,7 +661,7 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
                     onClick={() => setScanModal(null)}
                     className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                   >
-                    ✕
+                    <X size={16} />
                   </button>
                 </div>
               </div>
@@ -772,7 +773,7 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
         <div className="flex-1" />
         {canAct && (
           <button onClick={() => setShowCreate((s) => !s)} className={primaryBtn}>
-            + {t("receiving.newBtn")}
+            <Plus size={14} className="inline align-text-bottom" /> {t("receiving.newBtn")}
           </button>
         )}
       </div>
@@ -791,7 +792,7 @@ export default function Receiving({ allowedBranches = null, perms = null }: Prop
                   download
                   className="text-xs font-medium text-indigo-600 hover:underline"
                 >
-                  ⬇ {t("importer.templateDownload")}
+                  <Download size={14} className="inline align-text-bottom" /> {t("importer.templateDownload")}
                 </a>
               </div>
               <input

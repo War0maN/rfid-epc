@@ -26,7 +26,7 @@ export default {
   successBody: "EPC үүслээ ({{products}} бараа, {{boxes}} хайрцаг",
   successCategories: ", {{n}} ангилал",
   successTail: '). "EPC хүснэгт" таб дээр харна уу.',
-  skippedRows: "⚠️ {{n}} мөр алгаслаа (barcode дутуу/буруу).",
+  skippedRows: "{{n}} мөр алгаслаа (barcode дутуу/буруу).",
   skippedExample: "Жишээ: {{sample}}",
   creating: "Үүсгэж байна…",
   submit: "Ажил үүсгэж EPC генерацлэх",

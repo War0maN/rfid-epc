@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronUp, FileSpreadsheet, Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { listBranches, type Branch } from "../lib/branches";
 import { listProducts, type ProductRow } from "../lib/products";
@@ -235,11 +236,11 @@ export default function TransferJobs({ allowedBranches = null, perms = null }: P
         <p className="text-sm text-slate-500">{t("transactions.drafts.subtitle")}</p>
         <div className="flex-1" />
         <button onClick={reload} className={btn}>
-          ↻ {t("transactions.refresh")}
+          <RefreshCw size={14} className="inline align-text-bottom" /> {t("transactions.refresh")}
         </button>
         {can("act_transfer") && (
           <button onClick={openCreate} className={primaryBtn}>
-            + {t("transactions.drafts.newJob")}
+            <Plus size={14} className="inline align-text-bottom" /> {t("transactions.drafts.newJob")}
           </button>
         )}
       </div>
@@ -292,7 +293,7 @@ export default function TransferJobs({ allowedBranches = null, perms = null }: P
                       {t("transactions.drafts.freeCart", { n: d.item_count })}
                     </span>
                   )}
-                  <span className="text-xs text-slate-400">{expanded === d.id ? "▴" : "▾"}</span>
+                  <span className="text-xs text-slate-400">{expanded === d.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</span>
                 </button>
                 {expanded === d.id && (
                   <div className="border-t border-slate-100 px-4 py-3">
@@ -418,7 +419,7 @@ export default function TransferJobs({ allowedBranches = null, perms = null }: P
                     className={btn + " cursor-pointer"}
                     title={t("transactions.drafts.excelHint")}
                   >
-                    📄 {t("transactions.drafts.excelBtn")}
+                    <FileSpreadsheet size={14} className="inline align-text-bottom" /> {t("transactions.drafts.excelBtn")}
                     <input
                       type="file"
                       accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
