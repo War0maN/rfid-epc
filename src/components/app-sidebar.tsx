@@ -1,78 +1,42 @@
 import type * as React from "react";
-import { useTranslation } from "react-i18next";
 import {
   ArrowLeftRightIcon,
-  Building2Icon,
   ChartBarIcon,
-  CirclePlusIcon,
   ClipboardListIcon,
-  InboxIcon,
-  ListIcon,
   PackageIcon,
   RadioIcon,
-  ScrollTextIcon,
-  SearchIcon,
   Settings2Icon,
   ShieldIcon,
   TagsIcon,
-  UsersIcon,
   WarehouseIcon,
 } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { NavMain } from "@/components/nav-main";
 import { NavUser } from "@/components/nav-user";
-import type { NavItem, Tab, TabDef } from "../App";
+import type { NavItem, Tab } from "../App";
 
-// Таб бүрийн дүрс — шинэ таб нэмэхэд энд дүрс нь нэмэгдэнэ (байхгүй бол дүрсгүй гарна).
-const TAB_ICON: Partial<Record<Tab, React.ComponentType<{ className?: string }>>> = {
-  table: ListIcon,
-  create: CirclePlusIcon,
-  receiving: InboxIcon,
-  labels: TagsIcon,
-  lookup: SearchIcon,
+// Дан таб + бүлгийн дүрсүүд (sidebar-07: дэд табууд дүрсгүй, зөвхөн текст).
+// Шинэ таб/бүлэг нэмэхэд энд дүрс нь нэмэгдэнэ (байхгүй бол дүрсгүй гарна).
+const NAV_ICON: Partial<Record<string, React.ComponentType<{ className?: string }>>> = {
+  epc: TagsIcon,
   products: PackageIcon,
   inventory: WarehouseIcon,
   stocktake: ClipboardListIcon,
   transactions: ArrowLeftRightIcon,
   reports: ChartBarIcon,
-  branches: Building2Icon,
-  org: Settings2Icon,
-  audit: ScrollTextIcon,
-  members: UsersIcon,
+  admin: Settings2Icon,
   platform: ShieldIcon,
 };
-
-// Хажуугийн цэсний хэсэг: бүлэг = шошготой, дараалсан дан табууд = шошгогүй нэг хэсэг.
-type Section = { key: string; label?: string; items: { def: TabDef; group?: string }[] };
-
-function toSections(nav: NavItem[]): Section[] {
-  const sections: Section[] = [];
-  for (const n of nav) {
-    if ("children" in n) {
-      sections.push({
-        key: n.group,
-        label: n.label,
-        items: n.children.map((def) => ({ def, group: n.group })),
-      });
-    } else {
-      const last = sections[sections.length - 1];
-      if (last && !last.label) last.items.push({ def: n });
-      else sections.push({ key: `tabs-${n.id}`, items: [{ def: n }] });
-    }
-  }
-  return sections;
-}
 
 export function AppSidebar({
   nav,
@@ -88,7 +52,6 @@ export function AppSidebar({
   email: string;
   onSignOut: () => void;
 } & React.ComponentProps<typeof Sidebar>) {
-  const { t } = useTranslation();
   const { isMobile, setOpenMobile } = useSidebar();
 
   // Мобайл дээр сонгосны дараа хажуугийн цэс (Sheet) хаагдана.
@@ -98,46 +61,28 @@ export function AppSidebar({
   };
 
   return (
-    <Sidebar collapsible="offcanvas" {...props}>
+    <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton className="data-[slot=sidebar-menu-button]:p-1.5!">
-              <RadioIcon className="size-5!" />
-              <span className="text-base font-semibold">Chipmo Inventory</span>
+            <SidebarMenuButton size="lg" className="cursor-default">
+              <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+                <RadioIcon className="size-4" />
+              </div>
+              <span className="truncate text-base font-semibold">
+                Chipmo Inventory
+              </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        {toSections(nav).map((s) => (
-          <SidebarGroup key={s.key}>
-            {s.label && <SidebarGroupLabel>{t(s.label)}</SidebarGroupLabel>}
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {s.items.map(({ def, group }) => {
-                  const Icon = TAB_ICON[def.id];
-                  return (
-                    <SidebarMenuItem key={def.id}>
-                      <SidebarMenuButton
-                        isActive={activeTab === def.id}
-                        onClick={() => select(def.id, group)}
-                        tooltip={t(def.label)}
-                      >
-                        {Icon && <Icon />}
-                        <span>{t(def.label)}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
+        <NavMain nav={nav} icons={NAV_ICON} activeTab={activeTab} onSelect={select} />
       </SidebarContent>
       <SidebarFooter>
         <NavUser email={email} onSignOut={onSignOut} />
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   );
 }
