@@ -64,6 +64,9 @@ export default {
   notePlaceholder: "例如：报废、丢失…",
   change: "更改",
   // 新版 (tnks) 数据表的补充键
+  filterTitle: "筛选",
+  filterAll: "全部",
+  bulkScopeHint: "未选择行时，打印/更改状态/删除将作用于符合筛选的全部行（{{n}}）——请注意按钮上的数量。",
   lookupTitle: "在EPC查询中查看",
   noteLabel: "备注",
   statusChanged: "已更改 {{n}} 个EPC的状态。",

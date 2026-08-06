@@ -348,21 +348,32 @@ const EPC_SORTABLE = new Set([
  * Нэг хуудас EPC — ЕРӨНХИЙ хайлт (олон баганад ilike) + үүссэн огнооны
  * интервалаар. tnks data-table-ийн fetchDataFn-д (page нь 1-ээс эхэлнэ).
  */
-export async function fetchEpcPageGlobal(params: {
-  page: number;
-  pageSize: number;
+export interface EpcGlobalParams {
   search: string;
   fromDate?: string;
   toDate?: string;
+  /** Баганын шүүлтүүд — applyEpcFilters-ийн түлхүүрүүдээр (хуучин EpcTable-тэй ижил). */
+  filters?: Record<string, string>;
+}
+
+function applyEpcGlobal(q: EpcQuery, p: EpcGlobalParams): EpcQuery {
+  let out = q;
+  // PostgREST-ийн .or() синтаксыг эвдэх тэмдэгтүүдийг цэвэрлэнэ.
+  const s = p.search.trim().replace(/[,()]/g, " ").trim();
+  if (s) out = out.or(EPC_SEARCH_COLS.map((c) => `${c}.ilike.%${s}%`).join(","));
+  if (p.fromDate) out = out.gte("created_at", p.fromDate);
+  if (p.toDate) out = out.lte("created_at", p.toDate + "T23:59:59.999");
+  if (p.filters) out = applyEpcFilters(out, p.filters);
+  return out;
+}
+
+export async function fetchEpcPageGlobal(params: EpcGlobalParams & {
+  page: number;
+  pageSize: number;
   sortBy?: string;
   sortOrder?: string;
 }): Promise<EpcPage> {
-  let q = epcBase(true);
-  // PostgREST-ийн .or() синтаксыг эвдэх тэмдэгтүүдийг цэвэрлэнэ.
-  const s = params.search.trim().replace(/[,()]/g, " ").trim();
-  if (s) q = q.or(EPC_SEARCH_COLS.map((c) => `${c}.ilike.%${s}%`).join(","));
-  if (params.fromDate) q = q.gte("created_at", params.fromDate);
-  if (params.toDate) q = q.lte("created_at", params.toDate + "T23:59:59.999");
+  const q = applyEpcGlobal(epcBase(true), params);
   const sortDb = params.sortBy && EPC_SORTABLE.has(params.sortBy) ? params.sortBy : null;
   let oq = sortDb
     ? q.order(sortDb, { ascending: params.sortOrder === "asc" })
@@ -382,6 +393,29 @@ export async function fetchEpcByIds(ids: string[]): Promise<EpcRow[]> {
       .from("epc_full").select("*").in("id", ids.slice(i, i + 300));
     if (error) throw error;
     out.push(...((data ?? []) as EpcRow[]));
+  }
+  return out;
+}
+
+/** Ерөнхий хайлт + шүүлтэд тохирох БҮХ мөр (бөөн үйлдэлд, cap-тай). */
+export async function fetchEpcAllMatchingGlobal(
+  params: EpcGlobalParams & { sortBy?: string; sortOrder?: string },
+  cap = 100000
+): Promise<EpcRow[]> {
+  const PAGE = 1000;
+  const out: EpcRow[] = [];
+  for (let from = 0; from < cap; from += PAGE) {
+    let q = applyEpcGlobal(epcBase(false), params);
+    const sortDb = params.sortBy && EPC_SORTABLE.has(params.sortBy) ? params.sortBy : null;
+    q = sortDb
+      ? q.order(sortDb, { ascending: params.sortOrder === "asc" })
+      : q.order("created_at", { ascending: false }).order("serial", { ascending: true });
+    q = q.order("id", { ascending: true });
+    const { data, error } = await q.range(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as EpcRow[];
+    out.push(...rows);
+    if (rows.length < PAGE) break;
   }
   return out;
 }

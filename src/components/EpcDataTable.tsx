@@ -3,19 +3,21 @@
 // баганын харагдац/өргөн, URL state, хуудас дамнасан сонголт + бөөн үйлдэл
 // (Хэвлэх / Төлөв өөрчлөх / Устгах), CSV·Excel экспорт.
 // Баганын төрөлжсөн шүүлтүүд (хуучин EpcTable) дараагийн шатанд нэмэгдэнэ.
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Printer, Tags, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ListFilter, Printer, Tags, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/data-table/data-table";
 import { DataTableColumnHeader } from "@/components/data-table/column-header";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
   fetchEpcPageGlobal,
+  fetchEpcAllMatchingGlobal,
   fetchEpcByIds,
   type EpcRow,
 } from "../lib/queries";
+import { listBranches, type Branch } from "../lib/branches";
 import { markPrintedBulk, changeStatusBulk, deleteUnprintedBulk } from "../lib/epcBulk";
 import { EPC_STATUSES, STATUS_LABEL, badgeOf, labelOf, type EpcStatus } from "../lib/epcStatus";
 import { formatMoney } from "../lib/format";
@@ -77,7 +79,8 @@ function buildColumns(
       ),
       enableSorting: false,
       enableHiding: false,
-      size: 36,
+      size: 48,
+      minSize: 48,
     },
     {
       accessorKey: "epc_hex",
@@ -220,6 +223,34 @@ export default function EpcDataTable({ refreshKey = 0, isAdmin, perms = null, on
   const [reloadKey, setReloadKey] = useState(0);
   const bump = () => setReloadKey((k) => k + 1);
 
+  // ── Баганын шүүлтүүд (хуучин EpcTable-ийн applyEpcFilters түлхүүрүүдээр) ──
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [debouncedFilters, setDebouncedFilters] = useState<Record<string, string>>({});
+  const [showFilters, setShowFilters] = useState(false);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  /** Одоогийн хайлт+шүүлтэд тохирох НИЙТ мөр (сонголтгүй бөөн үйлдлийн хамрах хүрээ). */
+  const [total, setTotal] = useState(0);
+  /** Сүүлийн fetch-ийн параметрүүд — "бүгд" үйлдэлд ижил хайлт/огноог хэрэглэнэ. */
+  const lastParams = useRef<{ search: string; fromDate?: string; toDate?: string; sortBy?: string; sortOrder?: string }>({ search: "" });
+
+  useEffect(() => {
+    const h = setTimeout(() => setDebouncedFilters(filters), 300);
+    return () => clearTimeout(h);
+  }, [filters]);
+
+  useEffect(() => {
+    listBranches().then(setBranches).catch(() => setBranches([]));
+  }, []);
+
+  const setF = (k: string, v: string) =>
+    setFilters((f) => {
+      const n = { ...f };
+      if (v) n[k] = v;
+      else delete n[k];
+      return n;
+    });
+  const activeFilterCount = Object.keys(debouncedFilters).length;
+
   // Бөөн үйлдлийн диалогууд
   const [printRows, setPrintRows] = useState<EpcRow[] | null>(null);
   const [statusRows, setStatusRows] = useState<EpcRow[] | null>(null);
@@ -231,15 +262,24 @@ export default function EpcDataTable({ refreshKey = 0, isAdmin, perms = null, on
     async (p: FetchParams) => {
       void reloadKey;
       void refreshKey;
+      lastParams.current = {
+        search: p.search,
+        fromDate: p.from_date || undefined,
+        toDate: p.to_date || undefined,
+        sortBy: p.sort_by,
+        sortOrder: p.sort_order,
+      };
       const { rows, total } = await fetchEpcPageGlobal({
         page: p.page,
         pageSize: p.limit,
         search: p.search,
         fromDate: p.from_date || undefined,
         toDate: p.to_date || undefined,
+        filters: debouncedFilters,
         sortBy: p.sort_by,
         sortOrder: p.sort_order,
       });
+      setTotal(total);
       return {
         success: true,
         data: rows as Row[],
@@ -251,7 +291,7 @@ export default function EpcDataTable({ refreshKey = 0, isAdmin, perms = null, on
         },
       };
     },
-    [reloadKey, refreshKey]
+    [reloadKey, refreshKey, debouncedFilters]
   );
 
   const getColumns = useCallback(
@@ -298,10 +338,17 @@ export default function EpcDataTable({ refreshKey = 0, isAdmin, perms = null, on
     };
   }, [t]);
 
-  /** Сонголтыг бүтэн мөрүүд болгоно (хуудас дамнасан сонголтод id-аар татна). */
-  async function resolveSelected(selectedRows: Row[], allSelectedIds: string[]): Promise<EpcRow[]> {
-    if (allSelectedIds.length <= selectedRows.length) return selectedRows;
-    return fetchEpcByIds(allSelectedIds);
+  /**
+   * Үйлдлийн хамрах хүрээ: сонголт байвал сонгосон мөрүүд (хуудас дамнасан
+   * бол id-аар татна), үгүй бол одоогийн хайлт+шүүлтэд тохирох БҮХ мөр —
+   * хуучин EpcTable-ийн resolveRows-тэй ижил семантик (тоо нь товчин дээр ил).
+   */
+  async function resolveScope(selectedRows: Row[], allSelectedIds: string[]): Promise<EpcRow[]> {
+    if (allSelectedIds.length > 0) {
+      if (allSelectedIds.length <= selectedRows.length) return selectedRows;
+      return fetchEpcByIds(allSelectedIds);
+    }
+    return fetchEpcAllMatchingGlobal({ ...lastParams.current, filters: debouncedFilters });
   }
 
   async function runStatusChange() {
@@ -351,6 +398,110 @@ export default function EpcDataTable({ refreshKey = 0, isAdmin, perms = null, on
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {info && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{info}</p>}
 
+      {/* Баганын шүүлтүүд — server-side (хуучин EpcTable-тэй ижил төрөлжилт) */}
+      <div className="rounded-lg border border-slate-200">
+        <button
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700"
+          onClick={() => setShowFilters((v) => !v)}
+        >
+          {showFilters ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <ListFilter size={14} />
+          {t("epcTable.filterTitle")}
+          {activeFilterCount > 0 && (
+            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+              {activeFilterCount}
+            </span>
+          )}
+          <span className="flex-1" />
+          {activeFilterCount > 0 && (
+            <span
+              role="button"
+              className="text-xs text-slate-400 hover:text-slate-700 hover:underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFilters({});
+              }}
+            >
+              {t("dataTable.reset")}
+            </span>
+          )}
+        </button>
+        {showFilters && (
+          <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-3 md:grid-cols-4 lg:grid-cols-6">
+            {([
+              ["epc", t("epcTable.colEpcHex"), "text"],
+              ["serial", t("epcTable.colSerial"), "text"],
+              ["name", t("common.product"), "text"],
+              ["sku", t("common.sku"), "text"],
+              ["gtin", t("epcTable.colGtin"), "text"],
+              ["price", t("common.price"), "text"],
+              ["cost", t("common.cost"), "text"],
+              ["cat1", t("epcTable.colCat1"), "text"],
+              ["cat2", t("epcTable.colCat2"), "text"],
+              ["cat3", t("epcTable.colCat3"), "text"],
+              ["box", t("epcTable.colBox"), "text"],
+              ["job", t("epcTable.colJob"), "text"],
+              ["date", t("epcTable.colDate"), "date"],
+              ["supplier", t("epcTable.colSupplier"), "text"],
+            ] as const).map(([key, label, kind]) =>
+              key === "date" ? (
+                <label key={key} className="text-xs text-slate-500">
+                  {label}
+                  <input
+                    type="date"
+                    value={filters[key] ?? ""}
+                    onChange={(e) => setF(key, e.target.value)}
+                    className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
+                  />
+                </label>
+              ) : (
+                <label key={key} className="text-xs text-slate-500">
+                  {label}
+                  <input
+                    value={filters[key] ?? ""}
+                    onChange={(e) => setF(key, e.target.value)}
+                    placeholder={kind === "text" ? "…" : undefined}
+                    className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
+                  />
+                </label>
+              )
+            )}
+            <label className="text-xs text-slate-500">
+              {t("common.status")}
+              <select
+                value={filters["status"] ?? ""}
+                onChange={(e) => setF("status", e.target.value)}
+                className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
+              >
+                <option value="">{t("epcTable.filterAll")}</option>
+                {EPC_STATUSES.map((st) => (
+                  <option key={st} value={st}>{STATUS_LABEL[st]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs text-slate-500">
+              {t("common.branch")}
+              <select
+                value={filters["branch"] ?? ""}
+                onChange={(e) => setF("branch", e.target.value)}
+                className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
+              >
+                <option value="">{t("epcTable.filterAll")}</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.name}>{b.name}</option>
+                ))}
+                <option value="__none__">{t("transactions.noBranch")}</option>
+              </select>
+            </label>
+          </div>
+        )}
+        {showFilters && (
+          <p className="border-t border-slate-100 px-3 py-1.5 text-xs text-slate-400">
+            {t("epcTable.bulkScopeHint", { n: total.toLocaleString() })}
+          </p>
+        )}
+      </div>
+
       <DataTable<Row, unknown>
         getColumns={getColumns}
         fetchDataFn={fetchDataFn}
@@ -360,52 +511,40 @@ export default function EpcDataTable({ refreshKey = 0, isAdmin, perms = null, on
         pageSizeOptions={[25, 50, 100, 250]}
         renderToolbarContent={({ selectedRows, allSelectedIds, totalSelectedCount, resetSelection }) => (
           <div className="flex flex-wrap items-center gap-2">
-            {can("act_print") && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={totalSelectedCount === 0 || busy}
-                onClick={() => {
-                  void resolveSelected(selectedRows, allSelectedIds)
-                    .then(setPrintRows)
-                    .catch((e) => setError(errorMessage(e)));
-                  resetSelection();
-                }}
-              >
-                <Printer size={14} /> {t("epcTable.printN", { n: totalSelectedCount.toLocaleString() })}
-              </Button>
-            )}
-            {isAdmin && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={totalSelectedCount === 0 || busy}
-                  onClick={() => {
-                    void resolveSelected(selectedRows, allSelectedIds)
-                      .then(setStatusRows)
-                      .catch((e) => setError(errorMessage(e)));
+            {(() => {
+              // Сонголтгүй үед = шүүлтэд тохирох БҮГД (тоо нь товчин дээр ил).
+              const scopeN = totalSelectedCount > 0 ? totalSelectedCount : total;
+              const open = (setter: (rows: EpcRow[]) => void) => {
+                void resolveScope(selectedRows, allSelectedIds)
+                  .then((rows) => {
+                    setter(rows);
                     resetSelection();
-                  }}
-                >
-                  <Tags size={14} /> {t("epcTable.changeStatusN", { n: totalSelectedCount.toLocaleString() })}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-red-600"
-                  disabled={totalSelectedCount === 0 || busy}
-                  onClick={() => {
-                    void resolveSelected(selectedRows, allSelectedIds)
-                      .then(setDeleteRows)
-                      .catch((e) => setError(errorMessage(e)));
-                    resetSelection();
-                  }}
-                >
-                  <Trash2 size={14} /> {t("epcTable.deleteN", { n: totalSelectedCount.toLocaleString() })}
-                </Button>
-              </>
-            )}
+                  })
+                  .catch((e) => setError(errorMessage(e)));
+              };
+              return (
+                <>
+                  {can("act_print") && (
+                    <Button variant="outline" size="sm" disabled={scopeN === 0 || busy}
+                      onClick={() => open(setPrintRows)}>
+                      <Printer size={14} /> {t("epcTable.printN", { n: scopeN.toLocaleString() })}
+                    </Button>
+                  )}
+                  {isAdmin && (
+                    <>
+                      <Button variant="outline" size="sm" disabled={scopeN === 0 || busy}
+                        onClick={() => open(setStatusRows)}>
+                        <Tags size={14} /> {t("epcTable.changeStatusN", { n: scopeN.toLocaleString() })}
+                      </Button>
+                      <Button variant="outline" size="sm" className="text-red-600" disabled={scopeN === 0 || busy}
+                        onClick={() => open(setDeleteRows)}>
+                        <Trash2 size={14} /> {t("epcTable.deleteN", { n: scopeN.toLocaleString() })}
+                      </Button>
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
         config={{

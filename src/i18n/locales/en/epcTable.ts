@@ -69,6 +69,9 @@ export default {
   notePlaceholder: "E.g. written off, lost…",
   change: "Change",
   // Keys for the new (tnks) data-table variant
+  filterTitle: "Filters",
+  filterAll: "All",
+  bulkScopeHint: "With nothing selected, Print / Change status / Delete apply to ALL rows matching the filters ({{n}}) — note the count on the button.",
   lookupTitle: "Open in EPC lookup",
   noteLabel: "Note",
   statusChanged: "Status changed for {{n}} EPCs.",
