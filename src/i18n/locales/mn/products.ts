@@ -1,5 +1,6 @@
 // Бүтээгдэхүүн (master) — ProductList / ProductForm / lib/products / lib/createProduct.
 export default {
+  searchPh: "Хайх (нэр / SKU / баркод / ангилал)…",
   // ProductList — багана
   colCat1: "Үндсэн ангилал",
   colCat2: "Дэд ангилал",

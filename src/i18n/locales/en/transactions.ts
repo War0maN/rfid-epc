@@ -1,5 +1,6 @@
 // Transactions — Transactions.tsx + lib/transactions.ts (type/status labels).
 export default {
+  searchPh: "Search (number / branch / who / note)…",
   type: {
     sale: "Sold",
     transfer: "Transfer",

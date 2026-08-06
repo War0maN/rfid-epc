@@ -6,9 +6,7 @@ import { normalizeEpc } from "../lib/epc";
 import {
   TX_TYPES,
   TX_TYPE_LABEL,
-  TX_TYPE_BADGE,
   TX_STATUS_LABEL,
-  TX_STATUS_BADGE,
   listTransactions,
   fetchActiveEpcsByBranch,
   createTransaction,
@@ -25,6 +23,7 @@ import { errorMessage } from "../lib/errorMessage";
 import ConfirmDialog from "./ConfirmDialog";
 import TransferNoteDialog from "./TransferNoteDialog";
 import TransferJobs from "./TransferJobs";
+import TxHistoryTable from "./TxHistoryTable";
 import { makeCan, type Perm } from "../lib/permissions";
 
 interface Props {
@@ -618,59 +617,21 @@ export default function Transactions({ refreshKey = 0, allowedBranches = null, p
 
       {view === "jobs" && <TransferJobs allowedBranches={allowedBranches} perms={perms} />}
 
-      {view === "history" && (
-        <div className="overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr>
-                <th className={th}>№</th>
-                <th className={th}>{t("common.date")}</th>
-                <th className={th}>{t("transactions.typeLabel")}</th>
-                <th className={th}>{t("common.status")}</th>
-                <th className={th}>{t("common.branch")}</th>
-                <th className={th + " text-right"}>{t("common.qty")}</th>
-                <th className={th}>{t("transactions.colWho")}</th>
-                <th className={th}>{t("common.note")}</th>
-                {pendingCount > 0 && <th className={th + " text-right"}>{t("transactions.colReceipt")}</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400">{t("transactions.noTransactions")}</td></tr>
-              ) : (
-                rows.map((tx) => (
-                  <tr key={tx.id} className="cursor-pointer hover:bg-slate-50" onClick={() => openDetail(tx)}>
-                    <td className={td + " whitespace-nowrap font-mono text-xs"}>{tx.tx_number || "—"}</td>
-                    <td className={td + " whitespace-nowrap"}>{new Date(tx.created_at).toLocaleString()}</td>
-                    <td className={td}>
-                      <span className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + TX_TYPE_BADGE[tx.type]}>{TX_TYPE_LABEL[tx.type]}</span>
-                    </td>
-                    <td className={td}>
-                      <span className={"whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium " + TX_STATUS_BADGE[tx.status]}>{TX_STATUS_LABEL[tx.status]}</span>
-                    </td>
-                    <td className={td}>{txBranchText(tx)}</td>
-                    <td className={td + " text-right tabular-nums"}>{tx.item_count}</td>
-                    <td className={td + " text-xs"}>{tx.created_by_email || <span className="text-slate-300">—</span>}</td>
-                    <td className={td + " max-w-[220px] truncate"}>{tx.note || <span className="text-slate-300">—</span>}</td>
-                    {pendingCount > 0 && (
-                      <td className={td + " text-right"} onClick={(e) => e.stopPropagation()}>
-                        {tx.type === "transfer" && tx.status === "pending" && can("act_receive") && (
-                          <div className="flex justify-end gap-2">
-                            <button onClick={() => handleReceive(tx)} disabled={busy} className="text-xs font-medium text-emerald-600 hover:underline disabled:opacity-50">{t("transactions.receive")}</button>
-                            <button onClick={() => handleCancel(tx)} disabled={busy} className="text-xs text-red-600 hover:underline disabled:opacity-50">{t("common.cancel")}</button>
-                          </div>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {view === "history" &&
+        (loading ? (
+          <p className="rounded-xl border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400 shadow-sm">
+            {t("common.loading")}
+          </p>
+        ) : (
+          <TxHistoryTable
+            rows={rows}
+            busy={busy}
+            canReceive={can("act_receive")}
+            onOpen={openDetail}
+            onReceive={handleReceive}
+            onCancel={handleCancel}
+          />
+        ))}
 
       {/* Дэлгэрэнгүй модал */}
       {detail && (

@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+// Бүтээгдэхүүн (master) таб — tnks-data-table суурьтай хүснэгт: client-side
+// өгөгдөл (lib/clientTable) + ерөнхий хайлт, эвхэгддэг баганын шүүлт, эрэмбэ,
+// баганын харагдац/өргөн (localStorage), CSV·Excel экспорт. Мөр бүрийн
+// үйлдэл: EPC үүсгэх / Засах / Устгах (эрхээр нуугдана, DB давхар хамгаална).
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronsUpDown, ChevronUp, Settings2, X } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { ChevronDown, ChevronRight, ListFilter, X } from "lucide-react";
+import { DataTable } from "@/components/data-table/data-table";
+import { DataTableColumnHeader } from "@/components/data-table/column-header";
 import { supabase } from "../lib/supabaseClient";
 import { listProducts, deleteProduct, type ProductRow } from "../lib/products";
 import { generateEpcsForProduct } from "../lib/createProduct";
 import { listAttributeDefs, dedupAttrs, type AttributeDef } from "../lib/catalog";
 import { listBranches, type Branch } from "../lib/branches";
+import { clientFetchResult, type ClientPageParams, type ClientTableOpts } from "../lib/clientTable";
 import { errorMessage } from "../lib/errorMessage";
 import ConfirmDialog from "./ConfirmDialog";
 import { formatMoney } from "../lib/format";
@@ -21,39 +29,19 @@ interface Props {
   perms?: string[] | null;
 }
 
-interface ColDef {
+/** tnks-ийн ExportableData (index signature) шаардлагад нийцүүлсэн мөр. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = ProductRow & Record<string, any>;
+
+interface ColMeta {
   key: string;
-  label: string;
-  get: (p: ProductRow) => string; // түүхий утга (эрэмбэ/шүүлт/CSV-д)
+  label: string; // орчуулагдсан нэр
+  get: (p: ProductRow) => string; // түүхий текст (хайлт/шүүлт/экспортод)
+  num?: (p: ProductRow) => number | null; // тоон эрэмбэ/экспортод
   mono?: boolean;
-  num?: boolean;
   money?: boolean; // харуулахдаа мянгатын таслалтай
 }
 
-// label = орчуулгын ТҮЛХҮҮР — render үед (columns useMemo дотор) t()-ээр тайлагдана.
-const STATIC_COLUMNS: ColDef[] = [
-  { key: "name", label: "common.product", get: (p) => p.name ?? "" },
-  { key: "cat1", label: "products.colCat1", get: (p) => p.category_l1 ?? "" },
-  { key: "cat2", label: "products.colCat2", get: (p) => p.category_l2 ?? "" },
-  { key: "cat3", label: "products.colCat3", get: (p) => p.category_l3 ?? "" },
-  { key: "sku", label: "common.sku", get: (p) => p.sku ?? "", mono: true },
-  { key: "gtin", label: "products.colGtin", get: (p) => p.gtin ?? "", mono: true },
-  { key: "price", label: "common.price", get: (p) => (p.price != null ? String(p.price) : ""), num: true, money: true },
-  { key: "cost", label: "common.cost", get: (p) => (p.cost != null ? String(p.cost) : ""), num: true, money: true },
-  { key: "stock", label: "products.colStock", get: (p) => String(p.active_count), num: true },
-];
-
-const PAGE_SIZE = 100;
-const HIDDEN_KEY = "productHiddenCols";
-function loadHidden(): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]") as string[]);
-  } catch {
-    return new Set();
-  }
-}
-
-/** Бүтээгдэхүүн (master) таб — бүрэн боломжит хүснэгт (шүүлт/sort/хуудас/багана). */
 export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches = null, perms = null }: Props) {
   const { t } = useTranslation();
   const can = makeCan(perms);
@@ -62,14 +50,11 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  // Баталгаажуулах модал (window.confirm найдваргүй — ConfirmDialog ашиглана)
   const [confirmDlg, setConfirmDlg] = useState<{ message: string; action: () => void } | null>(null);
 
+  // Эвхэгддэг баганын шүүлтийн самбар (client-side "агуулсан").
   const [filters, setFilters] = useState<Record<string, string>>({});
-  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
-  const [page, setPage] = useState(0);
-  const [hidden, setHidden] = useState<Set<string>>(loadHidden);
-  const [showColPicker, setShowColPicker] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [form, setForm] = useState<ProductRow | "new" | null>(null);
@@ -81,15 +66,13 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
   const [genBusy, setGenBusy] = useState(false);
 
   function reload() {
-    setLoading(true);
     Promise.all([listProducts(), listAttributeDefs()])
       .then(([p, d]) => {
         setRows(p);
         setAttrDefs(d);
         setError(null);
       })
-      .catch((e) => setError(errorMessage(e)))
-      .finally(() => setLoading(false));
+      .catch((e) => setError(errorMessage(e)));
   }
 
   useEffect(() => {
@@ -111,63 +94,41 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
     };
   }, [allowedBranches]);
 
-  const columns = useMemo<ColDef[]>(() => {
-    const attrCols: ColDef[] = dedupAttrs(attrDefs).map((d) => ({
+  // Статик + динамик шинж чанарын багануудын нэг эх сурвалж (хүснэгт,
+  // шүүлтийн самбар, экспорт гурвуулаа үүнээс).
+  const columnsMeta = useMemo<ColMeta[]>(() => {
+    const stat: ColMeta[] = [
+      { key: "name", label: t("common.product"), get: (p) => p.name ?? "" },
+      { key: "cat1", label: t("products.colCat1"), get: (p) => p.category_l1 ?? "" },
+      { key: "cat2", label: t("products.colCat2"), get: (p) => p.category_l2 ?? "" },
+      { key: "cat3", label: t("products.colCat3"), get: (p) => p.category_l3 ?? "" },
+      { key: "sku", label: t("common.sku"), get: (p) => p.sku ?? "", mono: true },
+      { key: "gtin", label: t("products.colGtin"), get: (p) => p.gtin ?? "", mono: true },
+      { key: "price", label: t("common.price"), get: (p) => (p.price != null ? String(p.price) : ""), num: (p) => p.price, money: true },
+      { key: "cost", label: t("common.cost"), get: (p) => (p.cost != null ? String(p.cost) : ""), num: (p) => p.cost, money: true },
+      { key: "stock", label: t("products.colStock"), get: (p) => String(p.active_count), num: (p) => p.active_count },
+    ];
+    const attrs: ColMeta[] = dedupAttrs(attrDefs).map((d) => ({
       key: `attr:${d.label}`,
-      label: d.label,
+      label: d.label, // динамик шинж чанарын нэр — орчуулахгүй
       get: (p: ProductRow) => p.attributes?.[d.label] ?? "",
     }));
-    // Статик баганын label = орчуулгын түлхүүр; шинж чанарын label = түүхий нэр.
-    return [...STATIC_COLUMNS.map((c) => ({ ...c, label: t(c.label) })), ...attrCols];
+    return [...stat, ...attrs];
   }, [attrDefs, t]);
-  const visibleColumns = useMemo(() => columns.filter((c) => !hidden.has(c.key)), [columns, hidden]);
 
-  function toggleColumn(key: string) {
-    setHidden((h) => {
-      const n = new Set(h);
-      if (n.has(key)) n.delete(key);
-      else n.add(key);
-      try {
-        localStorage.setItem(HIDDEN_KEY, JSON.stringify([...n]));
-      } catch {
-        /* үл хамаарна */
-      }
-      return n;
-    });
-  }
-
-  const activeFilters = useMemo(
-    () => columns.map((c) => ({ c, q: (filters[c.key] ?? "").trim().toLowerCase() })).filter((f) => f.q),
-    [columns, filters]
+  const tableOpts = useMemo<ClientTableOpts<ProductRow>>(
+    () => ({
+      searchValues: (p) => columnsMeta.map((c) => c.get(p)),
+      sorters: Object.fromEntries(columnsMeta.map((c) => [c.key, c.num ?? c.get])),
+      filterValues: Object.fromEntries(columnsMeta.map((c) => [c.key, c.get])),
+    }),
+    [columnsMeta]
   );
-  const filtered = useMemo(() => {
-    if (activeFilters.length === 0) return rows;
-    return rows.filter((p) => activeFilters.every((f) => f.c.get(p).toLowerCase().includes(f.q)));
-  }, [rows, activeFilters]);
-  const sorted = useMemo(() => {
-    if (!sort) return filtered;
-    const col = columns.find((c) => c.key === sort.key);
-    if (!col) return filtered;
-    const dir = sort.dir === "asc" ? 1 : -1;
-    return [...filtered].sort((a, b) =>
-      col.num
-        ? (Number(col.get(a) || 0) - Number(col.get(b) || 0)) * dir
-        : col.get(a).localeCompare(col.get(b), undefined, { numeric: true }) * dir
-    );
-  }, [filtered, sort, columns]);
 
-  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const safePage = Math.min(page, pageCount - 1);
-  const visible = sorted.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
-
-  function setFilter(key: string, value: string) {
-    setFilters((f) => ({ ...f, [key]: value }));
-    setPage(0);
-  }
-  function toggleSort(key: string) {
-    setSort((s) => (s && s.key === key ? (s.dir === "asc" ? { key, dir: "desc" } : null) : { key, dir: "asc" }));
-    setPage(0);
-  }
+  const fetchDataFn = useCallback(
+    async (p: ClientPageParams) => clientFetchResult(rows as Row[], p, tableOpts as ClientTableOpts<Row>, filters),
+    [rows, tableOpts, filters]
+  );
 
   function handleDelete(p: ProductRow) {
     // EPC бол түүхэн дата — бүртгэлтэй бол устгахыг урьдчилан хориглоно.
@@ -183,6 +144,88 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
           .catch((e) => setError(errorMessage(e))),
     });
   }
+
+  const getColumns = useCallback(
+    (): ColumnDef<Row, unknown>[] => {
+      const cols: ColumnDef<Row, unknown>[] = columnsMeta.map((c) => ({
+        id: c.key,
+        accessorFn: (row: Row) => c.get(row),
+        header: ({ column }) => <DataTableColumnHeader column={column} title={c.label} />,
+        cell: ({ row }) => {
+          const v = c.get(row.original);
+          if (!v) return <span className="text-slate-300">—</span>;
+          const text = c.money ? formatMoney(Number(v)) : v;
+          return <span className={(c.mono ? "font-mono text-xs " : "") + (c.num ? "block text-right tabular-nums" : "")}>{text}</span>;
+        },
+        size: c.key === "name" ? 200 : 120,
+      }));
+      cols.push({
+        id: "actions",
+        header: () => <span className="text-xs font-semibold uppercase tracking-wide">{t("common.actions")}</span>,
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => {
+          const p = row.original;
+          return (
+            <div className="flex justify-end gap-2">
+              {can("act_import") && (
+                <button
+                  onClick={() => {
+                    setGenFor(p);
+                    setGenQty("1");
+                  }}
+                  className="text-xs font-medium text-indigo-600 hover:underline"
+                >
+                  {t("products.generateEpc")}
+                </button>
+              )}
+              {isAdmin && (
+                <>
+                  <button onClick={() => setForm(p)} className="text-xs text-slate-500 hover:underline">
+                    {t("common.edit")}
+                  </button>
+                  <button onClick={() => handleDelete(p)} className="text-xs text-red-600 hover:underline">
+                    {t("common.delete")}
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        },
+        size: 180,
+      });
+      return cols;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [columnsMeta, t, isAdmin, perms]
+  );
+
+  const exportConfig = useMemo(() => {
+    const mapping = Object.fromEntries(columnsMeta.map((c) => [c.key, c.label]));
+    const headers = Object.keys(mapping);
+    return {
+      entityName: "products",
+      columnMapping: mapping,
+      columnWidths: headers.map(() => ({ wch: 16 })),
+      headers,
+      // CSV/Excel-д тоон утга ТҮҮХИЙ (num), бусад нь текстээрээ; attributes
+      // объект экспортод орохгүй — attr:* хавтгай баганууд нь орсон.
+      transformFunction: (row: Row) => {
+        const out: Record<string, string | number> = {};
+        for (const c of columnsMeta) out[c.key] = c.num ? c.num(row) ?? "" : c.get(row);
+        return out;
+      },
+    };
+  }, [columnsMeta]);
+
+  const setF = (k: string, v: string) =>
+    setFilters((f) => {
+      const n = { ...f };
+      if (v) n[k] = v;
+      else delete n[k];
+      return n;
+    });
+  const activeFilterCount = Object.keys(filters).length;
 
   async function handleGenerate() {
     if (!genFor) return;
@@ -215,33 +258,10 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm text-slate-500">{t("products.subtitle")}</p>
         <div className="flex-1" />
-        <span className="text-sm text-slate-600">
-          {activeFilters.length > 0 ? t("products.filtered") : t("common.total")} <strong>{sorted.length.toLocaleString()}</strong>
-        </span>
-        {/* Багана сонгогч */}
-        <div className="relative">
-          <button onClick={() => setShowColPicker((s) => !s)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-            <Settings2 size={14} className="inline align-text-bottom" /> {t("products.columnsBtn")}
-          </button>
-          {showColPicker && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowColPicker(false)} />
-              <div className="absolute right-0 z-20 mt-1 max-h-80 w-60 overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                <div className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{t("products.visibleColumns")}</div>
-                {columns.map((c) => (
-                  <label key={c.key} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm text-slate-700 hover:bg-slate-50">
-                    <input type="checkbox" checked={!hidden.has(c.key)} onChange={() => toggleColumn(c.key)} />
-                    {c.label}
-                  </label>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
         {can("act_product_edit") && (
           <button onClick={() => setForm("new")} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
             {t("products.addProduct")}
@@ -252,73 +272,79 @@ export default function ProductList({ isAdmin, onEpcsGenerated, allowedBranches 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {info && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{info}</p>}
 
-      <div className="max-h-[70vh] overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="min-w-full border-separate border-spacing-0 text-sm">
-          <thead>
-            <tr>
-              {visibleColumns.map((c) => (
-                <th key={c.key} className="sticky top-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-left align-top last:border-r-0">
-                  <button onClick={() => toggleSort(c.key)} className="mb-1 flex min-h-[32px] items-start gap-1 text-left text-xs font-semibold uppercase leading-4 tracking-wide text-slate-500 hover:text-indigo-600">
-                    {c.label}
-                    <span className="text-[10px] text-slate-400">{sort?.key === c.key ? (sort.dir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />) : <ChevronsUpDown size={12} />}</span>
-                  </button>
-                  <input
-                    value={filters[c.key] ?? ""}
-                    onChange={(e) => setFilter(c.key, e.target.value)}
-                    placeholder={t("products.filterPlaceholder")}
-                    className="w-full min-w-[90px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
-                  />
-                </th>
-              ))}
-              <th className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {t("common.actions")}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={visibleColumns.length + 1} className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</td></tr>
-            ) : visible.length === 0 ? (
-              <tr><td colSpan={visibleColumns.length + 1} className="px-4 py-10 text-center text-slate-400">{rows.length === 0 ? t("products.emptyNoProducts") : t("products.emptyNoMatch")}</td></tr>
-            ) : (
-              visible.map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50">
-                  {visibleColumns.map((c) => {
-                    const v = c.get(p);
-                    return (
-                      <td key={c.key} className={"whitespace-nowrap border-b border-r border-slate-100 px-3 py-2 text-xs text-slate-700 last:border-r-0" + (c.mono ? " font-mono" : "") + (c.num ? " text-right tabular-nums" : "")}>
-                        {v ? (c.money ? formatMoney(Number(v)) : v) : <span className="text-slate-300">—</span>}
-                      </td>
-                    );
-                  })}
-                  <td className="whitespace-nowrap border-b border-slate-100 bg-white px-3 py-2 text-right">
-                    <div className="flex justify-end gap-2">
-                      {can("act_import") && (
-                        <button onClick={() => { setGenFor(p); setGenQty("1"); }} className="text-xs font-medium text-indigo-600 hover:underline">{t("products.generateEpc")}</button>
-                      )}
-                      {isAdmin && (
-                        <>
-                          <button onClick={() => setForm(p)} className="text-xs text-slate-500 hover:underline">{t("common.edit")}</button>
-                          <button onClick={() => handleDelete(p)} className="text-xs text-red-600 hover:underline">{t("common.delete")}</button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+      {/* Баганын шүүлтүүд — client-side "агуулсан" (шинж чанарын баганууд ч мөн) */}
+      <div className="rounded-lg border border-slate-200">
+        <button
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700"
+          onClick={() => setShowFilters((v) => !v)}
+        >
+          {showFilters ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <ListFilter size={14} />
+          {t("dataTable.filterTitle")}
+          {activeFilterCount > 0 && (
+            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+              {activeFilterCount}
+            </span>
+          )}
+          <span className="flex-1" />
+          {activeFilterCount > 0 && (
+            <span
+              role="button"
+              className="text-xs text-slate-400 hover:text-slate-700 hover:underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFilters({});
+              }}
+            >
+              {t("dataTable.reset")}
+            </span>
+          )}
+        </button>
+        {showFilters && (
+          <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-3 md:grid-cols-4 lg:grid-cols-6">
+            {columnsMeta.map((c) => (
+              <label key={c.key} className="text-xs text-slate-500">
+                {c.label}
+                <input
+                  value={filters[c.key] ?? ""}
+                  onChange={(e) => setF(c.key, e.target.value)}
+                  placeholder="…"
+                  className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-900"
+                />
+              </label>
+            ))}
+          </div>
+        )}
       </div>
 
-      {pageCount > 1 && (
-        <div className="flex items-center justify-center gap-2 text-sm">
-          <button onClick={() => setPage(0)} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">«</button>
-          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">{t("common.prev")}</button>
-          <span className="px-2 text-slate-600">{t("products.page")} <strong>{safePage + 1}</strong> / {pageCount}</span>
-          <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">{t("common.next")}</button>
-          <button onClick={() => setPage(pageCount - 1)} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">»</button>
-        </div>
+      {loading ? (
+        <p className="rounded-xl border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400 shadow-sm">
+          {t("common.loading")}
+        </p>
+      ) : (
+        <DataTable<Row, unknown>
+          getColumns={getColumns}
+          fetchDataFn={fetchDataFn}
+          exportConfig={exportConfig}
+          idField="id"
+          pageSizeOptions={[25, 50, 100, 250]}
+          config={{
+            enableRowSelection: false,
+            enableSearch: true,
+            enableDateFilter: false,
+            enableColumnFilters: false,
+            enableColumnVisibility: true,
+            enableColumnResizing: true,
+            enableExport: true,
+            enableUrlState: false,
+            enableKeyboardNavigation: true,
+            size: "sm",
+            columnResizingTableId: "products-data-table",
+            searchPlaceholder: t("products.searchPh"),
+            defaultSortBy: "name",
+            defaultSortOrder: "asc",
+          }}
+        />
       )}
 
       {/* Үүсгэх/засах форм */}

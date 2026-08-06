@@ -1,5 +1,6 @@
 // Products (master) — ProductList / ProductForm / lib/products / lib/createProduct.
 export default {
+  searchPh: "Search (name / SKU / barcode / category)…",
   // ProductList — багана
   colCat1: "Main category",
   colCat2: "Subcategory",

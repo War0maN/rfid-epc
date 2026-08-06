@@ -1,5 +1,6 @@
 // 产品（主档） — ProductList / ProductForm / lib/products / lib/createProduct.
 export default {
+  searchPh: "搜索（名称 / SKU / 条码 / 分类）…",
   // ProductList — багана
   colCat1: "主分类",
   colCat2: "子分类",

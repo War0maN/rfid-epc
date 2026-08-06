@@ -1,5 +1,6 @@
 // 交易 — Transactions.tsx + lib/transactions.ts（类型/状态名称）。
 export default {
+  searchPh: "搜索（编号 / 分店 / 经手人 / 备注）…",
   type: {
     sale: "已售",
     transfer: "调拨",

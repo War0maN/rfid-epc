@@ -1,5 +1,6 @@
 // Гүйлгээ — Transactions.tsx + lib/transactions.ts (төрөл/төлөвийн нэрс).
 export default {
+  searchPh: "Хайх (дугаар / салбар / хэн / тэмдэглэл)…",
   // Гүйлгээний төрөл (TX_TYPE_LABEL)
   type: {
     sale: "Борлуулалт",

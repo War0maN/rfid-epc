@@ -213,7 +213,27 @@ export function DataTable<TData extends ExportableData, TValue>({
   const [dateRange, setDateRange] = useConditionalUrlState<{ from_date: string; to_date: string }>("dateRange", { from_date: "", to_date: "" });
   const [sortBy, setSortBy] = useConditionalUrlState("sortBy", tableConfig.defaultSortBy || "id");
   const [sortOrder, setSortOrder] = useConditionalUrlState<"asc" | "desc">("sortOrder", tableConfig.defaultSortOrder || "desc");
-  const [columnVisibility, setColumnVisibility] = useConditionalUrlState<Record<string, boolean>>("columnVisibility", {});
+  // Баганын харагдац: URL state ИДЭВХГҮЙ хүснэгтэд localStorage-д хадгална
+  // (tableId түлхүүрээр) — хуудас дахин ачаалахад сонголт хадгалагдана.
+  const defaultColumnVisibility = useMemo<Record<string, boolean>>(() => {
+    if (tableConfig.enableUrlState) return {};
+    try {
+      const saved = localStorage.getItem(`${tableId}:columnVisibility`);
+      const parsed = saved ? (JSON.parse(saved) as Record<string, boolean>) : null;
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }, []);
+  const [columnVisibility, setColumnVisibility] = useConditionalUrlState<Record<string, boolean>>("columnVisibility", defaultColumnVisibility);
+  useEffect(() => {
+    if (tableConfig.enableUrlState) return;
+    try {
+      localStorage.setItem(`${tableId}:columnVisibility`, JSON.stringify(columnVisibility));
+    } catch {
+      /* үл хамаарна */
+    }
+  }, [columnVisibility, tableConfig.enableUrlState, tableId]);
   const [columnFilters, setColumnFilters] = useConditionalUrlState<Array<{ id: string; value: unknown }>>("columnFilters", []);
 
   // Internal states
