@@ -3,6 +3,7 @@ import app from "./app";
 import auth from "./auth";
 import epcStatus from "./epcStatus";
 import epcTable from "./epcTable";
+import dataTable from "./dataTable";
 import epcLookup from "./epcLookup";
 import epcHistory from "./epcHistory";
 import audit from "./audit";
@@ -30,6 +31,7 @@ export default {
   auth,
   epcStatus,
   epcTable,
+  dataTable,
   epcLookup,
   epcHistory,
   audit,

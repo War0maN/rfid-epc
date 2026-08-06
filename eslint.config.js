@@ -48,4 +48,19 @@ export default defineConfig([
       ],
     },
   },
+  {
+    // Vendored код (tnks-data-table registry + shadcn calendar) — гадны эх
+    // сурвалжийн хэв маягийг манай хатуу дүрмээр дарж засахгүй (шинэчлэхэд
+    // диффыг бага байлгана). Өөрийн кодод эдгээр дүрэм хэвээр хатуу.
+    files: ['src/components/data-table/**/*.{ts,tsx}', 'src/components/calendar-date-picker.tsx'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/refs': 'off',
+      'react-hooks/exhaustive-deps': 'off',
+      'react-hooks/preserve-manual-memoization': 'off',
+      'no-useless-assignment': 'off',
+      '@typescript-eslint/no-unused-vars': 'warn',
+    },
+  },
 ])

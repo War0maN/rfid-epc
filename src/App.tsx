@@ -12,7 +12,7 @@ import Onboarding from "./components/Onboarding";
 import CreateJobForm from "./components/CreateJobForm";
 import Receiving from "./components/Receiving";
 import Stocktake from "./components/Stocktake";
-import EpcTable from "./components/EpcTable";
+import EpcDataTable from "./components/EpcDataTable";
 import EpcLookup from "./components/EpcLookup";
 import AuditLog from "./components/AuditLog";
 import Members from "./components/Members";
@@ -233,12 +233,10 @@ function App() {
     <TooltipProvider>
     <SidebarProvider
       style={{
-        "--sidebar-width": "calc(var(--spacing) * 72)",
         "--header-height": "calc(var(--spacing) * 12)",
       } as CSSProperties}
     >
       <AppSidebar
-        variant="inset"
         nav={visibleNav}
         activeTab={activeTab}
         onSelectTab={selectTab}
@@ -345,7 +343,7 @@ function App() {
           </Suspense>
         )}
         {activeTab === "table" && (
-          <EpcTable
+          <EpcDataTable
             refreshKey={refreshKey}
             isAdmin={profile.role === "admin"}
             perms={myPerms}

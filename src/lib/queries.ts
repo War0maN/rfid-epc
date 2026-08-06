@@ -329,3 +329,59 @@ export async function fetchEpcAllMatching(
   }
   return out;
 }
+
+// ══════════════ tnks data-table адаптер (EpcDataTable) ══════════════
+
+/** Ерөнхий хайлтад орох epc_full-ийн текст баганууд. */
+const EPC_SEARCH_COLS = [
+  "epc_hex", "name", "sku", "gtin", "branch_name", "job_number",
+  "supplier", "box_no", "attributes_text", "category_l1", "category_l2", "category_l3",
+];
+/** Server-side эрэмбэлж болох баганууд (epc_full-ийн жинхэнэ нэрс). */
+const EPC_SORTABLE = new Set([
+  "epc_hex", "serial", "status", "name", "branch_name", "sku", "price", "cost",
+  "gtin", "box_no", "job_number", "arrival_date", "supplier", "created_at",
+  "category_l1", "category_l2", "category_l3",
+]);
+
+/**
+ * Нэг хуудас EPC — ЕРӨНХИЙ хайлт (олон баганад ilike) + үүссэн огнооны
+ * интервалаар. tnks data-table-ийн fetchDataFn-д (page нь 1-ээс эхэлнэ).
+ */
+export async function fetchEpcPageGlobal(params: {
+  page: number;
+  pageSize: number;
+  search: string;
+  fromDate?: string;
+  toDate?: string;
+  sortBy?: string;
+  sortOrder?: string;
+}): Promise<EpcPage> {
+  let q = epcBase(true);
+  // PostgREST-ийн .or() синтаксыг эвдэх тэмдэгтүүдийг цэвэрлэнэ.
+  const s = params.search.trim().replace(/[,()]/g, " ").trim();
+  if (s) q = q.or(EPC_SEARCH_COLS.map((c) => `${c}.ilike.%${s}%`).join(","));
+  if (params.fromDate) q = q.gte("created_at", params.fromDate);
+  if (params.toDate) q = q.lte("created_at", params.toDate + "T23:59:59.999");
+  const sortDb = params.sortBy && EPC_SORTABLE.has(params.sortBy) ? params.sortBy : null;
+  let oq = sortDb
+    ? q.order(sortDb, { ascending: params.sortOrder === "asc" })
+    : q.order("created_at", { ascending: false }).order("serial", { ascending: true });
+  oq = oq.order("id", { ascending: true }); // тогтвортой tiebreak
+  const from = (params.page - 1) * params.pageSize;
+  const { data, error, count } = await oq.range(from, from + params.pageSize - 1);
+  if (error) throw error;
+  return { rows: (data ?? []) as EpcRow[], total: count ?? 0 };
+}
+
+/** Сонгосон id-уудын бүтэн мөрүүд (хуудас дамнасан сонголтын үйлдлүүдэд). */
+export async function fetchEpcByIds(ids: string[]): Promise<EpcRow[]> {
+  const out: EpcRow[] = [];
+  for (let i = 0; i < ids.length; i += 300) {
+    const { data, error } = await supabase
+      .from("epc_full").select("*").in("id", ids.slice(i, i + 300));
+    if (error) throw error;
+    out.push(...((data ?? []) as EpcRow[]));
+  }
+  return out;
+}

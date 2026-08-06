@@ -1,0 +1,19 @@
+// Shared chrome of the tnks data-table (pagination/columns/export).
+export default {
+  reset: "Reset",
+  resetSizes: "Reset column sizes",
+  tableSettings: "Table settings",
+  pickDate: "Select a date",
+  searchPh: "Search (EPC / name / SKU / barcode)…",
+  selectedOf: "{{selected}} of {{total}} row(s) selected.",
+  rowsPerPage: "Rows per page",
+  pageOf: "Page {{page}} of {{total}}",
+  view: "Columns",
+  searchColumns: "Search columns…",
+  noColumns: "No columns found.",
+  resetOrder: "Reset column order",
+  export: "Export",
+  exporting: "Exporting…",
+  exportSuccess: "Export successful",
+  exportFailed: "Export failed",
+};

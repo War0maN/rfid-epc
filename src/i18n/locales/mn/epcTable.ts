@@ -67,4 +67,11 @@ export default {
   statusBodyFiltered: "Шүүлтэд тохирох <b>{{n}}</b> EPC-ийн төлөвийг <s>{{status}}</s> болгоно.",
   notePlaceholder: "Жишээ: актласан, алга болсон…",
   change: "Өөрчлөх",
+  // Шинэ data-table (tnks) хувилбарын нэмэлт түлхүүрүүд
+  lookupTitle: "EPC хайлтад харах",
+  noteLabel: "Тэмдэглэл",
+  statusChanged: "{{n}} EPC-ийн төлөв өөрчлөгдлөө.",
+  deletedInfo: "{{n}} EPC устгагдлаа.",
+  deleteSkipped: "{{n}} алгассан (Хэвлээгүй биш эсвэл түүхтэй)",
+  deleteConfirmN: "Сонгосон {{n}} EPC-ээс зөвхөн Хэвлээгүй, гүйлгээний түүхгүйг нь устгана. Үргэлжлүүлэх үү?",
 };

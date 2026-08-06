@@ -68,4 +68,11 @@ export default {
     "Set the status of all <b>{{n}}</b> EPCs matching the filters to <s>{{status}}</s>.",
   notePlaceholder: "E.g. written off, lost…",
   change: "Change",
+  // Keys for the new (tnks) data-table variant
+  lookupTitle: "Open in EPC lookup",
+  noteLabel: "Note",
+  statusChanged: "Status changed for {{n}} EPCs.",
+  deletedInfo: "{{n}} EPCs deleted.",
+  deleteSkipped: "{{n}} skipped (not Unprinted or has history)",
+  deleteConfirmN: "Of the selected {{n}} EPCs, only Unprinted ones without transaction history will be deleted. Continue?",
 };

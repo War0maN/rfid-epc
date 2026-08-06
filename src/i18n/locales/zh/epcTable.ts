@@ -63,4 +63,11 @@ export default {
   statusBodyFiltered: "将符合筛选条件的 <b>{{n}}</b> 个 EPC 的状态更改为 <s>{{status}}</s>。",
   notePlaceholder: "例如：报废、丢失…",
   change: "更改",
+  // 新版 (tnks) 数据表的补充键
+  lookupTitle: "在EPC查询中查看",
+  noteLabel: "备注",
+  statusChanged: "已更改 {{n}} 个EPC的状态。",
+  deletedInfo: "已删除 {{n}} 个EPC。",
+  deleteSkipped: "跳过 {{n}} 个（非未打印或有历史）",
+  deleteConfirmN: "所选 {{n}} 个EPC中，仅删除无交易历史的未打印项。继续吗？",
 };
