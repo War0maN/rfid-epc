@@ -1,5 +1,6 @@
 // Stock matrix — Inventory.tsx
 export default {
+  searchPh: "Search (name / SKU / barcode / category)…",
   title: "Stock",
   subtitle: "Count of active (printed, unsold) EPCs — by item × branch. Click a number to view the EPCs.",
   productsUnit: "items",

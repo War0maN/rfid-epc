@@ -180,6 +180,11 @@ interface DataTableProps<TData extends ExportableData, TValue> {
   // харагдац үндсэн толгойтой автоматаар зэрэгцэнэ).
   filterRow?: (columnId: string) => React.ReactNode;
 
+  // Баганын харагдац өөрчлөгдөх бүрд (эхний ачаалалт ч орно) дуудагдана —
+  // харагдацаас хамаарсан тооцоо (жишээ нь Үлдэгдлийн "Нийт" зөвхөн
+  // харагдаж буй салбаруудаар) эцэг компонентод хийгдэх боломж.
+  onColumnVisibilityChange?: (visibility: Record<string, boolean>) => void;
+
   // Subrows configuration
   subRowsConfig?: SubRowsConfig<TData>;
 }
@@ -196,6 +201,7 @@ export function DataTable<TData extends ExportableData, TValue>({
   renderToolbarContent,
   onRowClick,
   filterRow,
+  onColumnVisibilityChange,
   subRowsConfig
 }: DataTableProps<TData, TValue>) {
   // Load table configuration with any overrides
@@ -241,6 +247,9 @@ export function DataTable<TData extends ExportableData, TValue>({
       /* үл хамаарна */
     }
   }, [columnVisibility, tableConfig.enableUrlState, tableId]);
+  useEffect(() => {
+    onColumnVisibilityChange?.(columnVisibility);
+  }, [columnVisibility, onColumnVisibilityChange]);
   const [columnFilters, setColumnFilters] = useConditionalUrlState<Array<{ id: string; value: unknown }>>("columnFilters", []);
 
   // Internal states

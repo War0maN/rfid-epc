@@ -37,13 +37,16 @@ function contains(v: string | number | null | undefined, q: string): boolean {
   return v != null && String(v).toLowerCase().includes(q);
 }
 
-/** Хайлт+шүүлт+интервал+эрэмбэ+хуудас — нэг дор. Эх массивыг өөрчлөхгүй. */
-export function clientPage<T>(
+/**
+ * Зөвхөн ХАЙЛТ+ШҮҮЛТ+интервал (эрэмбэ/хуудасгүй) — тохирох мөрүүд.
+ * Нийлбэр/тоолол гаргахад (жишээ нь Үлдэгдлийн толгойн нийт) хэрэгтэй.
+ */
+export function clientFilter<T>(
   rows: T[],
-  p: ClientPageParams,
+  p: Pick<ClientPageParams, "search" | "from_date" | "to_date">,
   opts: ClientTableOpts<T>,
   filters?: Record<string, string>
-): { rows: T[]; total: number; totalPages: number; page: number } {
+): T[] {
   let list = rows;
 
   const q = p.search.trim().toLowerCase();
@@ -68,6 +71,18 @@ export function clientPage<T>(
       return true;
     });
   }
+
+  return list;
+}
+
+/** Хайлт+шүүлт+интервал+эрэмбэ+хуудас — нэг дор. Эх массивыг өөрчлөхгүй. */
+export function clientPage<T>(
+  rows: T[],
+  p: ClientPageParams,
+  opts: ClientTableOpts<T>,
+  filters?: Record<string, string>
+): { rows: T[]; total: number; totalPages: number; page: number } {
+  let list = clientFilter(rows, p, opts, filters);
 
   const sorter = opts.sorters[p.sort_by];
   if (sorter) {

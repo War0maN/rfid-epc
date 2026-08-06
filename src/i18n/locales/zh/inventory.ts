@@ -1,5 +1,6 @@
 // 库存矩阵 — Inventory.tsx
 export default {
+  searchPh: "搜索（名称 / SKU / 条码 / 分类）…",
   title: "库存",
   subtitle: "有效（已打印、未售出）EPC数量——按商品×分店。点击数字查看EPC。",
   productsUnit: "件商品",

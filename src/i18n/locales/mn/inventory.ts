@@ -1,5 +1,6 @@
 // Үлдэгдэл (stock matrix) — Inventory.tsx
 export default {
+  searchPh: "Хайх (нэр / SKU / баркод / ангилал)…",
   title: "Үлдэгдэл",
   subtitle: "Идэвхтэй (хэвлэгдсэн, борлуулаагүй) EPC-ийн тоо — бараа × салбараар. Тоон дээр дарж EPC-г үзнэ.",
   productsUnit: "бараа",

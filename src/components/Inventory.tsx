@@ -1,6 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+// Үлдэгдэл (Phase 4) — Идэвхтэй EPC-ийн тоо, бараа × салбар матрицаар.
+// tnks-data-table суурьтай: толгойн мөрний шүүлт (мэдээллийн баганад),
+// ерөнхий хайлт, эрэмбэ, баганын харагдац/өргөн, CSV·Excel экспорт.
+// Салбарын нүд дарахад тухайн бараа × салбарын идэвхтэй EPC-ийн модал.
+// ⚠️ "Нийт"/"Нийт үнэ" нь зөвхөн ХАРАГДАЖ буй салбаруудаар тооцогдоно
+// (баганаа нуувал нийлбэрээс хасагдана) — хуучин зан төлөв хэвээр.
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronsUpDown, ChevronUp, RefreshCw, Settings2, X } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { ListFilter, RefreshCw, X } from "lucide-react";
+import { DataTable } from "@/components/data-table/data-table";
+import { DataTableColumnHeader } from "@/components/data-table/column-header";
 import { supabase } from "../lib/supabaseClient";
 import { listProducts, type ProductRow } from "../lib/products";
 import { listBranches, type Branch } from "../lib/branches";
@@ -12,6 +21,12 @@ import {
   NO_BRANCH_KEY,
   type ActiveEpc,
 } from "../lib/inventory";
+import {
+  clientFilter,
+  clientFetchResult,
+  type ClientPageParams,
+  type ClientTableOpts,
+} from "../lib/clientTable";
 import { toCsv, downloadCsv } from "../lib/exportCsv";
 import { formatMoney } from "../lib/format";
 import { logAuditEvent } from "../lib/audit";
@@ -23,28 +38,21 @@ interface Props {
   allowedBranches?: string[] | null;
 }
 
+/** tnks-ийн ExportableData (index signature) шаардлагад нийцүүлсэн мөр. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = ProductRow & Record<string, any>;
+
 // Матрицын багана: info (барааны мэдээлэл), branch (салбар), total (Нийт/Нийт үнэ).
 interface Col {
   key: string;
   label: string;
   kind: "info" | "branch" | "total";
-  get: (p: ProductRow) => string;
+  get: (p: ProductRow) => string; // түүхий текст (хайлт/шүүлт/экспортод)
   num?: boolean;
   mono?: boolean;
   branchKey?: string; // branch төрлийн баганад
 }
 
-const PAGE_SIZE = 100;
-const HIDDEN_KEY = "inventoryHiddenCols";
-function loadHidden(): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]") as string[]);
-  } catch {
-    return new Set();
-  }
-}
-
-/** Үлдэгдэл (Phase 4) — Идэвхтэй EPC-ийн тоо, бараа × салбар матрицаар. Зөвхөн унших. */
 export default function Inventory({ refreshKey = 0, allowedBranches = null }: Props) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<ProductRow[]>([]);
@@ -54,33 +62,18 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Толгойн мөрний шүүлт (зөвхөн мэдээллийн баганад) + "бүгдийг харуулах".
   const [filters, setFilters] = useState<Record<string, string>>({});
-  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>({
-    key: "total",
-    dir: "desc",
-  });
-  const [page, setPage] = useState(0);
-  const [hidden, setHidden] = useState<Set<string>>(loadHidden);
-  const [showColPicker, setShowColPicker] = useState(false);
   const [showAll, setShowAll] = useState(false); // false = зөвхөн үлдэгдэлтэй
+  /** Баганын харагдац (DataTable-аас) — нуусан салбар нийлбэрт ороогүй. */
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
+  /** Шүүлтэд тохирсон мөрүүдийн нэгтгэл (дээд мөрөнд харуулна). */
+  const [summary, setSummary] = useState({ count: 0, qty: 0, value: 0 });
+  const [reloadKey, setReloadKey] = useState(0);
 
   // EPC жагсаалтын модал (тухайн бараа × салбар).
   const [modal, setModal] = useState<{ product: ProductRow; branchKey: string; label: string } | null>(null);
   const [modalEpcs, setModalEpcs] = useState<ActiveEpc[] | null>(null);
-
-  function reload() {
-    setLoading(true);
-    Promise.all([listProducts(), listBranches(), listAttributeDefs(), fetchStockByBranch()])
-      .then(([p, b, d, cells]) => {
-        setRows(p);
-        setBranches(b);
-        setAttrDefs(d);
-        setPivot(pivotStock(cells));
-        setError(null);
-      })
-      .catch((e) => setError(errorMessage(e)))
-      .finally(() => setLoading(false));
-  }
 
   useEffect(() => {
     let active = true;
@@ -91,16 +84,16 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
         setBranches(b);
         setAttrDefs(d);
         setPivot(pivotStock(cells));
+        setError(null);
       })
       .catch((e) => active && setError(errorMessage(e)))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [refreshKey]);
+  }, [refreshKey, reloadKey]);
 
   // Модал нээгдэхэд тухайн бараа × салбарын идэвхтэй EPC татна.
-  // (modalEpcs-ийг нээх товч цэвэрлэдэг тул энд синхрон setState хийхгүй.)
   useEffect(() => {
     if (!modal) return;
     let active = true;
@@ -124,9 +117,8 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
     [pivot]
   );
 
-  // Салбарын баганууд (жагсаалт дараалалаар + Салбаргүй).
-  // Хуваарилагдсан салбарууд байвал зөвхөн тэдгээрийг багана болгоно
-  // (RLS аль хэдийн бусдыг 0 болгодог ч хоосон багана илүүдэхгүй).
+  // Салбарын баганууд (жагсаалт дараалалаар + Салбаргүй). Хуваарилагдсан
+  // салбарууд байвал зөвхөн тэдгээрийг (RLS бусдыг 0 болгодог ч илүүдэхгүй).
   const branchDefs = useMemo(() => {
     const mine = allowedBranches ? branches.filter((b) => allowedBranches.includes(b.id)) : branches;
     const list = mine.map((b) => ({ key: b.id, label: b.name }));
@@ -136,16 +128,18 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
 
   // Зөвхөн ХАРАГДАЖ буй салбарын түлхүүрүүд (Нийт/үнэ эдгээрээр л тооцно).
   const visibleBranchKeys = useMemo(
-    () => branchDefs.filter((b) => !hidden.has(`br:${b.key}`)).map((b) => b.key),
-    [branchDefs, hidden]
+    () => branchDefs.filter((b) => columnVisibility[`br:${b.key}`] !== false).map((b) => b.key),
+    [branchDefs, columnVisibility]
   );
 
   // Харагдаж буй салбаруудын нийлбэр тоо / үнийн дүн.
-  const qtyOf = (p: ProductRow) =>
-    visibleBranchKeys.reduce((s, k) => s + (pivot.get(p.id)?.get(k) ?? 0), 0);
-  const valueOf = (p: ProductRow) => qtyOf(p) * (p.price ?? 0);
+  const qtyOf = useCallback(
+    (p: ProductRow) => visibleBranchKeys.reduce((s, k) => s + (pivot.get(p.id)?.get(k) ?? 0), 0),
+    [visibleBranchKeys, pivot]
+  );
+  const valueOf = useCallback((p: ProductRow) => qtyOf(p) * (p.price ?? 0), [qtyOf]);
 
-  const columns = useMemo<Col[]>(() => {
+  const columnsMeta = useMemo<Col[]>(() => {
     const info: Col[] = [
       { key: "name", label: t("common.product"), kind: "info", get: (p) => p.name ?? "" },
       { key: "cat1", label: t("inventory.mainCategory"), kind: "info", get: (p) => p.category_l1 ?? "" },
@@ -179,88 +173,121 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
       get: (p) => String(valueOf(p)),
     };
     return [...info, ...branchCols, total, totalValue];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchDefs, attrDefs, pivot, visibleBranchKeys, t]);
+  }, [branchDefs, attrDefs, pivot, qtyOf, valueOf, t]);
 
-  const visibleColumns = useMemo(() => columns.filter((c) => !hidden.has(c.key)), [columns, hidden]);
+  const infoCols = useMemo(() => columnsMeta.filter((c) => c.kind === "info"), [columnsMeta]);
 
-  function toggleColumn(key: string) {
-    setHidden((h) => {
-      const n = new Set(h);
-      if (n.has(key)) n.delete(key);
-      else n.add(key);
-      try {
-        localStorage.setItem(HIDDEN_KEY, JSON.stringify([...n]));
-      } catch {
-        /* үл хамаарна */
-      }
+  const tableOpts = useMemo<ClientTableOpts<ProductRow>>(
+    () => ({
+      // Ерөнхий хайлт зөвхөн мэдээллийн баганаар (тоон нүднүүд утгагүй).
+      searchValues: (p) => infoCols.map((c) => c.get(p)),
+      sorters: Object.fromEntries(
+        columnsMeta.map((c) => [c.key, c.num ? (p: ProductRow) => Number(c.get(p) || 0) : c.get])
+      ),
+      filterValues: Object.fromEntries(infoCols.map((c) => [c.key, c.get])),
+    }),
+    [columnsMeta, infoCols]
+  );
+
+  // Үлдэгдэлгүйг нуух сонголт (showAll = false бол зөвхөн тоотой мөрүүд).
+  const baseRows = useMemo(
+    () => (showAll ? rows : rows.filter((p) => qtyOf(p) > 0)),
+    [rows, showAll, qtyOf]
+  );
+
+  const fetchDataFn = useCallback(
+    async (p: ClientPageParams) => {
+      // Дээд мөрийн нэгтгэлийг ижил шүүлтээр (хуудсаар биш БҮГДЭЭР) тооцно.
+      const matched = clientFilter(baseRows, p, tableOpts, filters);
+      setSummary({
+        count: matched.length,
+        qty: matched.reduce((s, x) => s + qtyOf(x), 0),
+        value: matched.reduce((s, x) => s + valueOf(x), 0),
+      });
+      return clientFetchResult(baseRows as Row[], p, tableOpts as ClientTableOpts<Row>, filters);
+    },
+    [baseRows, tableOpts, filters, qtyOf, valueOf]
+  );
+
+  const getColumns = useCallback(
+    (): ColumnDef<Row, unknown>[] =>
+      columnsMeta.map((c) => ({
+        id: c.key,
+        accessorFn: (row: Row) => c.get(row),
+        header: ({ column }) => <DataTableColumnHeader column={column} title={c.label} />,
+        cell: ({ row }) => {
+          const p = row.original;
+          const v = c.get(p);
+          const n = Number(v);
+          // Тоон баганыг таслалтай харуулна (эрэмбэ/шүүлт түүхий утгаар).
+          const disp = c.num && v !== "" ? formatMoney(n) : v;
+          if (c.kind === "branch" && n > 0)
+            return (
+              <button
+                onClick={() => openModal(p, c.branchKey!, c.label)}
+                className="block w-full text-right font-medium tabular-nums text-indigo-600 hover:underline"
+                title={t("inventory.viewActiveEpcs")}
+              >
+                {disp}
+              </button>
+            );
+          if (c.num && n === 0) return <span className="block text-right text-slate-300">—</span>;
+          if (!v) return <span className="text-slate-300">—</span>;
+          return (
+            <span
+              className={
+                (c.mono ? "font-mono text-xs " : "") +
+                (c.num ? "block text-right tabular-nums " : "") +
+                (c.kind === "total" ? "font-semibold text-slate-900" : "")
+              }
+            >
+              {disp}
+            </span>
+          );
+        },
+        size: c.kind === "info" ? (c.key === "name" ? 200 : 130) : 110,
+      })),
+    [columnsMeta, t]
+  );
+
+  const exportConfig = useMemo(() => {
+    const mapping = Object.fromEntries(columnsMeta.map((c) => [c.key, c.label]));
+    const headers = Object.keys(mapping);
+    return {
+      entityName: "inventory",
+      columnMapping: mapping,
+      columnWidths: headers.map(() => ({ wch: 16 })),
+      headers,
+      // Тоон утга ТҮҮХИЙ (Excel-д танигдана), attributes объект орохгүй.
+      transformFunction: (row: Row) => {
+        const out: Record<string, string | number> = {};
+        for (const c of columnsMeta) out[c.key] = c.num ? Number(c.get(row) || 0) : c.get(row);
+        return out;
+      },
+    };
+  }, [columnsMeta]);
+
+  const setF = (k: string, v: string) =>
+    setFilters((f) => {
+      const n = { ...f };
+      if (v) n[k] = v;
+      else delete n[k];
       return n;
     });
-  }
+  const activeFilterCount = Object.keys(filters).length;
 
-  // Зөвхөн info баганаар текст шүүлт.
-  const activeFilters = useMemo(
-    () =>
-      columns
-        .filter((c) => c.kind === "info")
-        .map((c) => ({ c, q: (filters[c.key] ?? "").trim().toLowerCase() }))
-        .filter((f) => f.q),
-    [columns, filters]
-  );
-
-  const base = useMemo(
-    () => (showAll ? rows : rows.filter((p) => qtyOf(p) > 0)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rows, showAll, visibleBranchKeys, pivot]
-  );
-  const filtered = useMemo(() => {
-    if (activeFilters.length === 0) return base;
-    return base.filter((p) => activeFilters.every((f) => f.c.get(p).toLowerCase().includes(f.q)));
-  }, [base, activeFilters]);
-  const sorted = useMemo(() => {
-    if (!sort) return filtered;
-    const col = columns.find((c) => c.key === sort.key);
-    if (!col) return filtered;
-    const dir = sort.dir === "asc" ? 1 : -1;
-    return [...filtered].sort((a, b) =>
-      col.num
-        ? (Number(col.get(a) || 0) - Number(col.get(b) || 0)) * dir
-        : col.get(a).localeCompare(col.get(b), undefined, { numeric: true }) * dir
+  const filterRow = (columnId: string) => {
+    const c = columnsMeta.find((x) => x.key === columnId);
+    if (!c || c.kind !== "info") return null;
+    return (
+      <input
+        value={filters[columnId] ?? ""}
+        onChange={(e) => setF(columnId, e.target.value)}
+        placeholder="…"
+        className="w-full rounded border border-slate-200 px-1.5 py-1 text-xs font-normal text-slate-900 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+      />
     );
-  }, [filtered, sort, columns]);
-
-  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const safePage = Math.min(page, pageCount - 1);
-  const visible = sorted.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
-
-  // Харагдаж буй бүх мөрийн нийт тоо / үнийн дүн (footer/толгой).
-  const totalQty = useMemo(
-    () => sorted.reduce((s, p) => s + qtyOf(p), 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sorted, visibleBranchKeys, pivot]
-  );
-  const totalValue = useMemo(
-    () => sorted.reduce((s, p) => s + valueOf(p), 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sorted, visibleBranchKeys, pivot]
-  );
-
-  function setFilter(key: string, value: string) {
-    setFilters((f) => ({ ...f, [key]: value }));
-    setPage(0);
-  }
-  function toggleSort(key: string) {
-    setSort((s) => (s && s.key === key ? (s.dir === "asc" ? { key, dir: "desc" } : null) : { key, dir: "asc" }));
-    setPage(0);
-  }
-
-  function handleExport() {
-    const cols = visibleColumns.map((c) => ({ key: c.key, label: c.label }));
-    const flat = sorted.map((p) => Object.fromEntries(visibleColumns.map((c) => [c.key, c.get(p)])));
-    const csv = toCsv(flat, cols);
-    downloadCsv(`udldegdel-${new Date().toISOString().slice(0, 10)}.csv`, csv);
-    void logAuditEvent(supabase, "export_csv", "inventory", null, { count: sorted.length });
-  }
+  };
 
   /** Модалын EPC жагсаалтыг CSV болгож татна — толгойд бараа/SKU/баркод/салбар. */
   function handleModalExport() {
@@ -294,141 +321,70 @@ export default function Inventory({ refreshKey = 0, allowedBranches = null }: Pr
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm text-slate-500">{t("inventory.subtitle")}</p>
         <div className="flex-1" />
         <span className="text-sm text-slate-600">
-          <strong>{sorted.length.toLocaleString()}</strong> {t("inventory.productsUnit")} ·{" "}
-          {t("inventory.qtyPieces", { qty: totalQty.toLocaleString() })} ·{" "}
-          <strong>{t("inventory.amountCurrency", { amount: totalValue.toLocaleString() })}</strong>
+          <strong>{summary.count.toLocaleString()}</strong> {t("inventory.productsUnit")} ·{" "}
+          {t("inventory.qtyPieces", { qty: summary.qty.toLocaleString() })} ·{" "}
+          <strong>{t("inventory.amountCurrency", { amount: summary.value.toLocaleString() })}</strong>
         </span>
         <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
           {t("inventory.showAll")}
         </label>
-        <div className="relative">
-          <button onClick={() => setShowColPicker((s) => !s)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-            <Settings2 size={14} className="inline align-text-bottom" /> {t("inventory.columns")}
-          </button>
-          {showColPicker && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowColPicker(false)} />
-              <div className="absolute right-0 z-20 mt-1 max-h-80 w-60 overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                <div className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{t("inventory.visibleColumns")}</div>
-                {columns.map((c) => (
-                  <label key={c.key} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm text-slate-700 hover:bg-slate-50">
-                    <input type="checkbox" checked={!hidden.has(c.key)} onChange={() => toggleColumn(c.key)} />
-                    {c.label}
-                  </label>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-        <button onClick={handleExport} disabled={sorted.length === 0} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-          {t("inventory.exportCsvCount", { n: sorted.length.toLocaleString() })}
-        </button>
-        <button onClick={reload} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+        <button
+          onClick={() => setReloadKey((k) => k + 1)}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+        >
           <RefreshCw size={14} className="inline align-text-bottom" /> {t("inventory.refresh")}
         </button>
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-      <div className="max-h-[70vh] overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="min-w-full border-separate border-spacing-0 text-sm">
-          <thead>
-            <tr>
-              {visibleColumns.map((c) => (
-                <th
-                  key={c.key}
-                  className={
-                    "sticky top-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 align-top last:border-r-0 " +
-                    (c.num ? "text-right" : "text-left") +
-                    (c.kind === "total" ? " bg-slate-100" : "")
-                  }
-                >
-                  <button
-                    onClick={() => toggleSort(c.key)}
-                    className={
-                      "mb-1 flex min-h-[32px] items-start gap-1 text-left text-xs font-semibold uppercase leading-4 tracking-wide text-slate-500 hover:text-indigo-600 " +
-                      (c.num ? "ml-auto" : "")
-                    }
-                  >
-                    {c.label}
-                    <span className="text-[10px] text-slate-400">{sort?.key === c.key ? (sort.dir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />) : <ChevronsUpDown size={12} />}</span>
-                  </button>
-                  {c.kind === "info" ? (
-                    <input
-                      value={filters[c.key] ?? ""}
-                      onChange={(e) => setFilter(c.key, e.target.value)}
-                      placeholder={t("inventory.filterPlaceholder")}
-                      className="w-full min-w-[90px] rounded border border-slate-200 px-2 py-1 text-xs font-normal normal-case outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
-                    />
-                  ) : (
-                    <div className="h-[26px]" />
-                  )}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-slate-400">{t("common.loading")}</td></tr>
-            ) : visible.length === 0 ? (
-              <tr><td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-slate-400">{showAll ? t("inventory.noProducts") : t("inventory.noStock")}</td></tr>
-            ) : (
-              visible.map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50">
-                  {visibleColumns.map((c) => {
-                    const v = c.get(p);
-                    const n = Number(v);
-                    const isZero = c.num && n === 0;
-                    const clickable = c.kind === "branch" && n > 0;
-                    // Тоон баганыг таслалтай харуулна (эрэмбэ/шүүлт түүхий утгаар).
-                    const disp = c.num && v !== "" ? formatMoney(n) : v;
-                    return (
-                      <td
-                        key={c.key}
-                        className={
-                          "whitespace-nowrap border-b border-r border-slate-100 px-3 py-2 text-xs text-slate-700 last:border-r-0" +
-                          (c.mono ? " font-mono text-xs" : "") +
-                          (c.num ? " text-right tabular-nums" : "") +
-                          (c.kind === "total" ? " bg-slate-50 font-semibold text-slate-900" : "")
-                        }
-                      >
-                        {clickable ? (
-                          <button
-                            onClick={() => openModal(p, c.branchKey!, c.label)}
-                            className="font-medium text-indigo-600 hover:underline"
-                            title={t("inventory.viewActiveEpcs")}
-                          >
-                            {disp}
-                          </button>
-                        ) : isZero ? (
-                          <span className="text-slate-300">—</span>
-                        ) : (
-                          disp || <span className="text-slate-300">—</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {activeFilterCount > 0 && (
+        <p className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-xs text-slate-500">
+          <ListFilter size={13} />
+          <span>{t("dataTable.filterActive", { n: activeFilterCount })}</span>
+          <span className="flex-1" />
+          <button className="text-slate-400 hover:text-slate-700 hover:underline" onClick={() => setFilters({})}>
+            {t("dataTable.reset")}
+          </button>
+        </p>
+      )}
 
-      {pageCount > 1 && (
-        <div className="flex items-center justify-center gap-2 text-sm">
-          <button onClick={() => setPage(0)} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">«</button>
-          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">{t("common.prev")}</button>
-          <span className="px-2 text-slate-600">{t("inventory.page")} <strong>{safePage + 1}</strong> / {pageCount}</span>
-          <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">{t("common.next")}</button>
-          <button onClick={() => setPage(pageCount - 1)} disabled={safePage >= pageCount - 1} className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-40">»</button>
-        </div>
+      {loading ? (
+        <p className="rounded-xl border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400 shadow-sm">
+          {t("common.loading")}
+        </p>
+      ) : (
+        <DataTable<Row, unknown>
+          getColumns={getColumns}
+          fetchDataFn={fetchDataFn}
+          filterRow={filterRow}
+          onColumnVisibilityChange={setColumnVisibility}
+          exportConfig={exportConfig}
+          idField="id"
+          pageSizeOptions={[25, 50, 100, 250]}
+          config={{
+            enableRowSelection: false,
+            enableSearch: true,
+            enableDateFilter: false,
+            enableColumnFilters: false,
+            enableColumnVisibility: true,
+            enableColumnResizing: true,
+            enableExport: true,
+            enableUrlState: false,
+            enableKeyboardNavigation: true,
+            size: "sm",
+            columnResizingTableId: "inventory-data-table",
+            searchPlaceholder: t("inventory.searchPh"),
+            defaultSortBy: "total",
+            defaultSortOrder: "desc",
+          }}
+        />
       )}
 
       {modal && (
