@@ -16,8 +16,8 @@
 do $$
 declare
   -- ↓↓↓ ӨӨРИЙНХ ИЙГ БИЧНЭ ↓↓↓
-  v_email     text := 'you@company.com'; -- нэвтэрдэг имэйл (тенантыг олоход)
-  v_epc_count int  := 20000;             -- нийт EPC
+  v_email     text := 'bmdtamir@gmail.com'; -- нэвтэрдэг имэйл (тенантыг олоход)
+  v_epc_count int  := 50000;             -- нийт EPC
   v_products  int  := 50;                -- LT бараа
   -- ↑↑↑ ─────────────────── ↑↑↑
   v_tenant     uuid;
