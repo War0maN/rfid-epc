@@ -80,11 +80,41 @@ function scenariosFor(sb) {
     return q.range(from, from + pageSize - 1);
   };
 
+  /**
+   * Шинэ ХОЁР АЛХАМТ хайлт (lib/queries.ts-тэй ижил логик): эхлээд жижиг
+   * хүснэгтээс id → дараа нь epc_full-ийг id-аар. product_search view
+   * (schema.sql) шаардлагатай — байхгүй бол алдаа гарч харагдана.
+   */
+  const twoStepSearch = async (s) => {
+    const like = `%${s}%`;
+    const [prod, job, br] = await Promise.all([
+      sb.from("product_search").select("id")
+        .or(["name", "sku", "gtin", "category_l1", "category_l2", "category_l3", "attributes_text"]
+          .map((c) => `${c}.ilike.${like}`).join(","))
+        .limit(201),
+      sb.from("jobs").select("id").or(`job_number.ilike.${like},supplier.ilike.${like}`).limit(201),
+      sb.from("branches").select("id").ilike("name", like).limit(201),
+    ]);
+    if (prod.error) return prod;
+    const clauses = [`epc_hex.ilike.${like}`, `box_no.ilike.${like}`];
+    const ids = (r) => (r.data ?? []).map((x) => x.id);
+    if (ids(prod).length) clauses.push(`product_id.in.(${ids(prod).join(",")})`);
+    if (!job.error && ids(job).length) clauses.push(`job_id.in.(${ids(job).join(",")})`);
+    if (!br.error && ids(br).length) clauses.push(`branch_id.in.(${ids(br).join(",")})`);
+    return sb.from("epc_full").select("*", { count: "exact" })
+      .or(clauses.join(","))
+      .order("created_at", { ascending: false })
+      .order("serial", { ascending: true })
+      .order("id", { ascending: true })
+      .range(0, 24);
+  };
+
   return [
     // ── EPC жагсаалт (server-side хуудаслалт) ──
     ["EPC хуудас 1 (25 мөр + count)", () => epcPage()],
     ["EPC хуудас 100 (гүн offset)", () => epcPage({ page: 100 })],
-    ["EPC ерөнхий хайлт (.or ilike ×12)", () => epcPage({ search: "LT бараа 01" })],
+    ["EPC хайлт ХУУЧИН (.or ilike ×12)", () => epcPage({ search: "LT бараа 01" })],
+    ["EPC хайлт ШИНЭ (2 алхам)", () => twoStepSearch("LT бараа 01")],
     ["EPC төлөвийн шүүлт (status=active)", () => epcPage({ status: "active" })],
     ["EPC нэрийн ilike шүүлт", () => epcPage({ nameLike: "LT бараа 042" })],
     ["EPC эрэмбэ serial desc", () => epcPage({ sortBy: "serial", sortOrder: "desc" })],

@@ -3839,3 +3839,39 @@ select l.draft_id,
 alter table tx_drafts drop constraint if exists tx_drafts_type_check;
 alter table tx_drafts add constraint tx_drafts_type_check
   check (type in ('transfer','other','sale','return'));
+
+-- ============================================================
+-- Гүйцэтгэлийн индекс + хайлтын туслах view (2026-08-07, ачааллын тестийн дүнгээр)
+--   50k EPC дээр хэмжсэн 2 гацаа:
+--     • report_movement 3.7с — epc_events дээр distinct on (epc_id)
+--       order by created_at desc, id desc хийхэд одоо байгаа индекс
+--       (tenant_id, epc_id, created_at ASC) эрэмбэд таарахгүй тул бүхэлд нь
+--       sort хийж байсан → яг тэр эрэмбээр индекс нэмэв.
+--     • EPC-ийн ерөнхий хайлт 1.9с — 12 багана нь ӨӨР хүснэгтүүдэд тархсан тул
+--       Postgres бүх мөрийг холбож байж шүүдэг. Клиент тал (lib/queries.ts)
+--       одоо эхлээд жижиг хүснэгтээс id-г олж, дараа нь epc_codes-ыг
+--       product_id/job_id/branch_id-аар шүүдэг болов — энэ view нь тэр
+--       эхний алхмын хямд эх сурвалж (products_full-ийн epc_count/active_count
+--       дэд query-үүдгүй тул мөр бүрд тоолол хийхгүй).
+-- ============================================================
+create index if not exists epc_events_state_idx
+  on epc_events (tenant_id, epc_id, created_at desc, id desc) include (new_status);
+create index if not exists epc_events_time_idx
+  on epc_events (tenant_id, created_at);
+
+drop view if exists product_search;
+create view product_search with (security_invoker = true) as
+select
+  p.id, p.tenant_id, p.name, p.sku, p.gtin,
+  coalesce(c3.name, c2.name, c1.name) as category_l1,
+  case when c3.id is not null then c2.name when c2.id is not null then c1.name end as category_l2,
+  case when c3.id is not null then c1.name end as category_l3,
+  (
+    select string_agg(t.k || ': ' || t.v, ' · ' order by t.k)
+    from jsonb_each_text(coalesce(p.attributes, '{}'::jsonb)) as t(k, v)
+  ) as attributes_text
+from products p
+left join categories c1 on c1.id = p.category_id
+left join categories c2 on c2.id = c1.parent_id
+left join categories c3 on c3.id = c2.parent_id;
+grant select on product_search to authenticated;

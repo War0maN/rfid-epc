@@ -356,11 +356,83 @@ export interface EpcGlobalParams {
   filters?: Record<string, string>;
 }
 
-function applyEpcGlobal(q: EpcQuery, p: EpcGlobalParams): EpcQuery {
+/**
+ * Ерөнхий хайлтыг ХОЁР АЛХАМ болгох (2026-08-07 ачааллын тестийн дараа):
+ * хайлтын 12 багана нь өөр өөр хүснэгтэд (бараа/ажил/салбар) тархсан тул
+ * нэг .or-оор шүүхэд Postgres БҮХ EPC-г холбож байж шүүдэг (50k дээр ~1.9с).
+ * Оронд нь эхлээд жижиг хүснэгтүүдээс id-г олоод (products ~сотни мөр —
+ * миллисекунд), дараа нь epc_codes-ыг `product_id/job_id/branch_id in (...)`
+ * -аар шүүнэ (индекстэй). Үр дүн ЯГ ижил, зөвхөн хурдан.
+ *
+ * ⚠️ Хэт олон id таарвал (URL хэт урт болно) хуучин нэг алхамт хэлбэр рүү
+ * автоматаар унана — үр дүн зөв хэвээр, зөвхөн удаан.
+ */
+const SEARCH_ID_CAP = 200;
+
+interface SearchIds {
+  productIds: string[];
+  jobIds: string[];
+  branchIds: string[];
+  /** true = таарсан id хэт олон, хуучин (cross-table .or) хэлбэрээр шүүнэ. */
+  tooMany: boolean;
+}
+
+async function fetchSearchIds(s: string): Promise<SearchIds> {
+  const like = `%${s}%`;
+  const [prod, job, br] = await Promise.all([
+    supabase
+      .from("product_search")
+      .select("id")
+      .or(
+        ["name", "sku", "gtin", "category_l1", "category_l2", "category_l3", "attributes_text"]
+          .map((c) => `${c}.ilike.${like}`)
+          .join(",")
+      )
+      .limit(SEARCH_ID_CAP + 1),
+    supabase
+      .from("jobs")
+      .select("id")
+      .or(`job_number.ilike.${like},supplier.ilike.${like}`)
+      .limit(SEARCH_ID_CAP + 1),
+    supabase.from("branches").select("id").ilike("name", like).limit(SEARCH_ID_CAP + 1),
+  ]);
+  // Аль нэг нь алдвал (жишээ нь product_search view схемд ороогүй) хуучин
+  // зам руу шилжинэ — хайлт ажиллахаа болихгүй.
+  if (prod.error || job.error || br.error) {
+    return { productIds: [], jobIds: [], branchIds: [], tooMany: true };
+  }
+  const ids = (r: { id: string }[] | null) => (r ?? []).map((x) => x.id);
+  const productIds = ids(prod.data as { id: string }[]);
+  const jobIds = ids(job.data as { id: string }[]);
+  const branchIds = ids(br.data as { id: string }[]);
+  const tooMany =
+    productIds.length > SEARCH_ID_CAP || jobIds.length > SEARCH_ID_CAP || branchIds.length > SEARCH_ID_CAP;
+  return { productIds, jobIds, branchIds, tooMany };
+}
+
+/** Хайлтын үг байвал холбоос id-уудыг НЭГ УДАА тодорхойлно (хуудас бүрд биш). */
+async function resolveSearchIds(p: EpcGlobalParams): Promise<SearchIds | null> {
+  const s = p.search.trim().replace(/[,()]/g, " ").trim();
+  return s ? fetchSearchIds(s) : null;
+}
+
+function applyEpcGlobal(q: EpcQuery, p: EpcGlobalParams, ids: SearchIds | null): EpcQuery {
   let out = q;
   // PostgREST-ийн .or() синтаксыг эвдэх тэмдэгтүүдийг цэвэрлэнэ.
   const s = p.search.trim().replace(/[,()]/g, " ").trim();
-  if (s) out = out.or(EPC_SEARCH_COLS.map((c) => `${c}.ilike.%${s}%`).join(","));
+  if (s && ids) {
+    const { productIds, jobIds, branchIds, tooMany } = ids;
+    if (tooMany) {
+      out = out.or(EPC_SEARCH_COLS.map((c) => `${c}.ilike.%${s}%`).join(","));
+    } else {
+      // epc_codes-ийн ӨӨРИЙН баганууд + холбоос хүснэгтээс олдсон id-ууд.
+      const clauses = [`epc_hex.ilike.%${s}%`, `box_no.ilike.%${s}%`];
+      if (productIds.length) clauses.push(`product_id.in.(${productIds.join(",")})`);
+      if (jobIds.length) clauses.push(`job_id.in.(${jobIds.join(",")})`);
+      if (branchIds.length) clauses.push(`branch_id.in.(${branchIds.join(",")})`);
+      out = out.or(clauses.join(","));
+    }
+  }
   if (p.fromDate) out = out.gte("created_at", p.fromDate);
   if (p.toDate) out = out.lte("created_at", p.toDate + "T23:59:59.999");
   if (p.filters) out = applyEpcFilters(out, p.filters);
@@ -373,7 +445,7 @@ export async function fetchEpcPageGlobal(params: EpcGlobalParams & {
   sortBy?: string;
   sortOrder?: string;
 }): Promise<EpcPage> {
-  const q = applyEpcGlobal(epcBase(true), params);
+  const q = applyEpcGlobal(epcBase(true), params, await resolveSearchIds(params));
   const sortDb = params.sortBy && EPC_SORTABLE.has(params.sortBy) ? params.sortBy : null;
   let oq = sortDb
     ? q.order(sortDb, { ascending: params.sortOrder === "asc" })
@@ -404,8 +476,9 @@ export async function fetchEpcAllMatchingGlobal(
 ): Promise<EpcRow[]> {
   const PAGE = 1000;
   const out: EpcRow[] = [];
+  const ids = await resolveSearchIds(params); // нэг удаа — хуудас бүрд дахин татахгүй
   for (let from = 0; from < cap; from += PAGE) {
-    let q = applyEpcGlobal(epcBase(false), params);
+    let q = applyEpcGlobal(epcBase(false), params, ids);
     const sortDb = params.sortBy && EPC_SORTABLE.has(params.sortBy) ? params.sortBy : null;
     q = sortDb
       ? q.order(sortDb, { ascending: params.sortOrder === "asc" })
