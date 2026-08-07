@@ -110,7 +110,10 @@ function scenariosFor(sb) {
       sb.from("branches").select("id").ilike("name", like).limit(201),
     ]);
     if (prod.error) return prod;
-    const clauses = [`epc_hex.ilike.${like}`, `box_no.ilike.${like}`];
+    // hex биш үг хайхад epc_hex нөхцөлийг хасна (lib/queries.ts-тэй ижил).
+    const clauses = [];
+    if (/^[0-9a-fA-F]{2,}$/.test(s)) clauses.push(`epc_hex.ilike.${like}`);
+    clauses.push(`box_no.ilike.${like}`);
     const ids = (r) => (r.data ?? []).map((x) => x.id);
     if (ids(prod).length) clauses.push(`product_id.in.(${ids(prod).join(",")})`);
     if (!job.error && ids(job).length) clauses.push(`job_id.in.(${ids(job).join(",")})`);
@@ -178,6 +181,18 @@ async function runFor(account) {
   const { count: ltCount } = await sb
     .from("epc_full").select("id", { count: "exact", head: true }).ilike("epc_hex", "ADED%");
   console.log(`Харагдах EPC: ${allCount ?? "?"} (үүнээс LT seed: ${ltCount ?? "?"}) · давталт: ${ITER}`);
+
+  // Схемийн шинэчлэлт хийгдсэн эсэх (гүйцэтгэлийн засварууд эдгээрээс хамаарна).
+  const [{ error: pidErr }, { error: psErr }] = await Promise.all([
+    sb.from("epc_events").select("product_id").limit(1),
+    sb.from("product_search").select("id").limit(1),
+  ]);
+  if (pidErr || psErr) {
+    console.log(
+      `⚠ Схем ХУУЧИН байна (${pidErr ? "epc_events.product_id" : ""}${pidErr && psErr ? ", " : ""}${psErr ? "product_search" : ""} алга) —` +
+        " docs/schema.sql-ийг SQL Editor дээр дахин Run хийвэл тайлан/хайлт хурдасна."
+    );
+  }
   if (!ltCount) console.log("⚠ LT seed харагдахгүй байна — seed Run хийсэн үү, эсвэл энэ хэрэглэгчид эрх/салбар хаагдсан уу?");
 
   const results = [];

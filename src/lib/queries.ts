@@ -426,7 +426,12 @@ function applyEpcGlobal(q: EpcQuery, p: EpcGlobalParams, ids: SearchIds | null):
       out = out.or(EPC_SEARCH_COLS.map((c) => `${c}.ilike.%${s}%`).join(","));
     } else {
       // epc_codes-ийн ӨӨРИЙН баганууд + холбоос хүснэгтээс олдсон id-ууд.
-      const clauses = [`epc_hex.ilike.%${s}%`, `box_no.ilike.%${s}%`];
+      // ⚠️ epc_hex зөвхөн hex тэмдэгтээс тогтдог тул кирилл/латин үг хайхад
+      // тэр багана ХЭЗЭЭ Ч таарахгүй — нөхцөлөөс хасвал Postgres in-list
+      // индексээ ашиглаж чадна (үгүй бол OR-ын улмаас бүтэн scan болно).
+      const clauses: string[] = [];
+      if (/^[0-9a-fA-F]{2,}$/.test(s)) clauses.push(`epc_hex.ilike.%${s}%`);
+      clauses.push(`box_no.ilike.%${s}%`);
       if (productIds.length) clauses.push(`product_id.in.(${productIds.join(",")})`);
       if (jobIds.length) clauses.push(`job_id.in.(${jobIds.join(",")})`);
       if (branchIds.length) clauses.push(`branch_id.in.(${branchIds.join(",")})`);
