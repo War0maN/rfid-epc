@@ -1434,6 +1434,16 @@ create table if not exists epc_events (
 );
 create index if not exists epc_events_epc_idx on epc_events (tenant_id, epc_id, created_at);
 
+-- Барааг event дээр ДЕНОРМАЛЖУУЛСАН (2026-08-07, ачааллын тестийн дараа):
+-- report_movement бүрд epc_events → epc_codes join хийж product_id-г олдог
+-- байсан (50k мөрийн hash join). Одоо event бичигдэхдээ шууд хадгалагдана
+-- (trigger-ийн ЭЦСИЙН тодорхойлолт хийдэг), хуучин мөрүүд файлын төгсгөлд
+-- backfill-даг. Доорх индекс нь тайланг index-only scan болгоно.
+alter table epc_events add column if not exists product_id uuid references products(id);
+create index if not exists epc_events_move_idx
+  on epc_events (tenant_id, created_at)
+  include (product_id, old_status, new_status);
+
 alter table epc_events enable row level security;
 drop policy if exists "epc events read" on epc_events;
 create policy "epc events read" on epc_events for select using (tenant_id = current_tenant_id());
@@ -1713,21 +1723,10 @@ security invoker
 set search_path = public
 as $$
   with instock as (select unnest(array['unprinted','active','transferring']) s),
-  -- EPC бүрийн интервалын эхэн/төгсгөл дэх төлөв (сүүлчийн event-ээр).
-  state_open as (
-    select distinct on (ev.epc_id) ev.epc_id, ev.new_status
-      from epc_events ev
-     where ev.created_at < p_from
-     order by ev.epc_id, ev.created_at desc, ev.id desc
-  ),
-  state_close as (
-    select distinct on (ev.epc_id) ev.epc_id, ev.new_status
-      from epc_events ev
-     where ev.created_at < p_to + 1
-     order by ev.epc_id, ev.created_at desc, ev.id desc
-  ),
+  -- Интервалын хөдөлгөөн — epc_events.product_id денормалжсан тул epc_codes
+  -- руу join ХИЙХГҮЙ (epc_events_move_idx-ээр index-only scan).
   moves as (
-    select e.product_id,
+    select ev.product_id,
            count(*) filter (where ev.old_status is null
                               and ev.new_status in (select s from instock)) as in_new,
            count(*) filter (where ev.old_status in ('sold','other')
@@ -1737,21 +1736,35 @@ as $$
            count(*) filter (where ev.old_status in (select s from instock)
                               and ev.new_status = 'other') as out_writeoff
       from epc_events ev
-      join epc_codes e on e.id = ev.epc_id
      where ev.created_at >= p_from and ev.created_at < p_to + 1
-     group by e.product_id
+     group by ev.product_id
   ),
+  -- Эхний үлдэгдэл: интервалын өмнөх сүүлчийн event-ийн төлөвөөр.
   opening as (
-    select e.product_id, count(*) as qty
-      from state_open so join epc_codes e on e.id = so.epc_id
+    select so.product_id, count(*) as qty
+      from (select distinct on (ev.epc_id) ev.epc_id, ev.new_status, ev.product_id
+              from epc_events ev
+             where ev.created_at < p_from
+             order by ev.epc_id, ev.created_at desc, ev.id desc) so
      where so.new_status in (select s from instock)
-     group by e.product_id
+     group by so.product_id
   ),
+  -- Эцсийн үлдэгдэл: p_to нь өнөөдөр буюу түүнээс хойш бол ОДООГИЙН төлөв
+  -- (epc_codes) яг тэр утга — бүх түүхийг дахин унших шаардлагагүй (гол
+  -- хурдасгалт). Зөвхөн ӨНГӨРСӨН хугацааны тайланд event-ээс сэргээнэ.
   closing as (
     select e.product_id, count(*) as qty
-      from state_close sc join epc_codes e on e.id = sc.epc_id
-     where sc.new_status in (select s from instock)
+      from epc_codes e
+     where p_to >= current_date and e.status in (select s from instock)
      group by e.product_id
+    union all
+    select sc.product_id, count(*) as qty
+      from (select distinct on (ev.epc_id) ev.epc_id, ev.new_status, ev.product_id
+              from epc_events ev
+             where p_to < current_date and ev.created_at < p_to + 1
+             order by ev.epc_id, ev.created_at desc, ev.id desc) sc
+     where sc.new_status in (select s from instock)
+     group by sc.product_id
   )
   select coalesce(m.product_id, o.product_id, c.product_id),
          coalesce(o.qty, 0), coalesce(m.in_new, 0), coalesce(m.in_return, 0),
@@ -2846,8 +2859,8 @@ declare
   v_reason text := nullif(current_setting('app.reason', true), '');
 begin
   if tg_op = 'INSERT' then
-    insert into epc_events (tenant_id, epc_id, event, new_status, new_branch, actor_id)
-    values (new.tenant_id, new.id, 'created', new.status, new.branch_id, auth.uid());
+    insert into epc_events (tenant_id, epc_id, product_id, event, new_status, new_branch, actor_id)
+    values (new.tenant_id, new.id, new.product_id, 'created', new.status, new.branch_id, auth.uid());
     return new;
   end if;
   if new.status is distinct from old.status or new.branch_id is distinct from old.branch_id then
@@ -2862,15 +2875,15 @@ begin
       when new.status = 'other' then 'other'
       else 'status_change'
     end;
-    insert into epc_events (tenant_id, epc_id, event, old_status, new_status,
+    insert into epc_events (tenant_id, epc_id, product_id, event, old_status, new_status,
                             old_branch, new_branch, tx_id, reason, actor_id)
-    values (new.tenant_id, new.id, v_event, old.status, new.status,
+    values (new.tenant_id, new.id, new.product_id, v_event, old.status, new.status,
             old.branch_id, new.branch_id, v_tx, v_reason, auth.uid());
   elsif new.print_count > old.print_count
         and current_setting('app.print_backfill', true) is distinct from '1' then
-    insert into epc_events (tenant_id, epc_id, event, old_status, new_status,
+    insert into epc_events (tenant_id, epc_id, product_id, event, old_status, new_status,
                             old_branch, new_branch, reason, actor_id)
-    values (new.tenant_id, new.id, 'reprinted', old.status, new.status,
+    values (new.tenant_id, new.id, new.product_id, 'reprinted', old.status, new.status,
             old.branch_id, new.branch_id, v_reason, auth.uid());
   end if;
   return new;
@@ -3875,3 +3888,12 @@ left join categories c1 on c1.id = p.category_id
 left join categories c2 on c2.id = c1.parent_id
 left join categories c3 on c3.id = c2.parent_id;
 grant select on product_search to authenticated;
+
+-- ---------- Backfill: хуучин event-үүдэд product_id (idempotent) ----------
+-- Trigger-ийн ЭЦСИЙН тодорхойлолтын ДАРАА байрлана — энэ Run-д үүсэх шинэ
+-- event бүр product_id-тайгаа бичигдэнэ, зөвхөн өмнөх түүх л дүүргэгдэнэ.
+-- (null үлдсэн мөр л шинэчлэгддэг тул дахин Run хийхэд юу ч хийхгүй.)
+update epc_events ev
+   set product_id = e.product_id
+  from epc_codes e
+ where e.id = ev.epc_id and ev.product_id is null;
