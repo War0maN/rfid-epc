@@ -899,12 +899,24 @@ select
   case when c3.id is not null then c2.name when c2.id is not null then c1.name end as category_l2,
   case when c3.id is not null then c1.name end as category_l3,
   -- epc_count = нийт EPC (устгалын хоригт); active_count = Идэвхтэй үлдэгдэл (Phase 4).
-  (select count(*) from epc_codes e where e.product_id = p.id) as epc_count,
-  (select count(*) from epc_codes e where e.product_id = p.id and e.status = 'active') as active_count
+  -- ⚠️ Урьд нь эдгээр нь мөр тутмын корреляц дэд query байсан (бараа бүрд
+  -- 2 удаа тоолдог — 739 бараа × 50k EPC дээр ~0.4с). Одоо epc_codes-ыг
+  -- НЭГ УДАА бүлэглээд join хийнэ (2026-08-07 ачааллын тестийн дараа).
+  -- RLS (security_invoker) дэд query дотор ч хэвээр үйлчилнэ тул хэрэглэгч
+  -- бүр өөрийн харах эрхтэй EPC-ээрээ тоологдоно — семантик өөрчлөгдөөгүй.
+  coalesce(cnt.epc_count, 0) as epc_count,
+  coalesce(cnt.active_count, 0) as active_count
 from products p
 left join categories c1 on c1.id = p.category_id
 left join categories c2 on c2.id = c1.parent_id
-left join categories c3 on c3.id = c2.parent_id;
+left join categories c3 on c3.id = c2.parent_id
+left join (
+  select e.product_id,
+         count(*) as epc_count,
+         count(*) filter (where e.status = 'active') as active_count
+    from epc_codes e
+   group by e.product_id
+) cnt on cnt.product_id = p.id;
 grant select on products_full to authenticated;
 
 -- ============================================================

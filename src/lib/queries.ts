@@ -248,9 +248,15 @@ function colToDb(key: string): string | null {
 
 /** epc_full дээрх select-д баганын шүүлтүүдийг хэрэглэнэ. */
 type EpcQuery = ReturnType<typeof epcBase>;
-function epcBase(withCount: boolean) {
-  return withCount
-    ? supabase.from("epc_full").select("*", { count: "exact" })
+/**
+ * @param count false = тооллогүй; "exact" = яг таг; "estimated" = PostgREST-ийн
+ * ойролцоо (планчийн үнэлгээ; жижиг үр дүнд өөрөө exact рүү унана). Ойролцоо нь
+ * 50k мөр дээр ~0.2с хэмнэдэг тул ЗӨВХӨН шүүлт/хайлтгүй бүтэн жагсаалтад
+ * хэрэглэнэ — шүүсэн үед тоо нь хэрэглэгчид утга учиртай тул үргэлж exact.
+ */
+function epcBase(count: false | "exact" | "estimated") {
+  return count
+    ? supabase.from("epc_full").select("*", { count })
     : supabase.from("epc_full").select("*");
 }
 
@@ -289,7 +295,7 @@ export async function fetchEpcPage(params: {
   filters: Record<string, string>;
   sort: EpcSort | null;
 }): Promise<EpcPage> {
-  const filtered = applyEpcFilters(epcBase(true), params.filters);
+  const filtered = applyEpcFilters(epcBase("exact"), params.filters);
   const sortDb = params.sort ? colToDb(params.sort.key) : null;
   const asc = params.sort?.dir === "asc";
   // Анхдагч: сүүлд үүссэн нь эхэндээ, нэг ажлын дотор serial өсөхөөр
@@ -450,7 +456,12 @@ export async function fetchEpcPageGlobal(params: EpcGlobalParams & {
   sortBy?: string;
   sortOrder?: string;
 }): Promise<EpcPage> {
-  const q = applyEpcGlobal(epcBase(true), params, await resolveSearchIds(params));
+  // Шүүлт/хайлт/огнооны интервал байхгүй бүтэн жагсаалтад ойролцоо тоолол
+  // (том датад ~0.2с хэмнэнэ); бусад тохиолдолд яг таг.
+  const plain =
+    !params.search.trim() && !params.fromDate && !params.toDate &&
+    Object.values(params.filters ?? {}).every((v) => !v.trim());
+  const q = applyEpcGlobal(epcBase(plain ? "estimated" : "exact"), params, await resolveSearchIds(params));
   const sortDb = params.sortBy && EPC_SORTABLE.has(params.sortBy) ? params.sortBy : null;
   let oq = sortDb
     ? q.order(sortDb, { ascending: params.sortOrder === "asc" })

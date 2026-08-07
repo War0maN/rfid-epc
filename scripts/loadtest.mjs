@@ -138,7 +138,12 @@ function scenariosFor(sb) {
     ["EPC нэрийн ilike шүүлт", () => epcPage({ nameLike: "LT бараа 042" })],
     ["EPC эрэмбэ serial desc", () => epcPage({ sortBy: "serial", sortOrder: "desc" })],
     ["EPC хуудас 250 мөр", () => epcPage({ pageSize: 250 })],
-    ["EPC зөвхөн count", () => sb.from("epc_full").select("id", { count: "exact", head: true })],
+    ["EPC зөвхөн count (exact)", () => sb.from("epc_full").select("id", { count: "exact", head: true })],
+    ["EPC зөвхөн count (estimated)", () => sb.from("epc_full").select("id", { count: "estimated", head: true })],
+    ["EPC хуудас 1 (estimated count)", () =>
+      sb.from("epc_full").select("*", { count: "estimated" })
+        .order("created_at", { ascending: false }).order("serial", { ascending: true })
+        .order("id", { ascending: true }).range(0, 24)],
     // ── Бусад жагсаалтууд ──
     ["Бүтээгдэхүүн (products_full бүгд)", () => sb.from("products_full").select("*")],
     ["Үлдэгдэл (stock_by_branch)", () => sb.from("stock_by_branch").select("product_id, branch_id, qty")],
