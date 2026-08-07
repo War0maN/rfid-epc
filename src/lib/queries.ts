@@ -456,12 +456,11 @@ export async function fetchEpcPageGlobal(params: EpcGlobalParams & {
   sortBy?: string;
   sortOrder?: string;
 }): Promise<EpcPage> {
-  // Шүүлт/хайлт/огнооны интервал байхгүй бүтэн жагсаалтад ойролцоо тоолол
-  // (том датад ~0.2с хэмнэнэ); бусад тохиолдолд яг таг.
-  const plain =
-    !params.search.trim() && !params.fromDate && !params.toDate &&
-    Object.values(params.filters ?? {}).every((v) => !v.trim());
-  const q = applyEpcGlobal(epcBase(plain ? "estimated" : "exact"), params, await resolveSearchIds(params));
+  // ⚠️ count=estimated-ыг туршиж үзээд БУЦААВ (2026-08-07 хэмжилт): 50k мөр
+  // дээр хурдны ялгаа өгөөгүй (199мс vs 207мс) хэрнээ планчийн үнэлгээ нь
+  // RLS-ийг тооцдоггүй тул салбараар хязгаарлагдсан хэрэглэгчид ХУДАЛ тоо
+  // харуулж байв (41,993-ын оронд 48,787). Тиймээс ҮРГЭЛЖ exact.
+  const q = applyEpcGlobal(epcBase("exact"), params, await resolveSearchIds(params));
   const sortDb = params.sortBy && EPC_SORTABLE.has(params.sortBy) ? params.sortBy : null;
   let oq = sortDb
     ? q.order(sortDb, { ascending: params.sortOrder === "asc" })
