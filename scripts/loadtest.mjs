@@ -1,10 +1,14 @@
 // Ачааллын тест — вебийн жинхэнэ query хэлбэрүүдийг (epc_full server-side
-// хуудаслалт, ерөнхий .or ilike хайлт, баганын шүүлт, тоолол, products_full)
-// нэвтэрсэн хэрэглэгчийн эрхээр (RLS үйлчилнэ) N удаа ажиллуулж p50/p95
+// хуудаслалт, ерөнхий .or ilike хайлт, баганын шүүлт, тоолол, products_full,
+// Үлдэгдэл, Тайлангийн RPC-ууд, Аудит) нэвтэрсэн хэрэглэгчийн эрхээр
+// (RLS/эрх/салбарын scoping автоматаар үйлчилнэ) N удаа ажиллуулж p50/p95
 // хугацааг хэмжинэ. Эхлээд scripts/loadtest-seed.sql-ийг SQL Editor-т Run.
 //
-// Хэрэглээ:
-//   LT_EMAIL=you@company.com LT_PASSWORD=... node scripts/loadtest.mjs
+// Хэрэглээ (нэг хэрэглэгч):
+//   LT_EMAIL=admin@... LT_PASSWORD=... node scripts/loadtest.mjs
+// Хоёр хэрэглэгчийг зэрэг харьцуулах (жишээ нь админ vs оператор):
+//   LT_EMAIL=admin@... LT_PASSWORD=... \
+//   LT_EMAIL2=operator@... LT_PASSWORD2=... node scripts/loadtest.mjs
 // URL/түлхүүр: орчны хувьсагч эсвэл .env(.local)-ын VITE_SUPABASE_URL /
 // VITE_SUPABASE_ANON_KEY. Нэмэлт: LT_ITER (default 10).
 
@@ -30,18 +34,20 @@ loadDotenv(new URL("../.env", import.meta.url).pathname);
 
 const URL_ = process.env.VITE_SUPABASE_URL;
 const KEY = process.env.VITE_SUPABASE_ANON_KEY;
-const EMAIL = process.env.LT_EMAIL;
-const PASSWORD = process.env.LT_PASSWORD;
 const ITER = Math.max(3, parseInt(process.env.LT_ITER || "10", 10) || 10);
 
-if (!URL_ || !KEY || !EMAIL || !PASSWORD) {
+/** Хэмжих хэрэглэгчид: LT_EMAIL(2)/LT_PASSWORD(2). Хоёр дахь нь сонголтоор. */
+const ACCOUNTS = [
+  { label: process.env.LT_LABEL || "1-р хэрэглэгч", email: process.env.LT_EMAIL, password: process.env.LT_PASSWORD },
+  { label: process.env.LT_LABEL2 || "2-р хэрэглэгч", email: process.env.LT_EMAIL2, password: process.env.LT_PASSWORD2 },
+].filter((a) => a.email && a.password);
+
+if (!URL_ || !KEY || ACCOUNTS.length === 0) {
   console.error(
     "Дутуу тохиргоо. Шаардлагатай: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY (.env/.env.local-оос ч болно), LT_EMAIL, LT_PASSWORD."
   );
   process.exit(1);
 }
-
-const supabase = createClient(URL_, KEY, { auth: { persistSession: false } });
 
 // Вебийн EPC_SEARCH_COLS (src/lib/queries.ts)-тай ижил байлга.
 const SEARCH_COLS = [
@@ -50,60 +56,87 @@ const SEARCH_COLS = [
 ];
 const orSearch = (s) => SEARCH_COLS.map((c) => `${c}.ilike.%${s}%`).join(",");
 
-/** epc_full хуудасны суурь query — fetchEpcPageGlobal-тай ижил эрэмбэ. */
-function epcPage({ page = 1, pageSize = 25, search = "", status = "", nameLike = "", sortBy = "", sortOrder = "desc" } = {}) {
-  let q = supabase.from("epc_full").select("*", { count: "exact" });
-  if (search) q = q.or(orSearch(search));
-  if (status) q = q.eq("status", status);
-  if (nameLike) q = q.ilike("name", `%${nameLike}%`);
-  q = sortBy
-    ? q.order(sortBy, { ascending: sortOrder === "asc" })
-    : q.order("created_at", { ascending: false }).order("serial", { ascending: true });
-  q = q.order("id", { ascending: true });
-  const from = (page - 1) * pageSize;
-  return q.range(from, from + pageSize - 1);
+/** Тайлангийн интервал — сүүлийн 90 хоног (өнөөдрийг оруулаад). */
+function dateRange(days = 90) {
+  const to = new Date();
+  const from = new Date(to.getTime() - days * 86400000);
+  const iso = (d) => d.toISOString().slice(0, 10);
+  return { from: iso(from), to: iso(to) };
 }
+const RANGE = dateRange();
 
-const SCENARIOS = [
-  ["EPC хуудас 1 (25 мөр + count)", () => epcPage()],
-  ["EPC хуудас 100 (гүн offset)", () => epcPage({ page: 100 })],
-  ["EPC ерөнхий хайлт (.or ilike ×12)", () => epcPage({ search: "LT бараа 01" })],
-  ["EPC төлөвийн шүүлт (status=active)", () => epcPage({ status: "active" })],
-  ["EPC нэрийн ilike шүүлт", () => epcPage({ nameLike: "LT бараа 042" })],
-  ["EPC эрэмбэ serial desc", () => epcPage({ sortBy: "serial", sortOrder: "desc" })],
-  ["EPC зөвхөн count", () => supabase.from("epc_full").select("id", { count: "exact", head: true })],
-  ["Бүтээгдэхүүн (products_full бүгд)", () => supabase.from("products_full").select("*")],
-  ["Гүйлгээ (сүүлийн 500)", () =>
-    supabase.from("transactions").select("*").order("created_at", { ascending: false }).limit(500)],
-];
+/** Нэг хэрэглэгчийн client дээрх бүх хувилбарууд (вебийн жинхэнэ query-ууд). */
+function scenariosFor(sb) {
+  const epcPage = ({ page = 1, pageSize = 25, search = "", status = "", nameLike = "", sortBy = "", sortOrder = "desc" } = {}) => {
+    let q = sb.from("epc_full").select("*", { count: "exact" });
+    if (search) q = q.or(orSearch(search));
+    if (status) q = q.eq("status", status);
+    if (nameLike) q = q.ilike("name", `%${nameLike}%`);
+    q = sortBy
+      ? q.order(sortBy, { ascending: sortOrder === "asc" })
+      : q.order("created_at", { ascending: false }).order("serial", { ascending: true });
+    q = q.order("id", { ascending: true });
+    const from = (page - 1) * pageSize;
+    return q.range(from, from + pageSize - 1);
+  };
+
+  return [
+    // ── EPC жагсаалт (server-side хуудаслалт) ──
+    ["EPC хуудас 1 (25 мөр + count)", () => epcPage()],
+    ["EPC хуудас 100 (гүн offset)", () => epcPage({ page: 100 })],
+    ["EPC ерөнхий хайлт (.or ilike ×12)", () => epcPage({ search: "LT бараа 01" })],
+    ["EPC төлөвийн шүүлт (status=active)", () => epcPage({ status: "active" })],
+    ["EPC нэрийн ilike шүүлт", () => epcPage({ nameLike: "LT бараа 042" })],
+    ["EPC эрэмбэ serial desc", () => epcPage({ sortBy: "serial", sortOrder: "desc" })],
+    ["EPC хуудас 250 мөр", () => epcPage({ pageSize: 250 })],
+    ["EPC зөвхөн count", () => sb.from("epc_full").select("id", { count: "exact", head: true })],
+    // ── Бусад жагсаалтууд ──
+    ["Бүтээгдэхүүн (products_full бүгд)", () => sb.from("products_full").select("*")],
+    ["Үлдэгдэл (stock_by_branch)", () => sb.from("stock_by_branch").select("product_id, branch_id, qty")],
+    ["Гүйлгээ (сүүлийн 500)", () =>
+      sb.from("transactions").select("*").order("created_at", { ascending: false }).limit(500)],
+    ["Аудит лог (сүүлийн 200)", () =>
+      sb.from("audit_log").select("id, actor_id, action, entity, entity_id, meta, created_at")
+        .order("created_at", { ascending: false }).limit(200)],
+    // ── Тайлангийн RPC-ууд (security invoker — RLS/эрх дотор нь үйлчилнэ) ──
+    ["Тайлан: Борлуулалт (report_sales 90 хоног)", () => sb.rpc("report_sales", { p_from: RANGE.from, p_to: RANGE.to })],
+    ["Тайлан: Орлого (report_inflow 90 хоног)", () => sb.rpc("report_inflow", { p_from: RANGE.from, p_to: RANGE.to })],
+    ["Тайлан: Хөдөлгөөн (report_movement 90 хоног)", () => sb.rpc("report_movement", { p_from: RANGE.from, p_to: RANGE.to })],
+    ["Тайлан: Тооллого (report_stocktake 90 хоног)", () => sb.rpc("report_stocktake", { p_from: RANGE.from, p_to: RANGE.to })],
+  ];
+}
 
 const pct = (arr, p) => {
   const s = [...arr].sort((a, b) => a - b);
   return s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))];
 };
 const ms = (v) => `${v.toFixed(0)} ms`;
+const pad = (s, n) => (s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length));
 
-async function main() {
+/** Нэг хэрэглэгчээр бүх хувилбарыг хэмжинэ. */
+async function runFor(account) {
+  const sb = createClient(URL_, KEY, { auth: { persistSession: false } });
   const t0 = performance.now();
-  const { error: authErr } = await supabase.auth.signInWithPassword({ email: EMAIL, password: PASSWORD });
+  const { error: authErr } = await sb.auth.signInWithPassword({
+    email: account.email,
+    password: account.password,
+  });
   if (authErr) {
-    console.error("Нэвтрэлт амжилтгүй:", authErr.message);
-    process.exit(1);
+    console.error(`✗ ${account.label} (${account.email}) нэвтэрч чадсангүй: ${authErr.message}`);
+    return null;
   }
-  console.log(`Нэвтрэв (${ms(performance.now() - t0)}) — ${URL_}`);
+  console.log(`\n═══ ${account.label}: ${account.email} — нэвтрэв (${ms(performance.now() - t0)}) ═══`);
 
-  // Seed-ийн хэмжээг харуулна (ADED% = LT EPC).
-  const { count: ltCount } = await supabase
+  // Хэрэглэгчийн харагдац: нийт EPC + LT seed (эрх/салбарын scoping-ийн нөлөө ил гарна).
+  const { count: allCount } = await sb.from("epc_full").select("id", { count: "exact", head: true });
+  const { count: ltCount } = await sb
     .from("epc_full").select("id", { count: "exact", head: true }).ilike("epc_hex", "ADED%");
-  const { count: allCount } = await supabase
-    .from("epc_full").select("id", { count: "exact", head: true });
-  console.log(`EPC нийт: ${allCount ?? "?"} (үүнээс LT seed: ${ltCount ?? "?"}) · давталт: ${ITER}\n`);
-  if (!ltCount) console.log("⚠ LT seed олдсонгүй — эхлээд scripts/loadtest-seed.sql-ийг Run хийсэн үү?\n");
+  console.log(`Харагдах EPC: ${allCount ?? "?"} (үүнээс LT seed: ${ltCount ?? "?"}) · давталт: ${ITER}`);
+  if (!ltCount) console.log("⚠ LT seed харагдахгүй байна — seed Run хийсэн үү, эсвэл энэ хэрэглэгчид эрх/салбар хаагдсан уу?");
 
   const results = [];
-  for (const [name, build] of SCENARIOS) {
-    // Бэлтгэл халаалт (кэш/холболт) — хэмжилтэд оруулахгүй.
-    await build();
+  for (const [name, build] of scenariosFor(sb)) {
+    await build(); // халаалт — хэмжилтэд оруулахгүй
     const times = [];
     let rows = 0;
     let total = null;
@@ -124,19 +157,55 @@ async function main() {
       results.push({ name, failed });
       continue;
     }
-    const r = { name, p50: pct(times, 50), p95: pct(times, 95), min: Math.min(...times), max: Math.max(...times), rows, total };
+    const r = {
+      name,
+      p50: pct(times, 50),
+      p95: pct(times, 95),
+      min: Math.min(...times),
+      max: Math.max(...times),
+      rows,
+      total,
+    };
     results.push(r);
     console.log(
-      `✓ ${name}\n    p50 ${ms(r.p50)} · p95 ${ms(r.p95)} · min ${ms(r.min)} · max ${ms(r.max)}` +
-        ` · мөр ${rows}${total != null ? ` · нийт ${total}` : ""}`
+      `✓ ${pad(name, 44)} p50 ${pad(ms(r.p50), 8)} p95 ${pad(ms(r.p95), 8)}` +
+        ` мөр ${rows}${total != null ? ` · нийт ${total}` : ""}`
     );
   }
+  await sb.auth.signOut();
+  return { account, results };
+}
 
-  console.log("\n── Нэгтгэл (p50 / p95) ──");
-  for (const r of results) {
-    console.log(r.failed ? `${r.name}: АЛДАА` : `${r.name}: ${ms(r.p50)} / ${ms(r.p95)}`);
+async function main() {
+  console.log(`Ачааллын тест — ${URL_}`);
+  console.log(`Тайлангийн интервал: ${RANGE.from} … ${RANGE.to}`);
+
+  const runs = [];
+  for (const acc of ACCOUNTS) {
+    const r = await runFor(acc);
+    if (r) runs.push(r);
   }
-  await supabase.auth.signOut();
+  if (runs.length === 0) process.exit(1);
+
+  // ── Нэгтгэл: хэрэглэгч бүрийн p50/p95 зэрэгцүүлж ──
+  console.log("\n══════════ НЭГТГЭЛ (p50 / p95) ══════════");
+  const header = pad("Хувилбар", 44) + runs.map((r) => pad(r.account.label, 26)).join("");
+  console.log(header);
+  console.log("─".repeat(header.length));
+  const names = runs[0].results.map((r) => r.name);
+  for (const name of names) {
+    const cells = runs.map((run) => {
+      const r = run.results.find((x) => x.name === name);
+      if (!r) return pad("—", 26);
+      return pad(r.failed ? "АЛДАА" : `${ms(r.p50)} / ${ms(r.p95)}`, 26);
+    });
+    console.log(pad(name, 44) + cells.join(""));
+  }
+
+  // Хамгийн удаан 5 (эхний хэрэглэгчээр).
+  const slow = runs[0].results.filter((r) => !r.failed).sort((a, b) => b.p95 - a.p95).slice(0, 5);
+  console.log(`\nХамгийн удаан 5 (${runs[0].account.label}, p95-аар):`);
+  for (const r of slow) console.log(`  ${pad(r.name, 44)} ${ms(r.p95)}`);
 }
 
 main().catch((e) => {

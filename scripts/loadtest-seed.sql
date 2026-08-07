@@ -5,8 +5,9 @@
 --
 -- Юу үүсгэдэг: v_products ширхэг "LT бараа NNN" + нэг "LT-0001" ажил +
 -- v_epc_count ширхэг EPC (~80% Идэвхтэй / 10% Борлуулсан / 5% Бусад /
--- 5% Хэвлээгүй, бүгд эхний салбарт). epc_hex нь 'ADED…' угтвартай хиймэл
--- hex (жинхэнэ SGTIN биш) — query-ийн ачааллыг хэмжихэд хангалттай.
+-- 5% Хэвлээгүй; тенантын БҮХ салбарт ээлжлэн тарааж байрлуулна — Хэвлээгүй
+-- нь салбаргүй). epc_hex нь 'ADED…' угтвартай хиймэл hex (жинхэнэ SGTIN
+-- биш) — query-ийн ачааллыг хэмжихэд хангалттай.
 -- Insert бүрд epc_events trigger 'created' event бичнэ (бодит ачаалалтай ижил).
 --
 -- Цэвэрлэгээ: файлын доод хэсгийн коммент болгосон блокыг Run.
@@ -19,12 +20,13 @@ declare
   v_epc_count int  := 20000;             -- нийт EPC
   v_products  int  := 50;                -- LT бараа
   -- ↑↑↑ ─────────────────── ↑↑↑
-  v_tenant   uuid;
-  v_branch   uuid;
-  v_job      uuid;
-  v_prod_ids uuid[];
-  v_n        int;
-  i          int;
+  v_tenant     uuid;
+  v_branch_ids uuid[];
+  v_bn         int;
+  v_job        uuid;
+  v_prod_ids   uuid[];
+  v_n          int;
+  i            int;
 begin
   select p.tenant_id into v_tenant
     from profiles p join auth.users u on u.id = p.id
@@ -33,8 +35,13 @@ begin
     raise exception 'Имэйл "%" -тэй профайл/тенант алга — v_email-ээ шалга.', v_email;
   end if;
 
-  select id into v_branch from branches where tenant_id = v_tenant order by created_at limit 1;
-  if v_branch is null then
+  -- Салбарууд: EPC-үүдийг БҮХ салбарт ээлжлэн тарааж байрлуулна — ингэснээр
+  -- Үлдэгдлийн матриц олон баганатай, салбарын scoping (оператор гэх мэт
+  -- хязгаарлагдсан эрхтэй хэрэглэгч) ч жинхэнэ нөхцөлөөр шалгагдана.
+  select array_agg(id order by created_at) into v_branch_ids
+    from branches where tenant_id = v_tenant;
+  v_bn := coalesce(array_length(v_branch_ids, 1), 0);
+  if v_bn = 0 then
     raise exception 'Тенантад салбар алга — эхлээд салбар үүсгэ.';
   end if;
 
@@ -72,7 +79,8 @@ begin
          1000000 + g,
          'ADED' || lpad(to_hex(g), 20, '0'),
          st.s,
-         case when st.s = 'unprinted' then null else v_branch end,
+         -- Хэвлээгүй = салбаргүй; бусад нь салбаруудад ээлжлэн (round-robin).
+         case when st.s = 'unprinted' then null else v_branch_ids[(g % v_bn) + 1] end,
          case when st.s = 'unprinted' then null else now() end,
          case when st.s = 'unprinted' then 0 else 1 end
     from generate_series(1, v_epc_count) g
@@ -83,8 +91,8 @@ begin
            else 'active' end as s) st
       on conflict (tenant_id, epc_hex) do nothing;
 
-  raise notice 'LT seed бэлэн: % бараа, EPC нийт %',
-    v_n, (select count(*) from epc_codes where tenant_id = v_tenant and epc_hex like 'ADED%');
+  raise notice 'LT seed бэлэн: % бараа, % салбарт тараасан, EPC нийт %',
+    v_n, v_bn, (select count(*) from epc_codes where tenant_id = v_tenant and epc_hex like 'ADED%');
 end $$;
 
 -- ============================================================
